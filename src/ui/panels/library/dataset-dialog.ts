@@ -28,9 +28,12 @@ export interface DatasetDialogOptions {
 export class DatasetDialog {
     el: HTMLElement;
     #o: DatasetDialogOptions;
+    /** Created but not filled yet (the fill failed): a retry fills this one instead of creating another. */
+    #created: number | null = null;
 
     constructor(o: DatasetDialogOptions) {
-        this.#o = o;
+        // The filter as it is now: the count and summary shown describe it, the fill must use the same.
+        this.#o = { ...o, filter: structuredClone(o.filter) };
         const d = o.dataset;
         const color = d?.color ?? DATASET_COLORS[0];
         this.el = document.createElement('form');
@@ -85,10 +88,19 @@ export class DatasetDialog {
                 o.onDone(o.dataset.id);
             } else {
                 const kind = this.#kind();
-                const id = await catalogApi.createDataset(o.projectRoot, kind, kind === 'filter' ? { ...edit, filter: normalizeFilter(o.filter) } : edit);
-                if (kind === 'static' && this.el.querySelector<HTMLInputElement>('[data-k="fill"]')?.checked && o.shown) {
-                    await catalogApi.datasetAdd(o.projectRoot, id, { filter: o.filter });
+                let id = this.#created;
+                if (id == null) {
+                    id = await catalogApi.createDataset(o.projectRoot, kind, kind === 'filter' ? { ...edit, filter: normalizeFilter(o.filter) } : edit);
+                    this.#created = id;
+                    this.el.querySelectorAll<HTMLInputElement>('input[name="ds-kind"]').forEach((i) => { i.disabled = true; });
+                } else {
+                    await catalogApi.updateDataset(o.projectRoot, id, edit);   // name/colour edited before the retry
                 }
+                if (kind === 'static' && this.el.querySelector<HTMLInputElement>('[data-k="fill"]')?.checked && o.shown) {
+                    try { await catalogApi.datasetAdd(o.projectRoot, id, { filter: o.filter }); }
+                    catch (e) { throw new Error(`Dataset created, but filling it failed: ${e instanceof Error ? e.message : e}. Press the button again to retry.`); }
+                }
+                this.#created = null;
                 o.onDone(id);
             }
         } catch (e) {

@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    bulkReportText, parseCoords, type BulkEdit, type DatasetInfo, type Membership, type FacetValue, type RecordingDetail, type Selection,
+    bulkReportText, parseCoords, safeColor, type BulkEdit, type DatasetInfo, type Membership, type FacetValue, type RecordingDetail, type Selection,
 } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 import { openMapModal } from '../../components/geo-map-modal/geo-map-modal.ts';
@@ -73,11 +73,12 @@ export class SelectionPanel {
             this.#detail = detail;
             this.#members = members;
         } catch { /* lists stay empty */ }
+        if (gen !== this.#gen) return;   // a newer selection owns the panel (also after a failed lookup)
         this.#render();
     }
 
     /** Identity of the current selection: form input survives re-renders while it stays the same. */
-    #key(): string { return `${this.#count}:${this.#sel.ids?.join(',') ?? 'filter'}`; }
+    #key(): string { return `${this.#count}:${this.#sel.ids?.join(',') ?? JSON.stringify(this.#sel.filter ?? {})}`; }
     #renderedKey = '';
     /** Outcome of the last apply; stays through refreshes of the same selection. */
     #result: { text: string; bad: boolean } | null = null;
@@ -145,7 +146,7 @@ export class SelectionPanel {
     #datasetBlock(what: string): string {
         const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
         const active = this.#datasets.find((x) => x.id === this.#activeStatic);
-        const members = this.#members.length ? `<div class="lib-tags">${this.#members.map((m) => `<span class="lib-tag" style="--pill:${m.color ?? 'var(--color-text-secondary)'}"
+        const members = this.#members.length ? `<div class="lib-tags">${this.#members.map((m) => `<span class="lib-tag" style="--pill:${safeColor(m.color) ?? 'var(--color-text-secondary)'}"
             title="${m.kind === 'filter' ? 'matches the filter of this dynamic dataset' : 'member of this static dataset'}">${m.kind === 'filter' ? '⚲' : '▤'} ${esc(m.name)}${m.ranges.length ? ` <span class="lib-hint">${m.ranges.map(([a, b]) => `${fmt(a)}–${fmt(b)}`).join(', ')}</span>` : ''}</span>`).join('')}</div>` : '';
         const controls = this.#datasets.length ? `
           <div class="lib-row"><select class="field-select" data-k="ds-target" aria-label="Static dataset">
@@ -161,15 +162,18 @@ export class SelectionPanel {
         const d = this.#datasets.find((x) => x.id === id);
         if (!d) return;
         if (act === 'ds-add') this.#lastTarget = d.id;
+        const sel = this.#sel, key = this.#key();
         try {
             const n = act === 'ds-add'
-                ? await catalogApi.datasetAdd(this.#o.projectRoot, d.id, this.#sel)
-                : await catalogApi.datasetRemove(this.#o.projectRoot, d.id, this.#sel);
+                ? await catalogApi.datasetAdd(this.#o.projectRoot, d.id, sel)
+                : await catalogApi.datasetRemove(this.#o.projectRoot, d.id, sel);
+            if (this.#key() !== key) { this.#o.onApplied(); return; }
             this.#dsResult = {
                 text: act === 'ds-add' ? (n ? `${n.toLocaleString()} added to “${d.name}”.` : `Already in “${d.name}”.`) : `${n.toLocaleString()} removed from “${d.name}”.`,
                 bad: false,
             };
         } catch (e) {
+            if (this.#key() !== key) return;
             this.#dsResult = { text: `Error: ${e instanceof Error ? e.message : e}`, bad: true };
             this.#render();
             return;
@@ -214,8 +218,12 @@ export class SelectionPanel {
         if (act === 'pick-pos') {
             const inp = this.el.querySelector<HTMLInputElement>('[data-k="position"]')!;
             const cur = parseCoords(inp.value) ?? (this.#detail?.lat != null ? { lat: this.#detail.lat, lon: this.#detail.lon! } : null);
+            const key = this.#key();
             void openMapModal({ ...(cur ? { lat: cur.lat, lon: cur.lon, zoom: 13 } : {}), onConfirm: ({ lat, lon }: { lat: number; lon: number }) => {
-                inp.value = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+                if (this.#key() !== key) return;   // another selection meanwhile
+                // The form may have been re-rendered while the map was open: write to the input shown now.
+                const now = this.el.querySelector<HTMLInputElement>('[data-k="position"]');
+                if (now) now.value = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
             } });
             return;
         }
@@ -226,16 +234,18 @@ export class SelectionPanel {
         const empty = edit.siteId === undefined && edit.deviceId === undefined && !edit.addTags?.length && !edit.removeTags?.length && !edit.meta && edit.position === undefined;
         if (empty) { this.#setResult('Nothing to change.'); return; }
         if (this.#count > 1 && !confirm(`Change ${this.#count.toLocaleString()} recordings?`)) return;
+        // The selection this edit is for; feedback only while it is still the one shown.
+        const sel = this.#sel, count = this.#count, key = this.#key();
         try {
-            const r = await catalogApi.bulkEdit(this.#o.projectRoot, this.#sel, edit);
-            this.#o.onApplied();
+            const r = await catalogApi.bulkEdit(this.#o.projectRoot, sel, edit);
+            this.#o.onApplied();   // the catalog changed, whatever is selected now
+            if (this.#key() !== key) return;
             // The selection stays (by id); refresh lists and detail.
-            const keep = this.#sel.ids ? this.#sel : {};
             this.#result = { text: bulkReportText(r), bad: false };
             this.#renderedKey = '';   // start with an empty form
-            await this.show(keep, this.#sel.ids ? this.#count : 0, { sites: this.#sites, devices: this.#devices });
+            await this.show(sel.ids ? sel : {}, sel.ids ? count : 0, { sites: this.#sites, devices: this.#devices });
         } catch (e) {
-            this.#setResult(`Error: ${e instanceof Error ? e.message : e}`, true);
+            if (this.#key() === key) this.#setResult(`Error: ${e instanceof Error ? e.message : e}`, true);
         }
     }
 }

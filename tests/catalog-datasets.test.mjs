@@ -55,3 +55,35 @@ test('rangeFromDrag orders, clamps and rounds; rejects tiny drags', () => {
     assert.deepEqual(rangeFromDrag(100, 101, 1200, 60), null);
     assert.deepEqual(rangeFromDrag(0, 10, 0, 60), null);
 });
+
+test('normalizeFilter keeps explicit "without" choices, drops default flags, orders detection fields', async () => {
+    const { normalizeFilter, sameFilter, isEmptyFilter } = await import('../src/domain/catalog/catalog-types.ts');
+    assert.deepEqual(normalizeFilter({ hasPosition: false }), { hasPosition: false });
+    assert.equal(sameFilter({ hasLabels: false }, {}), false);
+    assert.equal(isEmptyFilter({ hasPosition: false }), false);
+    assert.deepEqual(normalizeFilter({ noStart: false, unassigned: false }), {});
+    assert.equal(sameFilter({ detection: { class: 'owl', minScore: 0.5 } }, { detection: { minScore: 0.5, class: 'owl' } }), true);
+});
+
+test('rangeFromDrag stays within a fractional duration and accepts the minimum length', async () => {
+    const { rangeFromDrag, typedRange } = await import('../src/domain/catalog/catalog-types.ts');
+    assert.deepEqual(rangeFromDrag(0, 1200, 1200, 60.06), [0, 60.06]);
+    assert.deepEqual(rangeFromDrag(300, 304, 1200, 60), [15, 15.2]);
+    assert.equal(rangeFromDrag(300, 302, 1200, 60), null, 'shorter than 0.2 s');
+    assert.deepEqual(typedRange(1, 10.04, 10), [1, 10], 'rounded display value of the end');
+    assert.equal(typedRange(10.01, 10.04, 10), null, 'start past the end after clamping');
+    assert.equal(typedRange(2, 1, 10), null);
+    assert.equal(typedRange(-1, 1, 10), null);
+    assert.equal(typedRange(1, 11, 10), null);
+    assert.deepEqual(typedRange(1, 500, null), [1, 500], 'unknown duration');
+});
+
+test('coverageMatrix: indexed cells, most recent weeks when there are too many', async () => {
+    const { coverageMatrix } = await import('../src/domain/catalog/catalog-types.ts');
+    const cell = (week) => ({ siteId: 1, week, recordings: 1, seconds: 1, days: 1 });
+    const m = coverageMatrix({ sites: [[1, 'A']], weeks: [cell('2000-01-03'), cell('2000-02-07')] }, 3);
+    assert.equal(m.weeks.length, 3);
+    assert.equal(m.hiddenWeeks, 3);
+    assert.equal(m.weeks.at(-1), '2000-02-07');
+    assert.equal(m.rows[0].cells.at(-1)?.week, '2000-02-07', 'the last observation is shown');
+});

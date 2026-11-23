@@ -10,7 +10,7 @@
 
 import {
     fmtClock, formatBytes, localTime, parseClock, rangeFromDrag,
-    type CatalogRow, type DatasetInfo, type Membership, type RecordingDetail,
+    type CatalogRow, type DatasetInfo, type Membership, type RecordingDetail, safeColor, typedRange,
 } from '../../../domain/catalog/catalog-types.ts';
 import { clockDuration, heatLut, thumbPixels, type Thumb } from '../../../domain/catalog/thumb-grid.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
@@ -41,6 +41,8 @@ export class ExpandedView {
     #i = -1;
     #row: CatalogRow | null = null;
     #gen = 0;
+    /** Latest membership read; an older one that answers later is dropped. */
+    #membersSeq = 0;
     #lut = heatLut();
     #members: Membership[] = [];
     /** Picked range in seconds. */
@@ -72,7 +74,7 @@ export class ExpandedView {
             const a = parseClock(this.el.querySelector<HTMLInputElement>('[data-k="x-t0"]')!.value);
             const b = parseClock(this.el.querySelector<HTMLInputElement>('[data-k="x-t1"]')!.value);
             const d = this.#row?.durationS ?? Infinity;
-            this.#sel = a != null && b != null && b > a && b <= d + 0.05 ? [a, Math.min(b, d)] : null;
+            this.#sel = typedRange(a, b, this.#row?.durationS);
             this.#msg = a != null && b != null && !this.#sel ? { text: `Start must be before end${Number.isFinite(d) ? ` and the end at most ${fmtClock(d)}` : ''}.`, bad: true } : null;
             this.#renderBands();
             this.#renderDs(false, false);   // typed text stays as it is, even while still incomplete
@@ -194,8 +196,9 @@ export class ExpandedView {
     async #loadMembers(gen = this.#gen) {
         const id = this.#row?.id;
         if (id == null) return;
+        const seq = ++this.#membersSeq;
         const m = await catalogApi.recordingDatasets(this.#o.projectRoot, id).catch(() => null);
-        if (gen !== this.#gen || !m) return;
+        if (gen !== this.#gen || seq !== this.#membersSeq || !m) return;
         this.#members = m;
         this.#renderBands();
         this.#renderDs(true);
@@ -209,7 +212,7 @@ export class ExpandedView {
         if (!d) { host.innerHTML = ''; return; }
         const pct = (t: number) => `${Math.min(100, Math.max(0, (t / d) * 100))}%`;
         const bands = this.#members.flatMap((m) => m.ranges.map(([a, b]) =>
-            `<div class="lib-x-band" style="--pill:${m.color ?? 'var(--color-accent)'};left:${pct(a)};width:calc(${pct(b)} - ${pct(a)})"
+            `<div class="lib-x-band" style="--pill:${safeColor(m.color) ?? 'var(--color-accent)'};left:${pct(a)};width:calc(${pct(b)} - ${pct(a)})"
                title="${esc(m.name)} · ${fmtClock(a)}–${fmtClock(b)}"></div>`));
         if (this.#sel) {
             const [a, b] = this.#sel;
@@ -227,7 +230,7 @@ export class ExpandedView {
         if (this.#target == null || !targets.some((t) => t.id === this.#target)) this.#target = targets[0]?.id ?? null;
         const isStatic = (id: number) => this.#members.find((m) => m.datasetId === id)?.kind === 'static';
         const list = this.#members.map((m) => `
-          <div class="lib-x-member"><span class="lib-pill" style="--pill:${m.color ?? 'var(--color-accent)'}">${m.kind === 'filter' ? '⚲' : '▤'} ${esc(m.name)}</span>
+          <div class="lib-x-member"><span class="lib-pill" style="--pill:${safeColor(m.color) ?? 'var(--color-accent)'}">${m.kind === 'filter' ? '⚲' : '▤'} ${esc(m.name)}</span>
             ${m.ranges.length ? m.ranges.map(([a, b]) => `<span class="lib-x-range"><button class="lib-link" data-act="x-range-pick" data-a="${a}" data-b="${b}" title="Select this range">${fmtClock(a)}–${fmtClock(b)}</button>${isStatic(m.datasetId)
                 ? `<button class="lib-x-del" data-act="x-range-del" data-ds="${m.datasetId}" data-a="${a}" data-b="${b}" title="Remove this range from “${esc(m.name)}”">×</button>` : ''}</span>`).join('')
               : `<span class="lib-muted">${m.kind === 'filter' ? 'matches its filter' : 'whole recording'}</span>`}</div>`).join('');
@@ -275,16 +278,24 @@ export class ExpandedView {
                 await catalogApi.datasetRemoveRange(root, id, row.id, [Number(btn.dataset.a), Number(btn.dataset.b)]);
                 this.#msg = { text: `Range ${fmtClock(Number(btn.dataset.a))}–${fmtClock(Number(btn.dataset.b))} removed from “${name(id)}”.`, bad: false };
             } else if ((act === 'x-ds-add-range' || act === 'x-ds-add-whole') && this.#target != null) {
+                // Everything this add is about, taken now: the user may step on before it answers.
+                const target = this.#target, gen = this.#gen;
                 const range = act === 'x-ds-add-range' ? this.#sel : null;
                 if (act === 'x-ds-add-range' && !range) return;
-                const n = await catalogApi.datasetAdd(root, this.#target, { ids: [row.id] }, range);
-                const covered = this.#members.some((m) => m.datasetId === this.#target && !m.ranges.length);
+                const covered = this.#members.some((m) => m.datasetId === target && !m.ranges.length);
+                let n: number;
+                try { n = await catalogApi.datasetAdd(root, target, { ids: [row.id] }, range); }
+                catch (e) { if (gen === this.#gen) throw e; return; }
+                this.#o.onDatasetsChanged();   // the catalog changed, wherever the view is now
+                if (gen !== this.#gen) return;
                 this.#msg = {
-                    text: n ? `${range ? `Range ${fmtClock(range[0])}–${fmtClock(range[1])}` : 'Whole recording'} added to “${name(this.#target)}”.`
-                        : covered ? `“${name(this.#target)}” already has the whole recording.` : `Already in “${name(this.#target)}”.`,
+                    text: n ? `${range ? `Range ${fmtClock(range[0])}–${fmtClock(range[1])}` : 'Whole recording'} added to “${name(target)}”.`
+                        : covered ? `“${name(target)}” already has the whole recording.` : `Already in “${name(target)}”.`,
                     bad: false,
                 };
-                if (n && range) this.#sel = null;
+                if (n && range && this.#sel?.[0] === range[0] && this.#sel?.[1] === range[1]) this.#sel = null;
+                await this.#loadMembers();
+                return;
             } else return;
         } catch (e) {
             this.#msg = { text: `Error: ${e instanceof Error ? e.message : e}`, bad: true };
@@ -313,7 +324,7 @@ export class ExpandedView {
         const rows: [string, string][] = [];
         if (d.sampleRate) rows.push(['Sample rate', `${(d.sampleRate / 1000).toLocaleString()} kHz${d.channels ? ` · ${d.channels} ch` : ''}`]);
         if (d.lat != null && d.lon != null) rows.push(['Position', `${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}${d.posOrigin ? ` (${d.posOrigin})` : ''}`]);
-        if (d.tz) rows.push(['Clock', d.tz]);
+        if (d.tz) rows.push(['Clock', esc(d.tz)]);
         if (d.tags.length) rows.push(['Tags', d.tags.map((t) => `<span class="lib-pill lib-pill--tag">${esc(t)}</span>`).join(' ')]);
         for (const [k, v] of d.meta) rows.push([k, esc(v)]);
         if (d.fullHash) rows.push(['SHA-256', `<code title="${esc(d.fullHash)}">${esc(d.fullHash.slice(0, 16))}…</code>`]);

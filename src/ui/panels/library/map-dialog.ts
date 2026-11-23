@@ -65,11 +65,17 @@ export class MapDialog {
         void this.#init();
     }
 
+    #disposed = false;
+    #resize: ResizeObserver | null = null;
+    #trackGen = 0;
+    #areaActive = false;
+
     async #init() {
         try { await loadLeaflet(); } catch (e) {
-            this.el.querySelector('[data-k="summary"]')!.textContent = `Map could not be loaded: ${e}`;
+            if (!this.#disposed) this.el.querySelector('[data-k="summary"]')!.textContent = `Map could not be loaded: ${e}`;
             return;
         }
+        if (this.#disposed) return;   // closed while Leaflet was loading
         const L = (window as any).L;
         const canvas = this.el.querySelector<HTMLElement>('.lib-map-canvas')!;
         this.#map = L.map(canvas, { zoomControl: true, preferCanvas: true }).setView([51, 10], 5);
@@ -79,7 +85,8 @@ export class MapDialog {
         this.#layers = { tracks: L.layerGroup().addTo(this.#map), cells: L.layerGroup().addTo(this.#map), sites: L.layerGroup().addTo(this.#map) };
         this.#map.on('zoomend', () => void this.#loadPoints());
         // The dialog may get its size after the map was created.
-        new ResizeObserver(() => this.#map?.invalidateSize()).observe(canvas);
+        this.#resize = new ResizeObserver(() => this.#map?.invalidateSize());
+        this.#resize.observe(canvas);
         await Promise.all([this.#loadPoints(), this.#loadTracks()]);
     }
 
@@ -88,7 +95,7 @@ export class MapDialog {
         const zoom = this.#map?.getZoom() ?? 5;
         let d: MapData;
         try { d = await catalogApi.map(this.#o.projectRoot, this.#o.filter, cellDegForZoom(zoom)); } catch (e) {
-            this.el.querySelector('[data-k="summary"]')!.textContent = `Error: ${e}`;
+            if (gen === this.#gen) this.el.querySelector('[data-k="summary"]')!.textContent = `Error: ${e}`;
             return;
         }
         if (gen !== this.#gen) return;
@@ -135,7 +142,11 @@ export class MapDialog {
 
     async #loadTracks() {
         const L = (window as any).L;
-        try { this.#tracks = await catalogApi.tracks(this.#o.projectRoot); } catch { this.#tracks = []; }
+        const gen = ++this.#trackGen;
+        let tracks: TrackInfo[];
+        try { tracks = await catalogApi.tracks(this.#o.projectRoot); } catch { tracks = []; }
+        if (gen !== this.#trackGen) return;   // a newer refresh (e.g. after a delete) owns the list
+        this.#tracks = tracks;
         this.#layers?.tracks.clearLayers();
         const host = this.el.querySelector<HTMLElement>('[data-k="tracks"]')!;
         host.innerHTML = this.#tracks.length ? `<table class="lib-table lib-table--compact"><tbody>${this.#tracks.map((t, i) => `
@@ -147,13 +158,15 @@ export class MapDialog {
         if (!L || !this.#layers) return;
         await Promise.all(this.#tracks.map(async (t, i) => {
             const line = await catalogApi.trackLine(this.#o.projectRoot, t.id).catch(() => []);
+            if (gen !== this.#trackGen || !this.#layers) return;
             if (line.length) L.polyline(line, { color: TRACK_COLORS[i % TRACK_COLORS.length], weight: 3, opacity: 0.8 }).addTo(this.#layers!.tracks).bindTooltip(esc(t.name));
         }));
     }
 
     #startArea() {
         const L = (window as any).L, map = this.#map;
-        if (!map) return;
+        if (!map || this.#areaActive) return;   // one rectangle gesture at a time
+        this.#areaActive = true;
         const btn = this.el.querySelector<HTMLElement>('[data-act="area"]')!;
         btn.textContent = 'Drag a rectangle…';
         map.dragging.disable();
@@ -163,6 +176,7 @@ export class MapDialog {
         const move = (e: any) => { if (start && rect) rect.setBounds([start, e.latlng]); };
         const up = (e: any) => {
             map.off('mousedown', down).off('mousemove', move).off('mouseup', up);
+            this.#areaActive = false;
             map.dragging.enable();
             map.getContainer().style.cursor = '';
             btn.textContent = 'Filter by area';
@@ -219,10 +233,16 @@ export class MapDialog {
     }
 
     async #zoomTrack(id: number) {
-        const L = (window as any).L;
+        const L = (window as any).L, map = this.#map;
         const line = await catalogApi.trackLine(this.#o.projectRoot, id).catch(() => []);
-        if (L && line.length) this.#map.fitBounds(L.latLngBounds(line).pad(0.1));
+        if (L && line.length && map && map === this.#map) map.fitBounds(L.latLngBounds(line).pad(0.1));   // not after close
     }
 
-    dispose() { this.#map?.remove(); this.#map = null; }
+    dispose() {
+        this.#disposed = true;
+        this.#resize?.disconnect();
+        this.#resize = null;
+        this.#map?.remove();
+        this.#map = null;
+    }
 }

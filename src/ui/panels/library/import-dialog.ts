@@ -50,6 +50,11 @@ export class ImportDialog {
     #profile: ProfileSpec = { ...emptyProfile('profile'), utcOffsetMin: -new Date().getTimezoneOffset() };
     #saved: ProfileSpec[] = [];
     #preview: Preview | null = null;
+    /** Folder and profile the preview was made for; Import needs a preview of the current ones. */
+    #previewFor = '';
+    #previewSeq = 0;
+    /** The user changed the form: a saved profile that finishes loading late does not replace it. */
+    #touched = false;
     #status = '';
     #busy = false;
     #importTables = true;
@@ -65,7 +70,7 @@ export class ImportDialog {
         this.el.addEventListener('change', (e) => this.#onInput(e));
         void catalogApi.profiles(o.projectRoot).then((p) => {
             this.#saved = p;
-            if (p[0]) this.#profile = structuredClone(p[0]);
+            if (p[0] && !this.#touched) this.#profile = structuredClone(p[0]);
             this.#render();
         }).catch(() => {});
         this.#render();
@@ -76,14 +81,25 @@ export class ImportDialog {
         this.#timer = setTimeout(() => void this.#runPreview(refresh), 350);
     }
 
+    #inputsKey(): string { return JSON.stringify([this.#source, this.#profile]); }
+    /** The preview shown belongs to the folder and profile in the form now. */
+    #previewCurrent(): boolean { return !!this.#preview && this.#previewFor === this.#inputsKey(); }
+
     async #runPreview(refresh: boolean) {
+        const seq = ++this.#previewSeq;
         if (!this.#source || !this.#profile.patterns.length) { this.#preview = null; this.#renderPreviewArea(); return; }
+        const key = this.#inputsKey();
+        const source = this.#source, profile = structuredClone(this.#profile);
         this.#status = refresh ? 'Scanning folder…' : 'Checking…';
-        this.#renderStatus();
+        this.#renderPreviewArea();   // Import is off until this preview is in
         try {
-            this.#preview = await catalogApi.preview(this.#source, this.#profile, refresh);
+            const pv = await catalogApi.preview(source, profile, refresh);
+            if (seq !== this.#previewSeq) return;   // a newer preview was started
+            this.#preview = pv;
+            this.#previewFor = key;
             this.#status = '';
         } catch (e) {
+            if (seq !== this.#previewSeq) return;
             this.#preview = null;
             this.#status = `Error: ${e}`;
         }
@@ -98,7 +114,9 @@ export class ImportDialog {
         if (act === 'pick') {
             const p = await pickFolder('Folder to import');
             if (!p) return;
+            this.#touched = true;
             this.#source = p;
+            this.#previewSeq++;   // a preview of the old folder still running is dropped
             this.#rootName = p.split(/[\\/]/).filter(Boolean).pop() || 'source';
             this.#status = 'Scanning folder…';
             this.#render();
@@ -119,12 +137,19 @@ export class ImportDialog {
         } else if (act === 'run-import') {
             await this.#import();
         } else if (act === 'use-suggestions') {
+            this.#touched = true;
             this.#profile = profileFromSuggestions(this.#profile, this.#suggestions);
             this.#render();
             await this.#runPreview(false);
         } else if (act === 'profile-export') {
             const name = this.#profile.name.replace(/[^\w.-]+/g, '_') || 'profile';
-            await saveFile(profileToFile(this.#profile), `${name}.signavis-profile.json`, 'application/json');
+            try {
+                const r = await saveFile(profileToFile(this.#profile), `${name}.signavis-profile.json`, 'application/json');
+                if (r) { this.#status = `Profile saved: ${r.target}`; this.#renderStatus(); }
+            } catch (err) {
+                this.#status = `Could not save the profile: ${(err as Error)?.message || err}`;
+                this.#renderStatus();
+            }
         } else if (act === 'profile-load') {
             const input = document.createElement('input');
             input.type = 'file';
@@ -133,6 +158,7 @@ export class ImportDialog {
                 const f = input.files?.[0];
                 if (!f) return;
                 try {
+                    this.#touched = true;
                     this.#profile = profileFromFile(await f.text());
                     this.#status = `Loaded profile “${this.#profile.name}”.`;
                     this.#render();
@@ -145,14 +171,21 @@ export class ImportDialog {
             input.click();
         } else if (act === 'add-pattern') {
             const ex = this.#preview?.unmatchedGroups[0]?.example;
-            this.#profile.patterns.push(ex ? ex.replace(/[^/]+$/, '{file}.wav') : '');
+            this.#touched = true;
+            const p = this.#profile;
+            p.patterns.push(ex ? ex.replace(/[^/]+$/, '{file}.wav') : '');
+            p.mappings = syncMappings(p.patterns.filter(Boolean), p.mappings);   // same path as editing the patterns
             this.#render();
+            this.#schedulePreview();
         }
     }
 
     #onInput(e: Event) {
         const t = e.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+        if (t.dataset.k) this.#touched = true;
         const p = this.#profile;
+        // Any change of folder or profile makes the shown preview stale: Import waits for a new one.
+        queueMicrotask(() => this.#renderPreviewArea());
         switch (t.dataset.k) {
             case 'patterns': {
                 const patterns = (t as HTMLTextAreaElement).value.split('\n').map((s) => s.trim()).filter(Boolean);
@@ -205,7 +238,7 @@ export class ImportDialog {
     }
 
     async #import() {
-        if (!this.#source || !this.#rootName) return;
+        if (!this.#source || !this.#rootName || !this.#previewCurrent()) return;
         this.#busy = true;
         this.#status = 'Importing…';
         this.#renderPreviewArea();
@@ -232,7 +265,7 @@ export class ImportDialog {
         const pv = this.el.querySelector('.lib-import-preview');
         if (pv) pv.innerHTML = this.#renderPreview();
         const btn = this.el.querySelector<HTMLButtonElement>('[data-act="run-import"]');
-        if (btn) btn.disabled = !(this.#source && this.#rootName && this.#preview && !this.#busy);
+        if (btn) btn.disabled = !(this.#source && this.#rootName && this.#previewCurrent() && !this.#busy);
         this.#renderStatus();
     }
 
@@ -291,7 +324,7 @@ export class ImportDialog {
 
     #render() {
         const p = this.#profile;
-        const canImport = !!(this.#source && this.#rootName && this.#preview && !this.#busy);
+        const canImport = !!(this.#source && this.#rootName && this.#previewCurrent() && !this.#busy);
         this.el.innerHTML = `
           <div class="lib-import-form">
             <label class="lib-field"><span>Folder</span>

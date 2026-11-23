@@ -157,12 +157,23 @@ export class EntitiesDialog {
         if (!ids.has(sel.value)) sel.value = [...ids][0] ?? '';
     }
 
+    /** Saves per site/recorder run one after the other, each built from the fields saved before it. */
+    #saving = new Map<string, Promise<void>>();
+
     async #onChange(e: Event) {
         const t = e.target as HTMLInputElement;
         if (t.dataset.k === 'pick') { this.#updateMergeBar(); return; }
         const f = t.dataset.f;
         if (!f) return;
         const tr = t.closest<HTMLElement>('tr')!;
+        const key = `${tr.dataset.site ?? ''}|${tr.dataset.device ?? ''}|${tr.dataset.deployment ?? ''}`;
+        const run = (this.#saving.get(key) ?? Promise.resolve()).then(() => this.#save(t, f, tr));
+        this.#saving.set(key, run);
+        await run;
+        if (this.#saving.get(key) === run) this.#saving.delete(key);
+    }
+
+    async #save(t: HTMLInputElement, f: string, tr: HTMLElement) {
         const root = this.#o.projectRoot;
         try {
             if (tr.dataset.site) {
@@ -185,11 +196,15 @@ export class EntitiesDialog {
                 await catalogApi.saveDevice(root, e.id, next);
                 e.fields = await catalogApi.deviceFields(root, e.id);
             } else if (tr.dataset.deployment) {
-                await catalogApi.setDeploymentNotes(root, Number(tr.dataset.deployment), t.value);
+                const id = Number(tr.dataset.deployment);
+                await catalogApi.setDeploymentNotes(root, id, t.value);
+                const dep = this.#deployments.find((x) => x.id === id);
+                if (dep) dep.notes = t.value;
             }
             t.classList.remove('is-invalid');
             this.#status('Saved');
-            if (f === 'name') this.#o.onChanged();
+            // Names show in the library; site coordinates give recordings without their own a position.
+            if (f === 'name' || (f === 'coords' && tr.dataset.site)) this.#o.onChanged();
         } catch (err) {
             t.classList.add('is-invalid');
             this.#status(String(err instanceof Error ? err.message : err), true);

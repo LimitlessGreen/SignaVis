@@ -61,7 +61,8 @@ export class StatsDialog {
                 const tip = c ? `${c.days} of 7 days, ${n(c.recordings)} recordings${c.seconds ? `, ${formatDuration(c.seconds)}` : ''}` : 'no recordings';
                 return `<td class="lib-cov" style="--cov:${days / 7}" data-site="${r.siteId ?? ''}" data-week="${m.weeks[i]}" title="${esc(tip)}">${days || ''}</td>`;
             }).join('')}</tr>`).join('')}</tbody></table>
-            <p class="lib-hint">Days with recordings per week (Monday to Sunday, local time). Click a cell to show it in the library.</p>` : '<p class="lib-hint">No recordings with a start time.</p>';
+            <p class="lib-hint">Days with recordings per week (Monday to Sunday, local time). Click a cell to show it in the library.${m.hiddenWeeks
+                ? ` Showing the last ${n(m.weeks.length)} weeks; ${n(m.hiddenWeeks)} earlier weeks are not shown (narrow the period to see them).` : ''}</p>` : '<p class="lib-hint">No recordings with a start time.</p>';
         const gaps = s.devices.filter((d) => d.missingDays.length);
         this.el.innerHTML = `
           ${this.#o.filtered ? '<p class="lib-hint">Statistics of the filtered recordings.</p>' : ''}

@@ -49,3 +49,9 @@ test('clockDuration', () => {
     assert.equal(clockDuration(3720), '1:02:00');
     assert.equal(clockDuration(null), '');
 });
+
+test('gridWindow: a scroll position past a smaller result keeps first ≤ last ≤ total', async () => {
+    const { gridWindow } = await import('../src/domain/catalog/thumb-grid.ts');
+    const w = gridWindow(400, 5, 10_000, 300, 100, 100);
+    assert.ok(w.first <= w.last && w.last <= 5, JSON.stringify(w));
+});

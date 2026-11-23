@@ -302,22 +302,29 @@ export function dayRanges(days: string[]): string[] {
 }
 
 /** Site × week matrix with every week from the first to the last (empty weeks stay visible). */
-export function coverageMatrix(stats: Pick<CatalogStats, 'sites' | 'weeks'>): {
-    weeks: string[]; rows: { siteId: number | null; name: string; cells: (WeekCell | null)[] }[];
+/**
+ * Site × week matrix with every week from the first to the last (empty weeks stay visible).
+ * At most `maxWeeks` columns: the most recent ones; `hiddenWeeks` says how many earlier weeks are left out.
+ */
+export function coverageMatrix(stats: Pick<CatalogStats, 'sites' | 'weeks'>, maxWeeks = 1000): {
+    weeks: string[]; hiddenWeeks: number; rows: { siteId: number | null; name: string; cells: (WeekCell | null)[] }[];
 } {
     const all = [...new Set(stats.weeks.map((w) => w.week))].sort();
-    const weeks: string[] = [];
+    let weeks: string[] = [];
     if (all.length) {
         const end = Date.parse(`${all[all.length - 1]}T00:00:00Z`);
-        for (let t = Date.parse(`${all[0]}T00:00:00Z`); t <= end && weeks.length < 1000; t += 7 * 86_400_000) {
+        for (let t = Date.parse(`${all[0]}T00:00:00Z`); t <= end; t += 7 * 86_400_000) {
             weeks.push(new Date(t).toISOString().slice(0, 10));
         }
     }
+    const hiddenWeeks = Math.max(0, weeks.length - maxWeeks);
+    if (hiddenWeeks) weeks = weeks.slice(hiddenWeeks);
+    const byKey = new Map(stats.weeks.map((c) => [`${c.siteId}|${c.week}`, c]));
     const rows = stats.sites.map(([siteId, name]) => ({
         siteId, name: name || '(no site)',
-        cells: weeks.map((w) => stats.weeks.find((c) => c.siteId === siteId && c.week === w) ?? null),
+        cells: weeks.map((w) => byKey.get(`${siteId}|${w}`) ?? null),
     })).filter((r) => r.siteId != null || r.cells.some(Boolean)); // recordings without site and time: nothing to show
-    return { weeks, rows };
+    return { weeks, hiddenWeeks, rows };
 }
 
 export function bulkReportText(r: BulkReport): string {
@@ -348,6 +355,11 @@ export function cellDegForZoom(zoom: number, px = 12): number {
 }
 
 /** Bounding box [south, west, north, east] as a short label. */
+/** A stored colour as CSS, or null: only #rgb/#rgba/#rrggbb/#rrggbbaa (it ends up in style attributes). */
+export function safeColor(c: unknown): string | null {
+    return typeof c === 'string' && /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(c.trim()) ? c.trim() : null;
+}
+
 export function bboxLabel(b: [number, number, number, number]): string {
     const f = (v: number) => v.toFixed(3);
     return `${f(b[0])}…${f(b[2])}° N, ${f(b[1])}…${f(b[3])}° E`;
@@ -407,17 +419,24 @@ export interface DatasetInfo {
 export interface DatasetEdit { name?: string; description?: string | null; color?: string | null; filter?: CatalogFilter }
 export interface Membership { datasetId: number; name: string; kind: 'static' | 'filter'; color: string | null; ranges: [number, number][] }
 
+/** Flags where false is the default (no restriction); for the others false is a choice (hasPosition: false = without). */
+const DEFAULT_FALSE = new Set(['unassigned', 'noStart']);
+
 /** Filter without empty parts, keys sorted: two filters that select the same thing compare equal. */
 export function normalizeFilter(f: CatalogFilter): CatalogFilter {
     const out: Record<string, unknown> = {};
     for (const k of Object.keys(f).sort()) {
         const v = (f as Record<string, unknown>)[k];
-        if (v == null || v === false || v === '' || (Array.isArray(v) && !v.length)) continue;
+        if (v == null || (v === false && DEFAULT_FALSE.has(k)) || v === '' || (Array.isArray(v) && !v.length)) continue;
         out[k] = Array.isArray(v) && k.endsWith('Ids') ? [...v].sort((a, b) => a - b) : v;
     }
     if (out.sun) {
         const w = out.sun as SunWindow;
         out.sun = { from: { event: w.from.event, offsetMin: w.from.offsetMin ?? 0 }, to: { event: w.to.event, offsetMin: w.to.offsetMin ?? 0 } };
+    }
+    if (out.detection) {
+        const d = out.detection as NonNullable<CatalogFilter['detection']>;
+        out.detection = { class: d.class, minScore: d.minScore, runId: d.runId ?? null };   // fixed field order
     }
     return out as CatalogFilter;
 }
@@ -458,9 +477,23 @@ export function parseClock(v: string): number | null {
     return parts.reduce((acc, p) => acc * 60 + p, 0);
 }
 /** Range from a drag over a spectrogram of `width` px showing `duration` s: ordered, clamped, 0.1 s steps; null if too short. */
+/**
+ * A typed range (seconds) as it will be stored, or null when it is not valid:
+ * 0 ≤ start < end ≤ duration. An end up to 0.05 s past the duration (a rounded
+ * display value) means the end of the recording.
+ */
+export function typedRange(a: number | null, b: number | null, duration: number | null | undefined): [number, number] | null {
+    if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) return null;
+    const d = duration != null && duration > 0 ? duration : Infinity;
+    if (b > d + 0.05) return null;
+    const end = Math.min(b, d);
+    return a >= 0 && a < end ? [a, end] : null;
+}
+
 export function rangeFromDrag(x0: number, x1: number, width: number, duration: number, minS = 0.2): [number, number] | null {
     if (!(width > 0) || !(duration > 0)) return null;
-    const at = (x: number) => Math.round(Math.min(duration, Math.max(0, (x / width) * duration)) * 10) / 10;
+    // Rounded to 0.1 s, then clamped again: rounding may not pass the end (60.06 s → 60.1).
+    const at = (x: number) => Math.min(duration, Math.round(Math.max(0, (x / width) * duration) * 10) / 10);
     const [a, b] = [at(Math.min(x0, x1)), at(Math.max(x0, x1))];
-    return b - a >= minS ? [a, b] : null;
+    return b - a >= minS - 1e-9 ? [a, b] : null;   // 15.2 − 15 is just below 0.2 in floating point
 }

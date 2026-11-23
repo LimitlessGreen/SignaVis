@@ -23,7 +23,7 @@ export function gridWindow(width: number, total: number, scrollTop: number, view
     const rows = Math.ceil(total / cols);
     const r0 = Math.max(0, Math.floor(scrollTop / tileH) - 1);
     const r1 = Math.min(rows, Math.ceil((scrollTop + viewH) / tileH) + 1);
-    return { cols, height: rows * tileH, first: r0 * cols, last: Math.min(total, r1 * cols) };
+    return { cols, height: rows * tileH, first: Math.min(total, r0 * cols), last: Math.min(total, r1 * cols) };
 }
 
 /** New current index after an arrow key (`cols` = 1 for the table). -1 = no change. */
