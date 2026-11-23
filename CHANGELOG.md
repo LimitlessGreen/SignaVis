@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.1] - Unreleased
+## [1.4.1] - 2026-11-23
 
 ### Changed
 - **Labels** look the same in spectrogram, waveform and phone viewer: frame
