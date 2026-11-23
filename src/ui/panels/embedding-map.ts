@@ -13,7 +13,7 @@
 // See plans/lite-embedding-map-plan.md.
 // ═══════════════════════════════════════════════════════════════════════
 
-import { contextFromFilename, resolveRecordingContext } from '../../app/recording-context.ts';
+import { contextFromFilename, filenameSeconds, resolveRecordingContext } from '../../app/recording-context.ts';
 
 export interface MapData {
     stamp: number; window: number; layoutPoints: number;
@@ -48,8 +48,8 @@ export interface EmbeddingMapOptions {
     openHit: (hit: MapWindow, play: boolean) => Promise<void> | void;
     /** HDBSCAN clusters (minSize null = automatic). */
     loadClusters: (minSize: number | null) => Promise<Clusters>;
-    /** Classifier scores of the current class, one per map point. */
-    loadScores: () => Promise<number[]>;
+    /** Classifier scores of the current class, one per map point, with the store revision they belong to. */
+    loadScores: () => Promise<{ stamp: number; scores: number[] }>;
     /** Labelled windows of the current class that look mislabelled. */
     loadSuspects: () => Promise<Suspect[]>;
     /** Project-side context of a recording (manual entries, XC metadata); wins over GUANO. */
@@ -100,11 +100,13 @@ export function seqColor(t: number): string {
  */
 export function windowTimes(files: string[], file: number[], start: number[]): { minute: Float64Array; day: Float64Array; known: number } {
     const fileStart = files.map((f) => {
-        const ctx = contextFromFilename(f.split('/').pop() || f);
+        const name = f.split('/').pop() || f;
+        const ctx = contextFromFilename(name);
         if (!ctx.date || !ctx.time) return null;
         const [y, m, d] = ctx.date.split('-').map(Number);
         const [hh, mm] = ctx.time.split(':').map(Number);
-        return { day: Date.UTC(y, m - 1, d) / 86_400_000, minute: hh * 60 + mm };
+        // seconds count: a window 2 s into "…_235959" already belongs to the next day
+        return { day: Date.UTC(y, m - 1, d) / 86_400_000, minute: hh * 60 + mm + filenameSeconds(name) / 60 };
     });
     const n = file.length;
     const minute = new Float64Array(n).fill(NaN), day = new Float64Array(n).fill(NaN);
@@ -175,6 +177,18 @@ export function rankFractions(v: ArrayLike<number>): Float64Array {
     return out;
 }
 
+/**
+ * Position of every value in ascending order (ties by index, NaN last), so a cut at k hides
+ * exactly k values even when many are equal.
+ */
+export function orderPositions(v: ArrayLike<number>): Int32Array {
+    const key = (i: number) => (Number.isFinite(v[i]) ? v[i] : Infinity);
+    const idx = Array.from({ length: v.length }, (_, i) => i).sort((a, b) => key(a) - key(b) || a - b);
+    const pos = new Int32Array(v.length);
+    idx.forEach((i, k) => { pos[i] = k; });
+    return pos;
+}
+
 /** Point-in-polygon (even-odd rule). */
 export function inPolygon(px: number, py: number, poly: [number, number][]): boolean {
     let inside = false;
@@ -208,6 +222,8 @@ export class EmbeddingMap {
     #scores: number[] | null = null;
     #scoresClass = '';
     #suspects: Suspect[] | null = null;
+    /** Class the label check ran for. */
+    #suspectsClass = '';
     #suspectPts = new Set<number>();
     #indexOf = new Map<string, number>();
     /** Paint layers: background first; one colour per layer, so a layer is one fill. */
@@ -221,6 +237,8 @@ export class EmbeddingMap {
     #filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity, hideCall: 0 };
     /** Call score of every window as rank fraction 0..1 (null: store without scores). */
     #callRank: Float64Array | null = null;
+    /** Position of every window by call score (ties broken by index), for the filter cut. */
+    #callPos: Int32Array | null = null;
     /** Colour group of unknown sites (grey), −1 when there is none. */
     #unknownGroup = -1;
     /** 1 = filtered out (not drawn, not pickable, not selectable). */
@@ -331,6 +349,10 @@ export class EmbeddingMap {
     /** Labels or class changed elsewhere (panel) → repaint. */
     refresh() {
         if (!this.el.isConnected) return;
+        if (this.#suspects && this.#suspectsClass !== this.#opts.getClass()) {
+            this.#suspects = null;
+            this.#suspectPts.clear();
+        }
         if (this.#colorBy === 'score' && this.#scoresClass !== this.#opts.getClass()) {
             this.#setColor('score');
             return;
@@ -370,8 +392,11 @@ export class EmbeddingMap {
         }
         if (c === 'cluster' && !this.#clusters) {
             this.#setStatus('Clustering…');
-            this.#clusters = await this.#opts.loadClusters(this.#minSize);
-            const k = this.#clusters;
+            const size = this.#minSize, data = this.#data;
+            const k = await this.#opts.loadClusters(size);
+            // a newer request (other min size, new map) owns the result
+            if (size !== this.#minSize || data !== this.#data) return;
+            this.#clusters = k;
             this.#setStatus(`${k.clusters.length} clusters (min size ${k.minClusterSize}), ${k.noise.toLocaleString()} windows unassigned`);
         }
         if (c === 'score') {
@@ -379,7 +404,13 @@ export class EmbeddingMap {
             if (!cls) throw new Error('Choose and train a class in the Similar panel first.');
             if (!this.#scores || this.#scoresClass !== cls) {
                 this.#setStatus('Scoring…');
-                this.#scores = await this.#opts.loadScores();
+                const data = this.#data;
+                const r = await this.#opts.loadScores();
+                if (data !== this.#data || cls !== this.#opts.getClass()) return;
+                if (r.stamp !== data.stamp || r.scores.length !== data.x.length) {
+                    throw new Error('The embeddings changed since the map was computed: reopen the map to colour by score.');
+                }
+                this.#scores = r.scores;
                 this.#scoresClass = cls;
                 this.#setStatus(`Classifier scores for “${cls}”`);
             }
@@ -412,6 +443,7 @@ export class EmbeddingMap {
         if (lv) for (const v of lv) if (v > -120) { l0 = Math.min(l0, v); l1 = Math.max(l1, v); }
         this.#levelRange = [Math.floor(l0), Math.ceil(l1)];
         this.#callRank = d.score?.length === d.x.length && d.x.length ? rankFractions(d.score) : null;
+        this.#callPos = this.#callRank ? orderPositions(d.score!) : null;
         if (!this.#callRank && this.#colorBy === 'call') this.#colorBy = 'folder';
         this.#filter = { h0: 0, h1: 24, d0: '', d1: '', minLevel: -Infinity, hideCall: 0 };
         if (!this.#times.known && (this.#colorBy === 'time' || this.#colorBy === 'date')) this.#colorBy = 'folder';
@@ -483,8 +515,8 @@ export class EmbeddingMap {
         const [lo, hi] = [isoToDay(f.d0), isoToDay(f.d1)];
         const byDate = t?.known && ((Number.isFinite(lo) && lo > this.#dayRange[0]) || (Number.isFinite(hi) && hi < this.#dayRange[1]));
         const lv = d.level?.length === n && Number.isFinite(f.minLevel) ? d.level : null;
-        const cr = f.hideCall > 0 ? this.#callRank : null;
-        const minRank = f.hideCall / 100;
+        const cp = f.hideCall > 0 ? this.#callPos : null;
+        const cut = Math.floor((f.hideCall / 100) * n);
         let shown = 0;
         for (let i = 0; i < n; i++) {
             let h = 0;
@@ -495,12 +527,16 @@ export class EmbeddingMap {
                 else if (byDate && ((Number.isFinite(lo) && day < lo) || (Number.isFinite(hi) && day > hi))) h = 1;
             }
             if (!h && lv && lv[i] < f.minLevel) h = 1;
-            if (!h && cr && cr[i] < minRank) h = 1;
+            if (!h && cp && cp[i] < cut) h = 1;
             hidden[i] = h;
             if (!h) shown++;
         }
         this.#hidden = hidden;
         for (const i of [...this.#sel]) if (hidden[i]) this.#sel.delete(i);
+        if (this.#hover >= 0 && hidden[this.#hover]) {
+            this.#hover = -1;
+            this.#tip.hidden = true;
+        }
         this.#renderSel();
         const lab = this.el.querySelector('.emap-shown');
         if (lab) lab.textContent = shown === n ? `${n.toLocaleString()} windows` : `${shown.toLocaleString()} of ${n.toLocaleString()} shown`;
@@ -765,6 +801,7 @@ export class EmbeddingMap {
         g.strokeStyle = SUSPECT;
         g.lineWidth = 2;
         for (const i of this.#suspectPts) {
+            if (hidden?.[i]) continue;
             const [sx, sy] = this.#toScreen(d.x[i], d.y[i]);
             g.beginPath();
             g.arc(sx, sy, r + 3, 0, Math.PI * 2);
@@ -776,7 +813,7 @@ export class EmbeddingMap {
         g.beginPath();
         for (const i of this.#sel) g.rect(d.x[i] * k + ox - r, d.y[i] * k + oy - r, r * 2, r * 2);
         g.stroke();
-        if (this.#hover >= 0) {
+        if (this.#hover >= 0 && !hidden?.[this.#hover]) {
             const [sx, sy] = this.#toScreen(d.x[this.#hover], d.y[this.#hover]);
             g.beginPath();
             g.arc(sx, sy, r + 4, 0, Math.PI * 2);
@@ -963,6 +1000,10 @@ export class EmbeddingMap {
             case 'suspects': this.#checkLabels(); break;
             case 'show': {
                 const i = Number(btn.dataset.i);
+                if (this.#hidden[i]) {
+                    this.#setStatus('This window is hidden by the filters.');
+                    break;
+                }
                 this.#fitTo([i]);
                 this.#sel = new Set([i]);
                 this.#renderSel();
@@ -993,8 +1034,12 @@ export class EmbeddingMap {
             return;
         }
         this.#setStatus('Checking labels…');
+        const cls = this.#opts.getClass();
         try {
-            this.#suspects = await this.#opts.loadSuspects();
+            const res = await this.#opts.loadSuspects();
+            if (cls !== this.#opts.getClass()) return;   // class switched meanwhile
+            this.#suspects = res;
+            this.#suspectsClass = cls;
             this.#suspectPts = new Set(this.#suspects.map((x) => this.#pointOf(x.path, x.start)).filter((i) => i >= 0));
             this.#setStatus(`${this.#suspects.length} label${this.#suspects.length === 1 ? '' : 's'} to double-check`);
         } catch (e) {
@@ -1074,12 +1119,12 @@ export class EmbeddingMap {
                 x.score != null ? `score ${x.score.toFixed(2)}` : ''].filter(Boolean).join(' · ');
             return `<li class="sim-hit">
                 ${i >= 0 ? `<button class="sim-play" data-act="play" data-i="${i}" type="button" title="Play">▶</button>` : ''}
-                <button class="sim-open" ${i >= 0 ? `data-act="show" data-i="${i}"` : 'disabled'} type="button" title="${esc(x.path)} — show on the map">
+                <button class="sim-open" ${i >= 0 && !this.#hidden[i] ? `data-act="show" data-i="${i}"` : 'disabled'} type="button" title="${esc(x.path)} — ${i >= 0 && this.#hidden[i] ? 'hidden by the filters' : 'show on the map'}">
                     <span class="sim-file">${esc(x.path.split('/').pop() || x.path)}</span><span class="sim-time">${fmtTime(x.start)}</span></button>
                 <span class="sim-lbl ${x.label} on">${x.label === 'pos' ? '✓' : '✗'}</span>
                 <div class="field-hint emap-why">${why}</div></li>`;
         }).join('');
-        return `<div class="emap-side-sec"><div class="emap-card-head"><b>Label check “${esc(this.#opts.getClass())}”</b><span class="emap-spacer"></span>
+        return `<div class="emap-side-sec"><div class="emap-card-head"><b>Label check “${esc(this.#suspectsClass)}”</b><span class="emap-spacer"></span>
                 <button class="sim-icon-btn" data-act="side-close" type="button" title="Hide">×</button></div>
             <p class="field-hint">${list.length ? 'Labelled windows whose nearest labelled neighbours mostly carry the other label, or that the classifier scores very differently. Select one and relabel in the top bar.' : 'No conflicting labels found.'}</p>
             <ol class="sim-list">${rows}</ol></div>`;

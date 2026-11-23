@@ -97,9 +97,11 @@ export function contextFromGuano(g: Record<string, string> | null | undefined): 
 }
 
 /** Date/time encoded in file names such as AudioMoth "20240512_053000.WAV" or "SM4_20240512_053000". */
+const FILENAME_STAMP = /(?:^|\D)(\d{4})-?(\d{2})-?(\d{2})[_T\s-]?(\d{2})[-:]?(\d{2})(?:[-:]?(\d{2}))?(?!\d)/;
+
 export function contextFromFilename(name: any): ContextValues {
     const s = str(name);
-    const m = s.match(/(?:^|\D)(\d{4})-?(\d{2})-?(\d{2})[_T\s-]?(\d{2})[-:]?(\d{2})(?:[-:]?(\d{2}))?(?!\d)/);
+    const m = s.match(FILENAME_STAMP);
     if (!m) {
         const d = s.match(/(?:^|\D)(\d{4})-?(\d{2})-?(\d{2})(?!\d)/);
         return d ? { date: normDate(`${d[1]}-${d[2]}-${d[3]}`) } : {};
@@ -107,6 +109,13 @@ export function contextFromFilename(name: any): ContextValues {
     const date = normDate(`${m[1]}-${m[2]}-${m[3]}`);
     if (!date || +m[1] < 1990) return {};
     return { date, time: normTime(`${m[4]}:${m[5]}`) };
+}
+
+/** Seconds of the start time in a file name ("…_235959" → 59); 0 when the name has none or only minutes. */
+export function filenameSeconds(name: any): number {
+    const m = str(name).match(FILENAME_STAMP);
+    const sec = m?.[6] ? +m[6] : 0;
+    return sec < 60 ? sec : 0;
 }
 
 /**

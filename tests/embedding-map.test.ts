@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inHours, inPolygon, rankFractions, scoreColor, seqColor, siteKey, timeColor, topShares, windowTimes } from '../src/ui/panels/embedding-map.ts';
+import { inHours, inPolygon, orderPositions, rankFractions, scoreColor, seqColor, siteKey, timeColor, topShares, windowTimes } from '../src/ui/panels/embedding-map.ts';
+import { filenameSeconds } from '../src/app/recording-context.ts';
 
 test('inPolygon: square and concave lasso', () => {
     const sq: [number, number][] = [[0, 0], [10, 0], [10, 10], [0, 10]];
@@ -36,7 +37,8 @@ test('windowTimes: start from the file name plus the window offset, across midni
     // +300 s → 00:03 next day
     assert.equal(t.minute[1], 3);
     assert.equal(t.day[1], day('2016-11-22'));
-    assert.equal(t.minute[2], 6 * 60 + 50 + 10 / 60);
+    // 06:50:01 in the name + 10 s offset
+    assert.ok(Math.abs(t.minute[2] - (6 * 60 + 50 + 11 / 60)) < 1e-9);
     assert.ok(Number.isNaN(t.minute[3]) && Number.isNaN(t.day[3]));
 });
 
@@ -73,4 +75,27 @@ test('rankFractions: ranks as 0..1, ties share a rank, NaN kept', () => {
     assert.ok(Number.isNaN(r[0]));
     assert.deepEqual([r[1], r[2]], [0, 1]);
     assert.deepEqual([...rankFractions([])], []);
+});
+
+test('windowTimes: seconds in the file name count (crossing midnight)', () => {
+    const t = windowTimes(['20240512_235959.wav', '20240512_2359.wav'], [0, 0, 1], [0, 2, 2]);
+    assert.equal(t.day[0], Date.UTC(2024, 4, 12) / 86_400_000);
+    assert.equal(t.day[1], Date.UTC(2024, 4, 13) / 86_400_000, '23:59:59 + 2 s is the next day');
+    assert.ok(Math.abs(t.minute[1] - 1 / 60) < 1e-9);
+    assert.equal(t.day[2], Date.UTC(2024, 4, 12) / 86_400_000, 'minute-only names still work');
+});
+
+test('filenameSeconds: seconds of the stamp, 0 without', () => {
+    assert.equal(filenameSeconds('20240512_235959.WAV'), 59);
+    assert.equal(filenameSeconds('20240512_2359.wav'), 0);
+    assert.equal(filenameSeconds('rec.wav'), 0);
+});
+
+test('orderPositions: ties broken by index, so a cut hides exactly k', () => {
+    const v = [3, 3, 3, 3, 1, NaN];
+    const pos = orderPositions(v);
+    assert.deepEqual([...pos], [1, 2, 3, 4, 0, 5]);
+    const hidden = (k: number) => [...pos].filter((p) => p < k).length;
+    assert.equal(hidden(2), 2, 'not every tied window');
+    assert.equal(hidden(0), 0);
 });

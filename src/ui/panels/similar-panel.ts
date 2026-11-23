@@ -259,7 +259,7 @@ export class SimilarPanel {
             },
             openHit: (hit, play) => this.#opts.openHit(hit, play),
             loadClusters: (minSize) => this.#call<Clusters>('embed_clusters', { root: this.#opts.getRoot(), minClusterSize: minSize }),
-            loadScores: async () => (await this.#call<{ scores: number[] }>('agile_scores', { root: this.#opts.getRoot(), class: this.#cls })).scores,
+            loadScores: () => this.#call<{ stamp: number; scores: number[] }>('agile_scores', { root: this.#opts.getRoot(), class: this.#cls }),
             loadSuspects: () => this.#call<Suspect[]>('agile_suspects', { root: this.#opts.getRoot(), class: this.#cls }),
             contextOf: (path) => this.#opts.contextOf?.(path) ?? null,
         });
