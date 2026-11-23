@@ -2,9 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.4.1] - Unreleased
+
+### Changed
+- **Labels** look the same in spectrogram, waveform and phone viewer: frame
+  only, no fill; name, buttons and dimensions outside the box. Colour shows
+  the species or set, the stroke shows the origin (own, detector, similar
+  call, imported), the weight shows the state (hover, playing, selected).
+- **Frequency axis**: Audacity-style ruler with as many labels as the axis
+  height allows, round values on mel/log axes, minor ticks, `kHz` once at
+  the top; finer steps when zoomed into a frequency range.
+- **Adopting a detection** (✓) converts it into a label instead of copying
+  it, so an adopted call no longer shows twice; deleting the label or undo
+  brings the detection back. Labels without frequency bounds (BirdNET
+  windows) can be fitted to the call.
 
 ### Fixed
+- Accept/reject buttons are back on lane strips and stay in view on strips
+  that run past the right edge.
 - The on-disk spectrogram cache of long recordings (OPFS, about 60 MB per
   minute of audio) no longer grows without bound: whenever a recording is
   opened, the least recently used stores are removed until all together fit
