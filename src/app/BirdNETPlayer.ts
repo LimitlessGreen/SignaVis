@@ -751,6 +751,7 @@ export class BirdNETPlayer {
 
     /** Tear down the player and free resources */
     destroy() {
+        this._liveStartToken++;
         this._liveRecorder?.cancel();
         this._liveView?.detach();
         for (const teardown of this._featureTeardowns.splice(0).reverse()) {
@@ -1036,6 +1037,8 @@ export class BirdNETPlayer {
     _liveRecorder: LiveRecorder | null = null;
     _liveView: LiveSpectrogramView | null = null;
     _liveLoading = false;
+    /** Bumped by cancel/stop/destroy: a start still loading the recorder modules gives up. */
+    _liveStartToken = 0;
 
     /** True when this browser can record from a microphone. */
     static get recordingSupported(): boolean { return liveRecordingSupported(); }
@@ -1056,6 +1059,7 @@ export class BirdNETPlayer {
         this.pause();
         // Loaded on first use: hosts that never record don't download the recorder.
         this._liveLoading = true;
+        const token = ++this._liveStartToken;
         let LiveRecorder: typeof import('../infrastructure/audio/LiveRecorder.ts').LiveRecorder;
         let LiveSpectrogramView: typeof import('../ui/components/live-view/live-spectrogram-view.ts').LiveSpectrogramView;
         try {
@@ -1066,6 +1070,8 @@ export class BirdNETPlayer {
         } finally {
             this._liveLoading = false;
         }
+        // Cancelled (or stopped, destroyed) while the modules loaded: never open the microphone.
+        if (token !== this._liveStartToken) { this._emit('recordingstop', { reason: 'user' }); return; }
         const rec = new LiveRecorder(opts);
         this._liveRecorder = rec;
         const host = (s.d.spectrogramContainer && s._showSpectrogram ? s.d.spectrogramContainer : this.container) as HTMLElement;
@@ -1101,11 +1107,15 @@ export class BirdNETPlayer {
 
     /** Stops the recording; resolves with it (null when nothing was recorded or none was running). */
     async stopRecording(): Promise<LiveRecording | null> {
+        if (this._liveLoading) this._liveStartToken++;
         return this._liveRecorder ? this._liveRecorder.stop('user') : null;
     }
 
     /** Stops the recording and throws it away. */
-    cancelRecording(): void { this._liveRecorder?.cancel(); }
+    cancelRecording(): void {
+        if (this._liveLoading) this._liveStartToken++;
+        this._liveRecorder?.cancel();
+    }
 
     /** Overview strip below the player: 'waveform' or a whole-file 'spectrogram'. */
     /** Show both analysis views, or only the waveform or the spectrogram. A hidden spectrogram is not computed. */
@@ -1130,7 +1140,13 @@ export class BirdNETPlayer {
     use(feature: PlayerFeature): this {
         if (this._features.has(feature.name)) return this;
         this._features.add(feature.name);
-        const teardown = feature.install(this);
+        let teardown;
+        try {
+            teardown = feature.install(this);
+        } catch (err) {
+            this._features.delete(feature.name);   // not installed: a later use() may retry
+            throw err;
+        }
         if (typeof teardown === 'function') this._featureTeardowns.push(teardown);
         return this;
     }

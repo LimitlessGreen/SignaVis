@@ -9,7 +9,8 @@ function bare() {
     Object.assign(p, {
         _liveRecorder: null, _liveView: null, _liveLoading: false,
         _state: { d: {}, _showSpectrogram: false }, container: {},
-        pause() {}, _emit() {},
+        _liveStartToken: 0, emitted: [],
+        pause() {}, _emit(name, detail) { this.emitted.push([name, detail]); },
     });
     return p;
 }
@@ -25,3 +26,14 @@ test('second startRecording while the recorder loads is refused', async () => {
     await first;
     assert.equal(p._liveLoading, false);
 });
+
+for (const how of ['cancelRecording', 'stopRecording']) {
+    test(`${how} while the recorder loads: no recorder, no microphone, 'recordingstop'`, async () => {
+        const p = bare();
+        const started = p.startRecording();
+        p[how]();
+        await started;                                    // resolves: the start gave up before new LiveRecorder()
+        assert.equal(p._liveRecorder, null);
+        assert.deepEqual(p.emitted, [['recordingstop', { reason: 'user' }]]);
+    });
+}
