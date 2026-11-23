@@ -17,6 +17,7 @@ import {
 } from './pkg/aw_dsp_wasm.js';
 import { WASM_PYRAMID_BLOCK_FRAMES, wasmComputeBlockFrames } from '../../shared/constants.ts';
 import { bandFloorSampled } from './bandFloorSampled.ts';
+import { pruneTileStores, markStoreUsed, TILE_CACHE_DEFAULT_MAX_BYTES } from '../storage/tileStoreLru.ts';
 
 const PREVIEW_STAT_SAMPLES = 12;   // windows sampled for provisional contrast stats
 const PREVIEW_STAT_FRAMES = 128;   // frames per window
@@ -143,8 +144,10 @@ function startCoordinator(ports: MessagePort[]) {
         try {
             if (msg.type === 'previewOpen') {
                 closeStore();
-                const cached = await tryOpenCached(msg.key, FORMAT_VERSION);
+                if (cacheLimit(msg) <= 0) await afterOpen(null, 0); // cache off: drop existing stores too
+                const cached = cacheLimit(msg) > 0 ? await tryOpenCached(msg.key, FORMAT_VERSION) : null;
                 if (cached) {
+                    await afterOpen(msg.key, cacheLimit(msg));
                     store = cached;
                     ctx.postMessage({ type: 'opened', requestId: msg.requestId, meta: cached.meta, fromCache: true });
                 } else {
@@ -175,13 +178,14 @@ function startCoordinator(ports: MessagePort[]) {
                 closeStore();
                 let r;
                 try {
-                    r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? WASM_PYRAMID_BLOCK_FRAMES);
+                    r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? WASM_PYRAMID_BLOCK_FRAMES, cacheLimit(msg) <= 0);
                 } catch (err: any) {
                     // OPFS full (long recordings, small quota): build the pyramid in worker memory instead.
                     if (err?.name !== 'QuotaExceededError' || cancelled) throw err;
                     console.warn('[wasm-spectrogram] OPFS quota exceeded, keeping the pyramid in memory', err);
                     r = await open(msg.file, msg.params, msg.key, msg.blockFrames ?? WASM_PYRAMID_BLOCK_FRAMES, true);
                 }
+                await afterOpen(r.persistent ? msg.key : null, cacheLimit(msg));
                 ctx.postMessage({ type: 'opened', requestId: msg.requestId, meta: r.meta, fromCache: r.fromCache, persistent: r.persistent });
             } else if (msg.type === 'compute') {
                 const r = computeAll(msg.samples as Float32Array, msg.sampleRate, msg.params);
@@ -230,6 +234,24 @@ function startCoordinator(ports: MessagePort[]) {
         const bytes = new Uint8Array(await p.file.slice(p.wav.dataOffset + first * align, p.wav.dataOffset + end * align).arrayBuffer());
         const samples = wavChannel0(bytes, p.wav.channels, p.wav.bitsPerSample, p.wav.float);
         return computeBlock(p.paramsJson, samples, { first, f0: a, n: b - a, total: p.total });
+    }
+
+    /** Byte cap for all stores; 0 disables the disk cache. */
+    function cacheLimit(msg: any): number {
+        const v = msg.cacheMaxBytes;
+        return typeof v === 'number' && v >= 0 ? v : TILE_CACHE_DEFAULT_MAX_BYTES;
+    }
+
+    /** Stamp the store just opened (if any) and trim the others to the cap. */
+    async function afterOpen(key: string | null, maxBytes: number) {
+        if (!opfsAvailable()) return;
+        try {
+            const base = await (await navigator.storage.getDirectory()).getDirectoryHandle(STORE_ROOT, { create: true });
+            if (key) await markStoreUsed(await base.getDirectoryHandle(key));
+            await pruneTileStores(base, maxBytes, new Set(key ? [key] : []));
+        } catch (err) {
+            console.warn('[wasm-spectrogram] trimming the tile cache failed', err);
+        }
     }
 
     async function storeDir(key: string, create: boolean) {

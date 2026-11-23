@@ -174,6 +174,7 @@ export class BirdNETPlayer {
      * @param {'default'|'hero'} [options.transportStyle] - transport button style (default: default)
      * @param {number}      [options.spectrogramHeight] - initial spectrogram height in px (default: 2× waveform height)
      * @param {boolean}     [options.keyboardShortcuts] - react to document-level keyboard shortcuts (default: true)
+     * @param {number}      [options.spectrogramCacheMaxBytes] - cap for the spectrogram cache of long recordings in OPFS, all recordings together (default: 1 GiB); 0 keeps it in memory only
      * @param {string}      [options.defaultPreset] - built-in DSP preset of a fresh player without favourite or saved settings, e.g. 'classicSmall' (default: classic)
      * @param {boolean}     [options.transportOverlay] - centered play overlay without toolbar height (default: false)
      * @param {boolean}     [options.showWaveformTimeline] - show bottom waveform timeline (default: true)

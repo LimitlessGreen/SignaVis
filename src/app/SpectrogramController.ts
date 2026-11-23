@@ -254,6 +254,8 @@ export class SpectrogramController extends EventTarget {
     private _generateSeq = 0;
     /** Owner token for this player's PCM cache files (holds no reference to the player). */
     private readonly _pcmOwner = {};
+    /** Byte cap for the OPFS pyramid cache (player option `spectrogramCacheMaxBytes`); undefined = default. */
+    cacheMaxBytes: number | undefined;
 
     async generate({ autoAdjust = false } = {}) {
         if (!this._audioBuffer) return;
@@ -331,6 +333,7 @@ export class SpectrogramController extends EventTarget {
                 source:       direct && isWavFile(file) ? undefined : await pcmWavSource(selectedSamples(audioBuffer), audioBuffer.sampleRate, undefined, undefined, this._pcmOwner, seq),
                 sourceTag:    audioBuffer.numberOfChannels > 1
                     ? channelSelectionKey(effectiveSelection(getChannelSelection(), audioBuffer.numberOfChannels)) : undefined,
+                cacheMaxBytes: this.cacheMaxBytes,
                 wasmParams:   v2Params,
                 duration:     this._audioBuffer!.duration,
                 colorOptions: this._getCurrentColorOptions(),

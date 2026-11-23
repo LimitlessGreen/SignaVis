@@ -239,6 +239,8 @@ export class WasmTileManager extends EventTarget {
         source?: Blob;
         /** Distinguishes PCM renderings of the same file in the cache key (channel selection). */
         sourceTag?: string;
+        /** Byte cap for the OPFS pyramid cache of all recordings; 0 = no disk cache. Default 1 GiB. */
+        cacheMaxBytes?: number;
         /** Local file path (desktop app). */
         nativePath?: string | null;
         wasmParams: StftParamsV2;
@@ -249,7 +251,7 @@ export class WasmTileManager extends EventTarget {
         const { WasmSpectrogramService } = await import('../infrastructure/wasm-dsp/WasmSpectrogramService.ts');
         const preview = await WasmSpectrogramService.create(1);
         try {
-            const initial = await preview.openPreview(params.file, params.wasmParams, params.source, params.sourceTag);
+            const initial = await preview.openPreview(params.file, params.wasmParams, params.source, params.sourceTag, params.cacheMaxBytes);
             const manager = new WasmTileManager(preview, initial.meta, initial.fromCache, params.duration, params.colorOptions);
             if (!initial.fromCache) {
                 manager.previewMode = true;
@@ -263,7 +265,7 @@ export class WasmTileManager extends EventTarget {
     }
 
     private async openFull(params: {
-        file: File; source?: Blob; sourceTag?: string; nativePath?: string | null; wasmParams: StftParamsV2;
+        file: File; source?: Blob; sourceTag?: string; cacheMaxBytes?: number; nativePath?: string | null; wasmParams: StftParamsV2;
         onProgress?: (fraction: number) => void;
     }, WasmService: typeof import('../infrastructure/wasm-dsp/WasmSpectrogramService.ts').WasmSpectrogramService):
         Promise<{ svc: PyramidSource; meta: PyramidMeta; fromCache: boolean }> {
@@ -287,7 +289,7 @@ export class WasmTileManager extends EventTarget {
         this.buildingService = svc;
         try {
             const { meta, fromCache } = await svc.open(params.file, params.wasmParams,
-                (f) => params.onProgress?.(f), params.source, params.sourceTag);
+                (f) => params.onProgress?.(f), params.source, params.sourceTag, params.cacheMaxBytes);
             return { svc, meta, fromCache };
         } catch (err) {
             svc.dispose();

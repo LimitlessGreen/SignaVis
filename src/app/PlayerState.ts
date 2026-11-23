@@ -273,6 +273,8 @@ export class PlayerState {
 
         // ── Spectrogram pipeline (data + rendering) ──
         this._spectro = new SpectrogramController(this.d);
+        const cacheMax = this.options.spectrogramCacheMaxBytes;
+        if (typeof cacheMax === 'number' && cacheMax >= 0) this._spectro.cacheMaxBytes = cacheMax;
         this._spectro.addEventListener('transportstatechange', (e: CustomEvent<any>) => {
             const { state, reason } = e.detail;
             this._setTransportState(state, reason);
