@@ -62,7 +62,10 @@ export interface LibraryViewOptions {
     projectRoot: string;
     /** Open a recording (absolute path) in the editor. */
     openRecording: (path: string, row: CatalogRow) => Promise<void> | void;
-    onClose: () => void;
+    /** Overlay only: the user closed the library. */
+    onClose?: () => void;
+    /** Placed in a panel (Lite spaces) instead of covering the window: no close button, Esc does not close. */
+    embedded?: boolean;
 }
 
 export class LibraryView {
@@ -127,7 +130,7 @@ export class LibraryView {
     constructor(o: LibraryViewOptions) {
         this.#o = o;
         this.el = document.createElement('div');
-        this.el.className = 'lib-overlay';
+        this.el.className = o.embedded ? 'lib-overlay lib-embedded' : 'lib-overlay';
         this.el.tabIndex = -1;
         this.el.innerHTML = `
           <header class="lib-head">
@@ -143,7 +146,7 @@ export class LibraryView {
             <button class="btn btn--sm btn--ghost" data-act="open-map" title="Sites, recordings with their own position (mobile, GPS), GPS tracks; filter by area">Map…</button>
             <button class="btn btn--sm btn--ghost" data-act="open-stats" title="Coverage per site and week, recorder gaps, files, labels, detections">Statistics…</button>
             <button class="btn btn--sm" data-act="open-import">Import folder…</button>
-            <button class="btn btn--sm btn--ghost" data-act="close" title="Close (Esc)">✕</button>
+            ${o.embedded ? '' : '<button class="btn btn--sm btn--ghost" data-act="close" title="Close (Esc)">✕</button>'}
           </header>
           <div class="lib-body">
             <aside class="lib-facets"></aside>
@@ -862,7 +865,7 @@ export class LibraryView {
             return;
         }
         const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
-        if (act === 'close') this.#o.onClose();
+        if (act === 'close') this.#o.onClose?.();
         else if (act === 'tile-hz') this.#setTile({ maxHz: Number(t.closest<HTMLElement>('[data-v]')!.dataset.v) });
         else if (act === 'field-show') {
             const f = t.closest<HTMLElement>('[data-f]')!.dataset.f as 'site' | 'device';
@@ -957,7 +960,7 @@ export class LibraryView {
         if ((e.target as HTMLElement).closest('input, textarea, select')) return;
         if (this.#expand.onKey(e)) return;
         if (e.key === 'Escape') {
-            if (!this.el.querySelector<HTMLElement>('.lib-import-host')!.hidden) this.#hideImport(); else this.#o.onClose();
+            if (!this.el.querySelector<HTMLElement>('.lib-import-host')!.hidden) this.#hideImport(); else this.#o.onClose?.();
         } else if (e.key.startsWith('Arrow')) {
             const j = moveIndex(this.#selected, e.key, this.#cols, this.#rows.length);
             if (j < 0) return;

@@ -115,6 +115,11 @@ export class NativeProjectStore implements IProjectStore {
 
     async writeAudio(path: string, data: ArrayBuffer) { await this.#write(path, data); }
     async writeText(path: string, text: string) { await this.#write(path, text); }
+    /** Text of a small project file (e.g. .signavis/spaces.json), null when it does not exist. */
+    async readText(path: string): Promise<string | null> {
+        const bytes = await this.#read(path);
+        return bytes ? new TextDecoder().decode(bytes) : null;
+    }
 }
 
 /** The Lite default project: <app data>/projects/default. */

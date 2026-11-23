@@ -54,6 +54,7 @@
   },
   "dependencies": {
     "@photostructure/tz-lookup": "^11.8.0",
+    "dockview-core": "8.9.1",
     "jsoneditor": "^10.4.3",
     "onnxruntime-web": "1.31.1"
   },

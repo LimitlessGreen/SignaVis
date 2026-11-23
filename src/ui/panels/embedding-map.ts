@@ -54,6 +54,14 @@ export interface EmbeddingMapOptions {
     loadSuspects: () => Promise<Suspect[]>;
     /** Project-side context of a recording (manual entries, XC metadata); wins over GUANO. */
     contextOf?: (path: string) => { manual?: unknown; xc?: unknown } | null;
+    /** Lite spaces: the map lives in a panel instead of covering the window (no Close, Esc does not close). */
+    host?: EmbeddingMapHost;
+}
+export interface EmbeddingMapHost {
+    /** Put the map element into its panel (called once). */
+    mount: (el: HTMLElement) => void;
+    /** Bring the panel to the front. */
+    reveal: () => void;
 }
 
 // Categorical palette (readable on light and dark backgrounds), cycled for many groups.
@@ -247,7 +255,7 @@ export class EmbeddingMap {
     constructor(opts: EmbeddingMapOptions) {
         this.#opts = opts;
         this.el = document.createElement('div');
-        this.el.className = 'emap-overlay';
+        this.el.className = opts.host ? 'emap-overlay emap-embedded' : 'emap-overlay';
         this.el.innerHTML = `
             <div class="emap-bar">
                 <strong>Embedding map</strong>
@@ -262,7 +270,7 @@ export class EmbeddingMap {
                 <span class="emap-status field-hint"></span>
                 <span class="emap-spacer"></span>
                 <button class="sidebar-action-btn secondary" data-act="recompute" type="button" title="Recompute the layout">Recompute</button>
-                <button class="sidebar-action-btn secondary" data-act="close" type="button">Close</button>
+                ${opts.host ? '' : '<button class="sidebar-action-btn secondary" data-act="close" type="button">Close</button>'}
             </div>
             <div class="emap-filter" hidden></div>
             <div class="emap-body"><div class="emap-side" hidden></div>
@@ -306,8 +314,14 @@ export class EmbeddingMap {
     }
 
     async open(force = false) {
-        if (!this.el.isConnected) document.body.appendChild(this.el);
-        document.addEventListener('keydown', this.#onKey);
+        const host = this.#opts.host;
+        if (host) {
+            if (!this.el.isConnected) host.mount(this.el);
+            host.reveal();
+        } else {
+            if (!this.el.isConnected) document.body.appendChild(this.el);
+            document.addEventListener('keydown', this.#onKey);
+        }
         this.#setStatus('Computing map…');
         try {
             this.#data = await this.#opts.load(force);
@@ -342,6 +356,7 @@ export class EmbeddingMap {
     }
 
     close() {
+        if (this.#opts.host) return;   // a panel stays; the host switches spaces instead
         document.removeEventListener('keydown', this.#onKey);
         this.el.remove();
     }

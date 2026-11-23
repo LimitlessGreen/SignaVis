@@ -41,6 +41,8 @@ export interface IProjectStore {
     writeAudio(path: string, data: ArrayBuffer): Promise<void>;
     /** Generic small text/JSON files (xc/XC1.json metadata, exports/…). */
     writeText(path: string, text: string): Promise<void>;
+    /** Text of a small file, null when missing (folder projects in Lite only). */
+    readText?(path: string): Promise<string | null>;
 }
 
 export const AUDIO_EXTENSIONS = ['wav', 'mp3', 'flac', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'webm'];
