@@ -36,11 +36,11 @@ export interface EmbeddingMapOptions {
     loadSuspects: () => Promise<Suspect[]>;
 }
 
-// Categorical palette (dark background), cycled for many groups.
+// Categorical palette (readable on light and dark backgrounds), cycled for many groups.
 const PALETTE = ['#4e9af1', '#f1a34e', '#5cc98a', '#e5615f', '#a77ee8', '#d9c94a', '#4cc6c9', '#e07bc0', '#9aa857', '#c98a5c'];
 const LABEL_COLOR: Record<Label, string> = { pos: '#5cc98a', neg: '#e5615f', unsure: '#d9c94a' };
-const UNLABELED = 'rgba(160,170,185,0.35)';
-const NOISE = 'rgba(160,170,185,0.25)';
+const UNLABELED = 'rgba(128,136,150,0.4)';
+const NOISE = 'rgba(128,136,150,0.3)';
 const SUSPECT = '#ff4d4f';
 
 /** Classifier score → colour: blue (0) – grey (0.5) – yellow (1). */
@@ -426,7 +426,8 @@ export class EmbeddingMap {
             g.arc(sx, sy, r + 3, 0, Math.PI * 2);
             g.stroke();
         }
-        g.strokeStyle = '#fff';
+        // Selection, hover and lasso in the text colour, so they show on both themes.
+        g.strokeStyle = getComputedStyle(this.el).color || '#888';
         g.lineWidth = 1;
         for (const i of this.#sel) {
             const [sx, sy] = this.#toScreen(d.x[i], d.y[i]);
