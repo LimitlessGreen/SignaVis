@@ -194,6 +194,7 @@ export class PlayerState {
         if (!WaveSurfer && !options.engine) throw new Error('PlayerState: WaveSurfer reference or options.engine required');
 
         this.container = container;
+        this.autoFreqView = options.autoFreqView !== false;
         this.d = this._queryDom(container);
         /** @type {import('../infrastructure/storage/IStorage.ts').IStorage} */
         this._storage = options.storage ?? new LocalStorageAdapter();
@@ -1118,6 +1119,18 @@ export class PlayerState {
     }
 
     /** Zoom the frequency axis to 0 … top of the activity (no-op when it spans the whole range). */
+    /** Whether a new spectrogram zooms the frequency view to its content; off shows the full range. */
+    setAutoFreqView(on: boolean) {
+        this.autoFreqView = on;
+        if (!this.bandProfile) return;
+        if (on) {
+            this.applyAutoFreqView();
+        } else {
+            this._freqZoom.reset();
+            this._freqZoom.refresh();
+        }
+    }
+
     applyAutoFreqView(): boolean {
         const top = this.bandProfile ? autoViewMaxHz(this.bandProfile) : null;
         const bounded = this.coords.boundedMaxFreq;

@@ -74,6 +74,7 @@ def player_value(
     show_confidence: Optional[bool] = None,
     view_mode: Optional[str] = None,
     spectrogram: Optional[Mapping[str, Any]] = None,
+    auto_freq_view: Optional[bool] = None,
 ) -> dict:
     """Build a value for :class:`SignaVisPlayer`.
 
@@ -94,6 +95,9 @@ def player_value(
     ``'cqt'`` = logarithmic) and ``contrastRangeDb`` (dynamic range down from
     the loudest level, 20 … 120). They replace the previous ones and apply
     before the file loads; ``None`` keeps them.
+    ``auto_freq_view`` zooms the frequency view to where the recording has
+    content (the default) or, with ``False``, shows the full range; ``None``
+    keeps the player's setting.
     """
     if view_mode not in (None, "both", "waveform", "spectrogram"):
         raise ValueError(f"view_mode must be 'both', 'waveform' or 'spectrogram', not {view_mode!r}")
@@ -102,6 +106,8 @@ def player_value(
         value["viewMode"] = view_mode
     if spectrogram is not None:
         value["spectrogram"] = dict(spectrogram)
+    if auto_freq_view is not None:
+        value["autoFreqView"] = bool(auto_freq_view)
     if show_confidence is not None:
         value["showConfidence"] = bool(show_confidence)
     if detections is not None:
@@ -198,6 +204,10 @@ async function sync() {
       state.spectrogram = key;
       player.setSpectrogramSettings(v.spectrogram);
     }
+  }
+  // Before loading, so the new spectrogram is framed as asked.
+  if (v.autoFreqView != null && v.autoFreqView !== (player.options.autoFreqView !== false)) {
+    player.setAutoFreqView(v.autoFreqView);
   }
   if (v.src !== state.src) {
     state.src = v.src;

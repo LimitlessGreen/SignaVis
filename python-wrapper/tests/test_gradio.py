@@ -44,6 +44,10 @@ class TestPlayerValue(unittest.TestCase):
         with self.assertRaises(ValueError):
             player_value("a.wav", view_mode="spectrum")
 
+    def test_the_frequency_auto_view_can_be_turned_off(self):
+        self.assertIs(player_value("a.wav", auto_freq_view=False)["autoFreqView"], False)
+        self.assertNotIn("autoFreqView", player_value("a.wav"))
+
     def test_spectrogram_settings_are_passed_on(self):
         self.assertNotIn("spectrogram", player_value("a.wav"))
         settings = {"colorScheme": "viridis", "windowSize": 2048}

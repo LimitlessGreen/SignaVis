@@ -203,6 +203,9 @@ export class BirdNETPlayer {
      *   Both need the full 'signavis' entry; with 'signavis/core' pass features: [labelTable({ columns })].
      * @param {boolean}     [options.playOnLabelClick] - clicking a label (on the spectrogram, the waveform,
      *   the overview or in the table) also plays it; selectLabel() from the host does not (default: false)
+     * @param {boolean}     [options.autoFreqView] - zoom the frequency view to where the recording has
+     *   content once its spectrogram is ready; false shows the full range (default: true).
+     *   Change it later with setAutoFreqView().
      * @param {HostSpectrogramSettings} [options.spectrogramSettings] - spectrogram settings the host app
      *   fixes, e.g. from its own settings page: { colorScheme, windowSize, overlapLevel, oversamplingLevel,
      *   scale, contrastRangeDb }. They apply over the start preset and the last-used settings; change
@@ -1067,6 +1070,12 @@ export class BirdNETPlayer {
         parseHostSpectrogramSettings(settings);
         this.options.spectrogramSettings = settings;
         this._state?.setSpectrogramSettings(settings);
+    }
+
+    /** See options.autoFreqView; applies to the loaded recording at once. */
+    setAutoFreqView(on: boolean) {
+        this.options.autoFreqView = !!on;
+        this._state?.setAutoFreqView(!!on);
     }
 
     setChannel(channel: ChannelOption) {
