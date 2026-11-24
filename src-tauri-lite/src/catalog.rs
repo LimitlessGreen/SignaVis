@@ -434,6 +434,15 @@ pub async fn catalog_bulk_edit(state: tauri::State<'_, CatalogState>, project_ro
     blocking(move || ent::bulk_edit(&mut *cat.lock().map_err(err)?, &selection, &edit).map_err(err)).await
 }
 
+/// Review state of recordings (None: back to new). `only_new`: keep recordings that already have one.
+#[tauri::command]
+pub async fn catalog_set_review(
+    state: tauri::State<'_, CatalogState>, project_root: String, ids: Vec<i64>, review: Option<String>, only_new: bool,
+) -> Result<usize, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::review::set_review(&mut *cat.lock().map_err(err)?, &ids, review.as_deref(), only_new).map_err(err)).await
+}
+
 #[tauri::command]
 pub async fn catalog_recording_detail(state: tauri::State<'_, CatalogState>, project_root: String, recording_id: i64) -> Result<ent::RecordingDetail, String> {
     let cat = state.get(&project_root)?;

@@ -197,3 +197,32 @@ test('clearChip removes one part of the filter and reloads; all clears the datas
     await v.clearChip('all');
     assert.deepEqual(v.filter, {});
 });
+
+test('noteReview: rows and counts change in place, opening never undoes done', async () => {
+    const { api } = fakeApi(5);
+    const v = new CatalogView('/p', api);
+    await v.reload();
+    const seen = changes(v);
+    v.noteReview([1, 2], 'done');
+    assert.deepEqual([v.rows[0].review, v.rows[1].review, v.rows[2].review ?? null], ['done', 'done', null]);
+    assert.equal(v.facets.reviewDone, 2);
+    v.noteReview([2, 3], 'open', true);   // 2 stays done
+    assert.deepEqual(v.rows.slice(0, 3).map((r) => r.review), ['done', 'done', 'open']);
+    assert.deepEqual([v.facets.reviewOpen, v.facets.reviewDone], [1, 2]);
+    v.noteReview([3], 'done');
+    assert.deepEqual([v.facets.reviewOpen, v.facets.reviewDone], [0, 3]);
+    v.noteReview([3], 'done');   // no change, no event
+    assert.deepEqual(seen, ['review', 'review', 'review']);
+    assert.equal(v.rows.length, 5, 'no reload');
+});
+
+test('view list texts: position and review state', async () => {
+    const { positionText, reviewText, rowSub } = await import('../src/ui/panels/library/view-list.ts');
+    assert.equal(rowSub({ site: 'S7', startMs: Date.UTC(2023, 2, 15, 20, 30), localOffsetMin: 60, labels: 2 }), 'S7 · 03-15 21:30 · 2 labels');
+    assert.equal(rowSub({ site: null, startMs: null, labels: 0 }), 'no site, no start time');
+    assert.equal(positionText(-1, 3481), `– / ${(3481).toLocaleString()}`);
+    assert.equal(positionText(127, 3481), `128 / ${(3481).toLocaleString()}`);
+    assert.equal(reviewText({ review: null }), 'new');
+    assert.equal(reviewText({}), 'new');
+    assert.equal(reviewText({ review: 'done' }), 'done');
+});

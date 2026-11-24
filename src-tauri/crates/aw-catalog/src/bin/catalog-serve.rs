@@ -69,6 +69,9 @@ struct Args {
     range: Option<[f64; 2]>,
     #[serde(default)]
     freeze: bool,
+    review: Option<String>,
+    #[serde(default)]
+    only_new: bool,
 }
 
 struct State { cats: HashMap<String, Catalog>, scans: HashMap<String, ScanResult> }
@@ -210,6 +213,7 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
         "catalog_tags" => j(serde_json::to_value(ent::tags(st.cat(&a.project_root)?).map_err(e)?)),
         "catalog_meta_keys" => j(serde_json::to_value(ent::meta_keys(st.cat(&a.project_root)?).map_err(e)?)),
         "catalog_bulk_edit" => j(serde_json::to_value(ent::bulk_edit(st.cat(&a.project_root)?, &a.selection, &a.edit).map_err(e)?)),
+        "catalog_set_review" => j(serde_json::to_value(aw_catalog::review::set_review(st.cat(&a.project_root)?, &a.ids, a.review.as_deref(), a.only_new).map_err(e)?)),
         "catalog_recording_detail" => j(serde_json::to_value(ent::recording_detail(st.cat(&a.project_root)?, a.recording_id.ok_or("recordingId missing")?).map_err(e)?)),
         "catalog_thumbs" => {
             st.cat(&a.project_root)?;

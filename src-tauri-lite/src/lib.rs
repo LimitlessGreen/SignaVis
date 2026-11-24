@@ -132,6 +132,7 @@ pub fn run() {
             catalog::catalog_tags,
             catalog::catalog_meta_keys,
             catalog::catalog_bulk_edit,
+            catalog::catalog_set_review,
             catalog::catalog_recording_detail,
             catalog::catalog_stats,
             catalog::catalog_import_track,

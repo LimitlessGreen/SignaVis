@@ -12,6 +12,7 @@ pub mod pattern;
 pub mod preview;
 pub mod profile_spec;
 pub mod query;
+pub mod review;
 pub mod scan;
 pub mod stats;
 pub mod suggest;
@@ -45,6 +46,8 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("recording", "track_id", "INTEGER"),
     ("recording", "wall_ms", "INTEGER"),
     ("thumb", "shown_hz", "REAL"),
+    ("recording", "review", "TEXT"),
+    ("recording", "review_ms", "INTEGER"),
 ];
 
 /// Recorder wall time of a recording (ms, as if UTC): stored since `wall_ms` exists; for older rows

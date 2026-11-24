@@ -759,6 +759,12 @@ keyScope('app').addEventListener('keydown', (e) => {
 keyScope('app').addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
+  // Annotate space with a recording of the catalog view open: N / P walk the view, D marks it done.
+  if ((k === 'n' || k === 'p' || k === 'd') && viewList?.active && spaces?.active === 'annotate') {
+    e.preventDefault();
+    void (k === 'n' ? viewList.next() : k === 'p' ? viewList.prev() : viewList.toggleDone());
+    return;
+  }
   if (k === 'n' || k === 'p') {
     const all = recordingManager.getAll();
     const i = all.findIndex((r) => r.id === recordingManager.getActive()?.id);
@@ -3691,6 +3697,11 @@ let libraryPartShown = (_part) => {};
 let librarySaveAsDataset = () => {};
 /** Spaces: the one catalog view (filter, dataset, selection) all panels and the view bar share; null without a catalog. */
 let catalogView = null;
+/** Spaces: the Annotate panel "View" (list of the catalog view with review state); null until built. */
+let viewList = null;
+const viewListHost = document.createElement('div');
+viewListHost.className = 'space-fill';
+let mountViewList = () => {};
 let _embedMapOpened = false;
 /** Store size the hosted map was last loaded for (null: not read yet). */
 let _embedStoreKey = null;
@@ -3765,14 +3776,53 @@ if (isLite()) {
       split: true,
       view: catalogView ?? undefined,
       revealPart: (k) => void spaces?.reveal(`lib-${k}`),
-      openRecording: (path) => openCatalogRecording(path, () => spaces?.reveal('editor')),
+      openRecording: async (path, row) => {
+        if (await openCatalogRecording(path, () => spaces?.reveal('editor'))) noteOpened(row);
+      },
     });
     for (const k of LIB_PARTS) libraryHosts[k].replaceChildren(libView.parts[k]);
     // No catalog at startup (first import now): the library's view becomes the shared one, with its bar.
     if (!catalogView) {
       catalogView = libView.view;
       void makeViewBar(catalogView).then((el) => spaces?.setBar(el));
+      mountViewList();
     }
+  };
+  /** Opening a catalog recording marks it "open" in the review (never undoes "done"). */
+  function noteOpened(row) {
+    const root = libRoot();
+    if (row?.id) viewList?.track(row.id);
+    if (!root || !row?.id || row.review) return;
+    catalogApi.setReview(root, [row.id], 'open', true)
+      .then(() => catalogView?.noteReview([row.id], 'open', true))
+      .catch((e) => console.warn('[review] could not store', e));
+  }
+  /** Spaces: panel "View" in Annotate — the catalog view as a list to label through (N / P / D). */
+  mountViewList = async () => {
+    if (viewList) return;
+    if (!catalogView) {
+      viewListHost.innerHTML = '<p class="lib-hint space-hint">Import recordings into the library (Browse) to go through them here one by one, with done / open state.</p>';
+      return;
+    }
+    const { ViewList } = await import('../../ui/panels/library/view-list.ts');
+    if (viewList || !catalogView) return;
+    const view = catalogView;
+    viewList = new ViewList(view, {
+      open: async (i) => {
+        const row = view.rows[i];
+        if (!row) return;
+        view.select(i, { keepPicks: true });
+        const path = await catalogApi.recordingPath(view.projectRoot, row.id);
+        if (!path) { showLoadError('This recording\'s source folder is not located on this computer.', 'Cannot open'); return; }
+        if (await openCatalogRecording(path)) noteOpened(row);
+      },
+      setDone: async (ids, done) => {
+        const review = done ? 'done' : 'open';
+        await catalogApi.setReview(view.projectRoot, ids, review);
+        view.noteReview(ids, review);
+      },
+    });
+    viewListHost.replaceChildren(viewList.el);
   };
   let _catalogOpenSeq = 0;
   /**
@@ -3780,6 +3830,7 @@ if (isLite()) {
    * In the project folder: the same project-relative entry as the Project tab and
    * Similar use (reused if present). Outside: matched only by its absolute path.
    * A newer open wins; read errors are shown and the library stays open.
+   * Returns true once the recording is the active one.
    */
   async function openCatalogRecording(path, beforeActivate) {
     const seq = ++_catalogOpenSeq;
@@ -3808,6 +3859,7 @@ if (isLite()) {
     await beforeActivate?.();
     if (seq !== _catalogOpenSeq) return;
     await activateRecordingEntry(entry);
+    return true;
   }
   const openLibrary = (startImport = false) => {
     const root = libRoot();
@@ -5435,11 +5487,13 @@ async function installLiteSpaces() {
           'lib-calendar': { ref: 'lib-map', dir: 'below', size: 330 },
         },
         front: ['lib-map'] },
-      { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor'] },
+      { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor', 'view-list'],
+        arrange: { 'view-list': { ref: 'editor', dir: 'left', size: 290 } } },
       { id: 'embeddings', title: 'Embeddings', icon: ChartScatter, panels: ['embeddings'], optional: true },
     ],
     panels: [
       { id: 'editor', title: 'Editor', mount: (host) => { host.appendChild(workspace); } },
+      { id: 'view-list', title: 'View', mount: (host) => { host.appendChild(viewListHost); void mountViewList(); } },
       ...[['recordings', 'Recordings'], ['fields', 'Fields'], ['map', 'Map'], ['stats', 'Statistics'], ['selection', 'Selection'], ['calendar', 'Calendar']].map(([k, title]) => ({
         id: `lib-${k}`, title,
         // Any part builds the library (all parts at once); the others are then only placed.

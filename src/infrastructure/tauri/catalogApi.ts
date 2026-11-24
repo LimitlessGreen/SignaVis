@@ -55,6 +55,9 @@ export const catalogApi = {
     tags: (projectRoot: string) => call<TagInfo[]>('catalog_tags', { projectRoot }),
     metaKeys: (projectRoot: string) => call<[string, number][]>('catalog_meta_keys', { projectRoot }),
     bulkEdit: (projectRoot: string, selection: Selection, edit: BulkEdit) => call<BulkReport>('catalog_bulk_edit', { projectRoot, selection, edit }),
+    /** Review state (null: back to new); `onlyNew` keeps recordings that already have one. Returns how many changed. */
+    setReview: (projectRoot: string, ids: number[], review: 'open' | 'done' | null, onlyNew = false) =>
+        call<number>('catalog_set_review', { projectRoot, ids, review, onlyNew }),
     recordingDetail: (projectRoot: string, recordingId: number) => call<RecordingDetail>('catalog_recording_detail', { projectRoot, recordingId }),
     stats: (projectRoot: string, filter: CatalogFilter) => call<CatalogStats>('catalog_stats', { projectRoot, filter }),
     importTrack: (projectRoot: string, path: string, deviceId: number | null, selection: Selection, maxGapS: number) =>

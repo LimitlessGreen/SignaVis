@@ -47,6 +47,8 @@ pub struct Filter {
     pub dataset_id: Option<i64>,
     /// Start relative to the sun at the recording's position (own, else the site's).
     pub sun: Option<crate::sun::SunWindow>,
+    /// Review state: "new" (never opened), "open", "done", "todo" (not done).
+    pub review: Option<String>,
 }
 
 /// Nesting limit for dynamic datasets that refer to other datasets (also stops cycles).
@@ -139,6 +141,13 @@ fn where_depth(cat: &Catalog, f: &Filter, skip: Skip, depth: usize) -> Result<(S
     }
     if f.no_start { push("r.start_ms IS NULL".into(), vec![], &mut p); }
     if let Some(st) = &f.status { push("a.status = ?".into(), vec![Box::new(st.clone())], &mut p); }
+    match f.review.as_deref() {
+        Some("new") => push("r.review IS NULL".into(), vec![], &mut p),
+        Some("todo") => push("r.review IS NOT 'done'".into(), vec![], &mut p),
+        Some(st @ ("open" | "done")) => push("r.review = ?".into(), vec![Box::new(st.to_string())], &mut p),
+        Some(other) => return Err(format!("unknown review state {other}").into()),
+        None => {}
+    }
     if let Some(sw) = &f.sun {
         let (a, b) = (sw.from.event.as_str(), sw.to.event.as_str());
         push(format!("sun_in(r.start_ms, {POS_LAT}, {POS_LON}, ?, ?, ?, ?) = 1"),
@@ -186,6 +195,8 @@ pub struct Row {
     pub device: Option<String>,
     pub labels: i64,
     pub status: Option<String>,
+    /// Review state: None (new), "open", "done".
+    pub review: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -218,13 +229,13 @@ pub fn list(cat: &Catalog, f: &Filter, sort: Sort, after: Option<&Cursor>, limit
     let sql = format!(
         "SELECT r.id, a.root_id, a.rel_path, a.size, r.start_ms, r.local_offset_min, r.duration_s,
                 (SELECT name FROM site WHERE id = r.site_id), (SELECT name FROM device WHERE id = r.device_id),
-                (SELECT COUNT(*) FROM label l WHERE l.recording_id = r.id), a.status
+                (SELECT COUNT(*) FROM label l WHERE l.recording_id = r.id), a.status, r.review
          {FROM} WHERE {w} ORDER BY {order} LIMIT {}", limit + 1);
     let mut st = cat.conn.prepare(&sql)?;
     let mut rows: Vec<Row> = st.query_map(params_from_iter(p.iter()), |r| Ok(Row {
         id: r.get(0)?, root_id: r.get(1)?, path: r.get(2)?, size: r.get(3)?, start_ms: r.get(4)?,
         local_offset_min: r.get(5)?, duration_s: r.get(6)?, site: r.get(7)?, device: r.get(8)?, labels: r.get(9)?,
-        status: r.get(10)?,
+        status: r.get(10)?, review: r.get(11)?,
     }))?.collect::<std::result::Result<_, _>>()?;
     let next = if rows.len() > limit {
         rows.truncate(limit);
@@ -252,6 +263,9 @@ pub struct Facets {
     pub first_ms: Option<i64>,
     pub last_ms: Option<i64>,
     pub no_start: i64,
+    /// Reviewed recordings under the filter: opened (not done) and done.
+    pub review_open: i64,
+    pub review_done: i64,
     /// Counts under the filter without its own site selection (so other sites stay pickable).
     pub sites: Vec<FacetValue>,
     pub devices: Vec<FacetValue>,
@@ -285,9 +299,10 @@ fn facet(cat: &Catalog, f: &Filter, skip: Skip, table: &str, col: &str) -> Resul
 pub fn facets(cat: &Catalog, f: &Filter) -> Result<Facets> {
     let (w, p) = where_clause(cat, f, Skip::None)?;
     let sql = format!("SELECT COUNT(*), COALESCE(SUM(a.size), 0), SUM(r.duration_s), MIN(r.start_ms), MAX(r.start_ms),
-        SUM(r.start_ms IS NULL) {FROM} WHERE {w}");
-    let (total, bytes, seconds, first_ms, last_ms, no_start) = cat.conn.query_row(&sql, params_from_iter(p.iter()), |r| Ok((
-        r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get::<_, Option<i64>>(5)?.unwrap_or(0))))?;
+        SUM(r.start_ms IS NULL), SUM(r.review = 'open'), SUM(r.review = 'done') {FROM} WHERE {w}");
+    let (total, bytes, seconds, first_ms, last_ms, no_start, review_open, review_done) = cat.conn.query_row(&sql, params_from_iter(p.iter()), |r| Ok((
+        r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get::<_, Option<i64>>(5)?.unwrap_or(0),
+        r.get::<_, Option<i64>>(6)?.unwrap_or(0), r.get::<_, Option<i64>>(7)?.unwrap_or(0))))?;
     let mut sites = facet(cat, f, Skip::Site, "site", "site_id")?;
     let mut devices = facet(cat, f, Skip::Device, "device", "device_id")?;
     let mut tags = {
@@ -324,7 +339,7 @@ pub fn facets(cat: &Catalog, f: &Filter) -> Result<Facets> {
         let (lat, lon): (Option<f64>, Option<f64>) = cat.conn.query_row(&sql, params_from_iter(p.iter()), |r| Ok((r.get(0)?, r.get(1)?)))?;
         lat.zip(lon).map(|(a, b)| [a, b])
     };
-    Ok(Facets { total, bytes, seconds, first_ms, last_ms, no_start, sites, devices, tags, days, hours, center })
+    Ok(Facets { total, bytes, seconds, first_ms, last_ms, no_start, review_open, review_done, sites, devices, tags, days, hours, center })
 }
 
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {

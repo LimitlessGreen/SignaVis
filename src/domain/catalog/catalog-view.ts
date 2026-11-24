@@ -29,8 +29,9 @@ export interface CatalogViewApi {
  * - `rows`: another page arrived
  * - `selection`: picked recordings or the current row changed
  * - `loading`: a reload started; `ready`: it finished (first page there, or failed)
+ * - `review`: review states of loaded rows (and their counts) changed in place
  */
-export type ViewChange = 'query' | 'rows' | 'selection' | 'loading' | 'ready';
+export type ViewChange = 'query' | 'rows' | 'selection' | 'loading' | 'ready' | 'review';
 export type ViewListener = (change: ViewChange, view: CatalogView) => void;
 
 export const VIEW_PAGE = 500;
@@ -275,6 +276,30 @@ export class CatalogView {
         this.pickAll = false;
         this.anchor = null;
         this.#emit('selection');
+    }
+
+    // ── Review state (Annotate) ────────────────────────────────────
+
+    /**
+     * The catalog stored a review state for these recordings: update loaded rows and the counts
+     * in place, without a reload (a "not done" view keeps the row just marked done until it reloads).
+     * `onlyNew`: rows that already have a state keep it (opening never undoes "done").
+     */
+    noteReview(ids: Iterable<number>, review: 'open' | 'done' | null, onlyNew = false) {
+        const set = new Set(ids);
+        let changed = false;
+        for (const r of this.rows) {
+            if (!set.has(r.id) || (onlyNew && r.review) || (r.review ?? null) === review) continue;
+            if (this.facets) {
+                const dec = (k: 'reviewOpen' | 'reviewDone') => { this.facets![k] = Math.max(0, (this.facets![k] ?? 0) - 1); };
+                const inc = (k: 'reviewOpen' | 'reviewDone') => { this.facets![k] = (this.facets![k] ?? 0) + 1; };
+                if (r.review === 'open') dec('reviewOpen'); else if (r.review === 'done') dec('reviewDone');
+                if (review === 'open') inc('reviewOpen'); else if (review === 'done') inc('reviewDone');
+            }
+            r.review = review;
+            changed = true;
+        }
+        if (changed) this.#emit('review');
     }
 
     selectAllShown() { this.picked = new Set(); this.pickAll = true; this.#emit('selection'); }

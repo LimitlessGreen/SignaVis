@@ -383,3 +383,40 @@ $lib-cols: minmax(240px, 3fr) 150px minmax(90px, 1fr) minmax(90px, 1fr) 70px 54p
 }
 .lib-h4-note { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .lib-period { margin-bottom: 2px; .input { font-size: 11px; padding-inline: 4px; } }
+
+// Annotate panel "View": the catalog view as a list with review state.
+.view-list {
+    display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 12px;
+    &.is-loading .vl-list { opacity: .6; }
+}
+.vl-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 4px; }
+.vl-pos { margin-left: auto; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vl-progress {
+    display: flex; align-items: center; gap: 8px; padding: 2px 10px 8px; color: var(--color-text-secondary); font-size: 11px;
+    border-bottom: 1px solid var(--color-border);
+}
+.vl-bar { flex: 1; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--color-text-secondary) 20%, transparent); overflow: hidden;
+    > span { display: block; height: 100%; width: 0; background: #22c55e; transition: width .2s; } }
+.vl-progress-text { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vl-list { flex: 1; min-height: 0; overflow-y: auto; position: relative; outline: none; }
+.vl-rows { position: absolute; top: 0; left: 0; right: 0; }
+.vl-r {
+    position: absolute; left: 0; right: 0; height: 40px; display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto;
+    column-gap: 8px; align-content: center; padding: 0 10px; border: 0; border-bottom: 1px solid var(--color-border);
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    &:hover { background: var(--input-hover-bg); }
+    &.is-cur { background: var(--color-accent-faint); box-shadow: inset 3px 0 var(--color-accent); }
+    &.is-pending { cursor: default; }
+}
+.vl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, monospace); font-size: 11.5px; }
+.vl-sub { grid-row: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); font-size: 10.5px; }
+.vl-state {
+    grid-row: 1 / span 2; grid-column: 2; align-self: center; padding: 1px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 600;
+    color: var(--color-text-secondary); background: color-mix(in srgb, var(--color-text-secondary) 14%, transparent);
+    &--done { color: #15803d; background: color-mix(in srgb, #22c55e 18%, transparent); }
+    &--open { color: #b45309; background: color-mix(in srgb, #f59e0b 20%, transparent); }
+}
+.vl-foot {
+    display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--color-border);
+    .vl-done { margin-left: auto; &.is-done { color: #15803d; } }
+}

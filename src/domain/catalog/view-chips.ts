@@ -13,7 +13,7 @@ import {
 
 export type ChipKind =
     | 'dataset' | 'site' | 'device' | 'tag' | 'path' | 'tod' | 'period' | 'localdays'
-    | 'nosite' | 'labels' | 'pos' | 'bbox' | 'status' | 'unassigned' | 'sun';
+    | 'nosite' | 'labels' | 'pos' | 'bbox' | 'status' | 'unassigned' | 'sun' | 'review';
 
 export interface ViewChip {
     kind: ChipKind;
@@ -58,6 +58,7 @@ export function viewChips(filter: CatalogFilter, facets: Facets | null, datasets
     if (tf.bbox) chips.push({ kind: 'bbox', field: 'Area', label: bboxLabel(tf.bbox) });
     if (tf.status) chips.push({ kind: 'status', field: 'Status', label: tf.status });
     if (tf.unassigned) chips.push({ kind: 'unassigned', field: 'Site/recorder', label: 'none' });
+    if (tf.review) chips.push({ kind: 'review', field: 'Review', label: tf.review === 'todo' ? 'not done' : tf.review });
     return chips;
 }
 
@@ -93,6 +94,7 @@ export function withoutChip(
         case 'bbox': f.bbox = null; break;
         case 'status': f.status = null; break;
         case 'unassigned': f.unassigned = false; break;
+        case 'review': f.review = null; break;
     }
     return { filter: f, activeDs };
 }
