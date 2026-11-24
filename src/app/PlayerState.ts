@@ -1189,7 +1189,10 @@ export class PlayerState {
         const playing  = !!this.wavesurfer?.isPlaying();
         // Playback positions come from a coarse media clock; smooth them so the
         // playhead (and the follow scroll derived from it) moves evenly.
-        const position = this._viewport.smoothPlaybackPosition(this.coords.timeToScrollX(currentTime), playing);
+        // Known rate: recording seconds per real second = the media element's playback rate.
+        const rate = Number(this.wavesurfer?.getPlaybackRate?.()) || 1;
+        const position = this._viewport.smoothPlaybackPosition(this.coords.timeToScrollX(currentTime), playing,
+            this.coords.timeToScrollX(rate) / 1000);
 
         // Follow-mode scroll — delegated to ViewportManager
         if (fromPlayback && playing && this.followPlayback) {
