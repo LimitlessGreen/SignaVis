@@ -31,6 +31,21 @@ export const LANG_FLAGS = {
  * Build a detail string with flags of languages that matched the query.
  * Returns e.g. "🇩🇪 Kohlmeise · 🇫🇷 Mésange charbonnière".
  */
+
+/** Dropdown list height (CSS max-height of .species-search-dropdown). */
+const DROPDOWN_MAX_H = 320;
+/**
+ * Where the suggestion list goes: below the field, or above it when the field sits low in the
+ * window (Lite: label bar under the player) and there is more room above.
+ */
+export function dropdownPlacement(r: { top: number; bottom: number }, viewportH: number, maxH = DROPDOWN_MAX_H):
+    { top?: number; bottom?: number; maxHeight: number } {
+  const below = viewportH - r.bottom - 10;
+  const above = r.top - 10;
+  if (below >= maxH || below >= above) return { top: r.bottom + 2, maxHeight: Math.max(80, Math.min(maxH, below)) };
+  return { bottom: viewportH - r.top + 2, maxHeight: Math.min(maxH, above) };
+}
+
 export function buildMatchDetail(record: any, query: any, displayLang: any) {
   if (!query || !record?.n) return '';
   const q = normalizeSearch(query);
@@ -382,8 +397,11 @@ export function createSpeciesSearchWidget({ getSuggestions, onSelect, onClear, p
 
   function positionDropdown() {
     const r = inner.getBoundingClientRect();
+    const place = dropdownPlacement(r, window.innerHeight);
     dropdown.style.position = 'fixed';
-    dropdown.style.top = (r.bottom + 2) + 'px';
+    dropdown.style.top = place.top != null ? place.top + 'px' : '';
+    dropdown.style.bottom = place.bottom != null ? place.bottom + 'px' : '';
+    dropdown.style.maxHeight = place.maxHeight + 'px';
     dropdown.style.left = r.left + 'px';
     dropdown.style.width = Math.min(Math.max(r.width, 280), window.innerWidth - r.left - 8) + 'px';
     dropdown.style.zIndex = '9999';
