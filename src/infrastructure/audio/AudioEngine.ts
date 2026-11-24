@@ -360,6 +360,8 @@ export class AudioEngine extends AudioEngineBase {
       this._playDetectorFull(this.wavesurfer.getCurrentTime());
       return;
     }
+    // Chromium resumes a paused media element ~0.3 s ahead unless it seeks first.
+    if (!this.wavesurfer.isPlaying()) this.wavesurfer.setTime(this.wavesurfer.getCurrentTime());
     this.wavesurfer.playPause();
   }
 
