@@ -16,7 +16,6 @@ import { keyScope } from '../shared/keymap.ts';
 import { vendorUrl } from '../infrastructure/tauri/runtime.ts';
 import { labelPlaybackBand } from '../domain/labelBand.ts';
 import { createPlayerHTML, DEFAULT_OPTIONS } from '../ui/template.ts';
-import { installPlayerTranslation } from '../ui/playerI18n.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { clamp } from '../shared/utils.ts';
 import { PlayerState } from './PlayerState.ts';
@@ -256,7 +255,7 @@ export class BirdNETPlayer {
     async _init() {
         // 1. Inject player DOM (pass options for section visibility)
         this.container.innerHTML = createPlayerHTML(this.options);
-        this._stopTranslation = installPlayerTranslation(this.container, this.options.locale);
+        this._stopTranslation = this._loadTranslation(this.options.locale);
         this.root = /** @type {HTMLElement} */ (this.container.querySelector('.daw-shell'));
 
         // 2. Resolve WaveSurfer (option → global → CDN import)
@@ -1071,6 +1070,20 @@ export class BirdNETPlayer {
         parseHostSpectrogramSettings(settings);
         this.options.spectrogramSettings = settings;
         this._state?.setSpectrogramSettings(settings);
+    }
+
+    /** The dictionary loads only for a language other than English. */
+    private _loadTranslation(locale: unknown): () => void {
+        const tag = typeof locale === 'string' ? locale.toLowerCase() : '';
+        if (!tag || tag.startsWith('en')) return () => {};
+        let stop: (() => void) | null = null;
+        let stopped = false;
+        import('../ui/playerI18n.ts')
+            .then(({ installPlayerTranslation }) => {
+                if (!stopped) stop = installPlayerTranslation(this.container, locale);
+            })
+            .catch((err) => console.error('SignaVis: translation failed to load', err));
+        return () => { stopped = true; stop?.(); };
     }
 
     /** See options.autoFreqView; applies to the loaded recording at once. */
