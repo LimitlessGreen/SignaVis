@@ -5,12 +5,25 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Waveform scale** (Settings → Waveform): linear or dB (a mirrored loudness
+  envelope in dBFS with a selectable range), height fitted to the peak or full
+  scale (±1 / 0 dBFS, comparable between files); also in the overview strip.
+  Player API: `waveformDisplay` option, `setWaveformDisplay()`,
+  `waveformDisplay` and the `waveformdisplaychange` event.
+- **RMS** body inside the min/max outline of the waveform (can be turned off).
+- **Clipping** marked red in the waveform and the overview strip; a badge
+  shows the file's peak in dBFS.
 - **Channel selection**: also under Settings → Display. Player API: `channel`
   option, `setChannel()`, `getChannel()` and the `channelselectionchange` event.
 - Labels remember the **channel** they were made on (drawn, stamped, pasted,
   BirdNET, BirdBox); labels on the mix or on mono recordings carry none. The
   Raven export writes it to the Channel column (1-based), the JSON exports as
   `channel` (0-based); the label table has an optional "Ch" column.
+
+### Fixed
+- Amplitude axis: round values at their true positions, as many as fit; the
+  old labels were rounded differently (0.01 at the top over 0.006 at half).
+  Positive samples are drawn upwards (they were drawn downwards).
 
 ## [1.4.1] - 2026-11-23
 
