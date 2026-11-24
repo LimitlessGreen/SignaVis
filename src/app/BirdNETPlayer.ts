@@ -24,6 +24,7 @@ import { assignLabelColors } from '../domain/labelColors.ts';
 import { UndoStack } from '../domain/undoStack.ts';
 import { computeSnapPatch } from './snapPatch.ts';
 import type { SnapPatch } from '../domain/snapToCall.ts';
+import { parseHostSpectrogramSettings, type HostSpectrogramSettings } from '../domain/dsp/hostSpectrogramSettings.ts';
 
 import type { AnnotationEntry, SpectrogramLabelEntry } from '../shared/events.ts';
 import { EventBus } from '../shared/EventBus.ts';
@@ -202,6 +203,10 @@ export class BirdNETPlayer {
      *   Both need the full 'signavis' entry; with 'signavis/core' pass features: [labelTable({ columns })].
      * @param {boolean}     [options.playOnLabelClick] - clicking a label (on the spectrogram, the waveform,
      *   the overview or in the table) also plays it; selectLabel() from the host does not (default: false)
+     * @param {HostSpectrogramSettings} [options.spectrogramSettings] - spectrogram settings the host app
+     *   fixes, e.g. from its own settings page: { colorScheme, windowSize, overlapLevel, oversamplingLevel,
+     *   scale, contrastRangeDb }. They apply over the start preset and the last-used settings; change
+     *   them later with setSpectrogramSettings().
      * @param {PlayerFeature[]} [options.features] - optional building blocks to install, e.g.
      *   [labelTable()] from 'signavis/label-table' (see playerFeature.ts)
      */
@@ -1053,6 +1058,17 @@ export class BirdNETPlayer {
      * Channel(s) shown and analysed: 'mix', 'left', 'right' or a 0-based index. Applies to every
      * player on the page. A channel the recording lacks falls back to the mix. Fires 'channelselectionchange'.
      */
+    /**
+     * Sets the spectrogram settings the host app fixes (see options.spectrogramSettings),
+     * replacing the previous ones; null clears them. A loaded recording is drawn again
+     * when they changed. Throws a TypeError on an unknown setting or value.
+     */
+    setSpectrogramSettings(settings: HostSpectrogramSettings | null) {
+        parseHostSpectrogramSettings(settings);
+        this.options.spectrogramSettings = settings;
+        this._state?.setSpectrogramSettings(settings);
+    }
+
     setChannel(channel: ChannelOption) {
         const sel = toChannelSelection(channel);
         if (!sel) throw new Error(`setChannel: expected 'mix', 'left', 'right' or a channel index, got ${JSON.stringify(channel)}`);

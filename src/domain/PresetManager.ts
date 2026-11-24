@@ -31,6 +31,8 @@ export interface PresetManagerCallbacks {
     getSampleRate?: () => number | undefined;
     /** Built-in preset of a fresh player (no favourite, no last settings); default 'classic'. */
     defaultPreset?: string;
+    /** Settings the host app fixes; they apply over the start preset (see setHostSettings). */
+    hostSettings?: Record<string, any>;
 }
 
 const LS_USER_PRESETS  = 'aw-user-presets';
@@ -54,6 +56,7 @@ export class PresetManager {
     #cleanups: Array<() => void> = [];
     #currentColorScheme = 'grayscale';
     #storage: IStorage;
+    #hostSettings: Record<string, any> = {};
     /**
      * Optional callback: called after every DSP parameter change with a command
      * object the caller can pass to an UndoStack via record().
@@ -76,7 +79,7 @@ export class PresetManager {
      *   Called after each DSP parameter change with an undo/redo command object.
      *   Pass `undoStack.record.bind(undoStack)` to wire DSP changes into the undo stack.
      */
-    constructor(d: any, { onRegenerateSpectrogram, onStage1Rebuild, storage, onDspCommand, getSampleRate, defaultPreset }: PresetManagerCallbacks) {
+    constructor(d: any, { onRegenerateSpectrogram, onStage1Rebuild, storage, onDspCommand, getSampleRate, defaultPreset, hostSettings }: PresetManagerCallbacks) {
         this.#defaultPreset = defaultPreset && Object.prototype.hasOwnProperty.call(DSP_PROFILES, defaultPreset) ? defaultPreset : 'classic';
         this.#d          = d;
         this.#onRegen    = onRegenerateSpectrogram;
@@ -84,7 +87,21 @@ export class PresetManager {
         this.#storage    = storage;
         this.#onDspCommand = onDspCommand ?? null;
         this.#getSampleRate = getSampleRate ?? (() => undefined);
+        this.#hostSettings = { ...(hostSettings ?? {}) };
     }
+
+    /**
+     * Settings the host app fixes (checked DSP fields, see parseHostSpectrogramSettings).
+     * They apply over the favourite, the last-used settings and the default preset, and
+     * a reset returns to them. Writes the controls; the caller regenerates.
+     */
+    setHostSettings(settings: Record<string, any>) {
+        this.#hostSettings = { ...settings };
+        this.applyFavouritePresetControls();
+        this.updatePcenSectionDimming();
+    }
+
+    get hostSettings(): Record<string, any> { return { ...this.#hostSettings }; }
 
     // ─────────────────────────────────────────────────────────────────
     //  Public API (called by PlayerState)
@@ -288,9 +305,12 @@ export class PresetManager {
             p = DSP_PROFILES[defaultKey];
         }
         if (!p) return;
-        this.#applyControls(p);
+        const host = this.#hostSettings;
+        this.#applyControls({ ...p, ...host });
         // Restore "Custom" label when last-used settings don't match a named preset
-        if (!fav && !DSP_PROFILES[this.#d.presetSelect?.value || '']) {
+        // or the host changed one of its settings.
+        const changedByHost = Object.keys(host).some(k => host[k] !== (p as any)[k]);
+        if (changedByHost || (!fav && !DSP_PROFILES[this.#d.presetSelect?.value || ''])) {
             if (this.#d.presetSelect) this.#d.presetSelect.value = '';
         }
         this.updatePresetButtons();
@@ -386,7 +406,7 @@ export class PresetManager {
         const p = resolve(this.#d.presetSelect?.value || '')
             || resolve(this.getFavouritePreset() || '')
             || DSP_PROFILES[this.#defaultPreset];
-        return { ...DSP_SETTINGS_DEFAULTS, ...p };
+        return { ...DSP_SETTINGS_DEFAULTS, ...p, ...this.#hostSettings };
     }
 
     /** Reset the given settings keys to the reference preset, keep all others. */

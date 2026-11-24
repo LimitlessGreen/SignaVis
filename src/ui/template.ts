@@ -289,6 +289,7 @@ export function createPlayerHTML(opts = {}) {
                     <option value="viridis">Viridis</option>
                     <option value="magma">Magma</option>
                     <option value="plasma">Plasma</option>
+                    <option value="jet">Jet</option>
                 </select>
             </div>
             <div class="settings-row">

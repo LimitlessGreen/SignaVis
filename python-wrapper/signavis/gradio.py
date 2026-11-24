@@ -20,6 +20,7 @@ The component's value is a plain dict (see :func:`player_value`):
 ``detections``   list of ``{start, end, label, confidence?, freqMin?, freqMax?,
                  scientificName?, commonName?, color?, id?}``
 ``showConfidence`` show the confidence next to the detection names
+``spectrogram``  spectrogram settings the app fixes (see :func:`player_value`)
 ``select``       ``{start, end, play, id?}`` — selects the detection ``id`` and
                  scrolls it into view, and with ``play`` plays the span;
                  a new dict each time re-triggers it
@@ -72,6 +73,7 @@ def player_value(
     select_id: Optional[str] = None,
     show_confidence: Optional[bool] = None,
     view_mode: Optional[str] = None,
+    spectrogram: Optional[Mapping[str, Any]] = None,
 ) -> dict:
     """Build a value for :class:`SignaVisPlayer`.
 
@@ -84,12 +86,22 @@ def player_value(
     ``view_mode`` shows ``"both"`` analysis views, or only the ``"waveform"``
     or the ``"spectrogram"``; a hidden spectrogram is not computed, which
     saves time and memory for long recordings. ``None`` keeps the current view.
+    ``spectrogram`` sets the spectrogram settings the app fixes, e.g. from its
+    own settings page: ``colorScheme`` (``'viridis'``, ``'magma'``, ``'plasma'``,
+    ``'inferno'``, ``'jet'``, ``'grayscale'``, …), ``windowSize`` (256 … 8192),
+    ``overlapLevel`` (0 none, 1 25 %, 2 50 %, 3 75 %, 4 87.5 %, 5 93.75 %),
+    ``oversamplingLevel`` (0 … 3), ``scale`` (``'linear'``, ``'mel'``,
+    ``'cqt'`` = logarithmic) and ``contrastRangeDb`` (dynamic range down from
+    the loudest level, 20 … 120). They replace the previous ones and apply
+    before the file loads; ``None`` keeps them.
     """
     if view_mode not in (None, "both", "waveform", "spectrogram"):
         raise ValueError(f"view_mode must be 'both', 'waveform' or 'spectrogram', not {view_mode!r}")
     value: dict = {"src": src}
     if view_mode is not None:
         value["viewMode"] = view_mode
+    if spectrogram is not None:
+        value["spectrogram"] = dict(spectrogram)
     if show_confidence is not None:
         value["showConfidence"] = bool(show_confidence)
     if detections is not None:
@@ -132,7 +144,7 @@ if (!window.__signavisTheme) {
   observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 }
-const state = { player: null, src: null, labels: null, select: null, chain: Promise.resolve() };
+const state = { player: null, src: null, labels: null, select: null, spectrogram: null, chain: Promise.resolve() };
 
 async function ensurePlayer() {
   if (state.player) return state.player;
@@ -175,6 +187,14 @@ async function sync() {
   const player = await ensurePlayer();
   // Before loading, so a hidden spectrogram is never computed.
   if (v.viewMode && v.viewMode !== player.viewMode) player.setViewMode(v.viewMode);
+  // Before loading too, so the file is computed once, with these settings.
+  if (v.spectrogram) {
+    const key = JSON.stringify(v.spectrogram);
+    if (key !== state.spectrogram) {
+      state.spectrogram = key;
+      player.setSpectrogramSettings(v.spectrogram);
+    }
+  }
   if (v.src !== state.src) {
     state.src = v.src;
     state.labels = null;

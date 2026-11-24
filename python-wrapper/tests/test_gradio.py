@@ -44,6 +44,13 @@ class TestPlayerValue(unittest.TestCase):
         with self.assertRaises(ValueError):
             player_value("a.wav", view_mode="spectrum")
 
+    def test_spectrogram_settings_are_passed_on(self):
+        self.assertNotIn("spectrogram", player_value("a.wav"))
+        settings = {"colorScheme": "viridis", "windowSize": 2048}
+        value = player_value("a.wav", spectrogram=settings)
+        self.assertEqual(value["spectrogram"], settings)
+        self.assertIsNot(value["spectrogram"], settings)
+
 
 @unittest.skipIf(gr is None, "gradio not installed")
 class TestFileUrl(unittest.TestCase):

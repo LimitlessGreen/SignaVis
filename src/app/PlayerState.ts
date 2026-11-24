@@ -21,6 +21,7 @@ import { InteractionState } from './interactionState.ts';
 import { CoordinateSystem } from '../domain/coordinateSystem.ts';
 
 import { envelopePeakAbs } from '../domain/waveformEnvelope.ts';
+import { parseHostSpectrogramSettings, type HostSpectrogramSettings } from '../domain/dsp/hostSpectrogramSettings.ts';
 import { PresetManager } from '../domain/PresetManager.ts';
 import { SpectrogramController } from './SpectrogramController.ts';
 import { LocalStorageAdapter } from '../infrastructure/storage/LocalStorageAdapter.ts';
@@ -200,6 +201,7 @@ export class PlayerState {
         for (const sel of [this.d.channelSelect, this.d.channelSettingSelect]) {
             sel?.addEventListener('change', () => setChannelSelection(parseChannelSelection(sel.value)));
         }
+        const host = parseHostSpectrogramSettings(options.spectrogramSettings);
         this._presets = new PresetManager(this.d, {
             onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._regenerateSpectrogram(opts); },
             onStage1Rebuild: () => {
@@ -211,6 +213,7 @@ export class PlayerState {
             },
             storage: this._storage,
             defaultPreset: options.defaultPreset,
+            hostSettings: host.dsp,
             // Wire DSP-parameter changes into the undo stack if one was injected.
             onDspCommand: options.onDspCommand ?? null,
             // Called during construction, before _engine exists.
@@ -279,6 +282,7 @@ export class PlayerState {
 
         // ── Spectrogram pipeline (data + rendering) ──
         this._spectro = new SpectrogramController(this.d);
+        this._spectro.contrastRangeDb = host.contrastRangeDb;
         const cacheMax = this.options.spectrogramCacheMaxBytes;
         if (typeof cacheMax === 'number' && cacheMax >= 0) this._spectro.cacheMaxBytes = cacheMax;
         this._spectro.addEventListener('transportstatechange', (e: CustomEvent<any>) => {
@@ -1025,6 +1029,19 @@ export class PlayerState {
     _spectroGeneration: Promise<void> | null = null;
     _spectroGenerationFor: AudioBuffer | null = null;
     _spectroStale = false;
+
+    /**
+     * Spectrogram settings the host app fixes (see HostSpectrogramSettings); replaces the
+     * previous ones. A loaded recording is drawn again when they changed.
+     */
+    setSpectrogramSettings(settings: HostSpectrogramSettings | null) {
+        const { dsp, contrastRangeDb } = parseHostSpectrogramSettings(settings);
+        const before = JSON.stringify([this._presets.hostSettings, this._spectro.contrastRangeDb]);
+        this._presets.setHostSettings(dsp);
+        this._spectro.contrastRangeDb = contrastRangeDb;
+        if (JSON.stringify([this._presets.hostSettings, contrastRangeDb]) === before) return;
+        if (this.audioBuffer) this._regenerateSpectrogram({ autoAdjust: true });
+    }
 
     /** Recompute after a setting changed; a hidden spectrogram waits until it is shown. */
     _regenerateSpectrogram(opts?: unknown) {

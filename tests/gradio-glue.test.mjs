@@ -17,6 +17,7 @@ function run(value) {
         setSpectrogramLabels() {}
         selectLabel(id) { calls.push(['selectLabel', id]); }
         playSegment(s, e) { calls.push(['playSegment', s, e]); }
+        setSpectrogramSettings(s) { calls.push(['setSpectrogramSettings', s]); }
     }
     const node = () => ({ style: {}, textContent: '' });
     const root = node(), host = node();
@@ -39,4 +40,10 @@ test('a selection without play only selects', async () => {
     const { calls, done } = run({ src: 'a.wav', select: { start: 1, end: 2, play: false, id: 'det-3', n: 1 } });
     await done();
     assert.deepEqual(calls.slice(1), [['selectLabel', 'det-3']]);
+});
+
+test('spectrogram settings reach the player before the file loads', async () => {
+    const { calls, done } = run({ src: 'a.wav', spectrogram: { colorScheme: 'viridis' } });
+    await done();
+    assert.deepEqual(calls.slice(0, 2), [['setSpectrogramSettings', { colorScheme: 'viridis' }], ['loadUrl', 'a.wav']]);
 });

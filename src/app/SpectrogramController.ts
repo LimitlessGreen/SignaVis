@@ -48,6 +48,7 @@ import {
 } from '../domain/spectrogram.ts';
 
 import { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
+import { contrastFromTop } from '../domain/dsp/hostSpectrogramSettings.ts';
 import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
@@ -99,6 +100,8 @@ export class SpectrogramController extends EventTarget {
     _lastView: { t0: number; t1: number; pps: number } | null = null;
     /** Auto gain mode: redo auto contrast once the first drawn view has tiles. */
     _autoContrastPending = false;
+    /** Host-set dynamic range of the automatic dB contrast, down from the loudest level; null: own. */
+    contrastRangeDb: number | null = null;
     /** Floor/ceil sliders in dB (v2) or % (legacy); null until first synced. */
     _gainDbMode: boolean | null = null;
     /** Stage-1 image holds raw dB values (window applied in stage 2). */
@@ -1280,9 +1283,16 @@ export class SpectrogramController extends EventTarget {
             const pts = vis && visibleContrastPoints(vis.values, AUTO_CONTRAST.blackMarginDb, AUTO_CONTRAST.whitePercentile, !this._gainDbMode);
             if (pts && vis) {
                 if (this._gainDbMode) {
-                    // Black a little above the visible noise floor, white above its p99.9.
-                    const floor = this._clamp(Math.round(pts.black - vis.noise), DB_CONTRAST.floor.min, DB_CONTRAST.floor.max);
-                    const range = this._clamp(Math.round(pts.white + AUTO_CONTRAST.headroomDb - (vis.noise + floor)), DB_CONTRAST.range.min, DB_CONTRAST.range.max);
+                    // Black a little above the visible noise floor, white above its p99.9;
+                    // with a host-set range, black that far below white.
+                    const white = pts.white + AUTO_CONTRAST.headroomDb;
+                    let floor: number, range: number;
+                    if (this.contrastRangeDb != null) {
+                        ({ floor, range } = contrastFromTop(white, vis.noise, this.contrastRangeDb));
+                    } else {
+                        floor = this._clamp(Math.round(pts.black - vis.noise), DB_CONTRAST.floor.min, DB_CONTRAST.floor.max);
+                        range = this._clamp(Math.round(white - (vis.noise + floor)), DB_CONTRAST.range.min, DB_CONTRAST.range.max);
+                    }
                     if (this._d.floorSlider) this._d.floorSlider.value = String(floor);
                     if (this._d.ceilSlider)  this._d.ceilSlider.value  = String(range);
                 } else {

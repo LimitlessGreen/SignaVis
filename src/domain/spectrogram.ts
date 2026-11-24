@@ -162,6 +162,19 @@ const COLOR_MAPS = {
         [253, 195, 40],
         [240, 249, 33],
     ],
+    // Jet (matplotlib): dark blue → blue → cyan → yellow → red → dark red,
+    // sampled at nine even steps of its segment data.
+    jet: [
+        [0, 0, 128],
+        [0, 0, 255],
+        [0, 128, 255],
+        [0, 255, 226],
+        [123, 255, 123],
+        [226, 255, 21],
+        [255, 151, 0],
+        [255, 33, 0],
+        [128, 0, 0],
+    ],
     // Ember: warm-body palette
     // black → deep brown → warm red → orange → yellow → white
     ember: [
@@ -196,6 +209,11 @@ function sampleColorMap(stops: number[][], t: number) {
         b: Math.round(a[2] + (b[2] - a[2]) * frac),
     };
 }
+
+/** Every colour scheme getSpectrogramColor() draws (others fall back to inferno). */
+export const SPECTROGRAM_COLOR_SCHEMES: readonly string[] = Object.freeze([
+    'grayscale', 'grayscaleInv', 'spectroflare', 'fire', ...Object.keys(COLOR_MAPS),
+]);
 
 export function getSpectrogramColor(value: number, colorScheme: string) {
     const x = clamp(value, 0, 1);
