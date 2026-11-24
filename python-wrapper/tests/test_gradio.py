@@ -78,6 +78,9 @@ class TestSignaVisPlayer(unittest.TestCase):
         self.assertFalse(opts["readOnly"])
         self.assertFalse(opts["showFileOpen"])
 
+    def test_the_playhead_time_reaches_the_page(self):
+        self.assertIn("new CustomEvent('signavis-timeupdate'", SignaVisPlayer().js_on_load)
+
     def test_assets_are_served_locally(self):
         head = SignaVisPlayer().head
         self.assertNotIn("unpkg", head)

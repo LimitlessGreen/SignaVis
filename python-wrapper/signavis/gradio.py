@@ -157,6 +157,10 @@ async function ensurePlayer() {
   state.player = new mod.BirdNETPlayer(host, opts);
   await state.player.ready;
   state.player.on('ready', () => trigger('load'));
+  // The page can follow the playhead (e.g. mark the table rows it is in).
+  state.player.on('timeupdate', (e) => element.dispatchEvent(new CustomEvent('signavis-timeupdate', {
+    bubbles: true, detail: { currentTime: Number(e.detail?.currentTime ?? state.player.currentTime) || 0 },
+  })));
   return state.player;
 }
 
