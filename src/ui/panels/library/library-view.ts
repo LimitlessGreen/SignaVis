@@ -15,7 +15,7 @@ import {
     type CatalogRow, type CatalogSort, type Facets, type HashProgress, type Integrity,
 } from '../../../domain/catalog/catalog-types.ts';
 import {
-    clockDuration, gridWindow, heatLut, moveIndex, scrollToShow, thumbPixels,
+    clockDuration, gridWindow, HEAT_FONT, heatGeometry, heatLut, moveIndex, scrollToShow, thumbPixels,
     type Thumb, type ThumbSpec,
 } from '../../../domain/catalog/thumb-grid.ts';
 import { CatalogView, type ViewChange } from '../../../domain/catalog/catalog-view.ts';
@@ -718,7 +718,8 @@ export class LibraryView {
         const c = this.#q<HTMLCanvasElement>('.lib-heat');
         if (!c) return;
         // One-piece library: a 110 px strip; calendar panel: as tall as the panel.
-        const W = c.clientWidth || 600, H = Math.max(110, this.parts ? c.clientHeight : 0), PLOT = H - 14, LEFT = 24;
+        const W = c.clientWidth || 600, H = Math.max(110, this.parts ? c.clientHeight : 0), LEFT = 24;
+        const { top: TOP, rowH: ch } = heatGeometry(H);
         const dpr = window.devicePixelRatio || 1;
         c.width = Math.round(W * dpr);
         c.height = Math.round(H * dpr);
@@ -732,18 +733,17 @@ export class LibraryView {
         const muted = css.getPropertyValue('--color-text-secondary').trim() || '#888';
         const max = Math.max(...this.#v.heat.map((h) => h.count));
         const cw = (W - LEFT) / days.length;
-        const ch = PLOT / 24;
         const idx = new Map(days.map((d, i) => [d, i]));
         g.fillStyle = accent;
         for (const h of this.#v.heat) {
             g.globalAlpha = 0.15 + 0.85 * (h.count / max);
-            g.fillRect(LEFT + idx.get(h.day)! * cw, h.hour * ch, Math.max(1, cw - 0.5), ch - 0.5);
+            g.fillRect(LEFT + idx.get(h.day)! * cw, TOP + h.hour * ch, Math.max(1, cw - 0.5), ch - 0.5);
         }
         g.globalAlpha = 1;
         g.fillStyle = muted;
-        g.font = '10px sans-serif';
+        g.font = `${HEAT_FONT}px sans-serif`;
         g.textBaseline = 'middle';
-        for (const hr of [0, 6, 12, 18]) g.fillText(String(hr).padStart(2, '0'), 2, hr * ch + ch / 2);
+        for (const hr of [0, 6, 12, 18]) g.fillText(String(hr).padStart(2, '0'), 2, TOP + hr * ch + ch / 2);
         // Date ticks: about every 80 px, on day boundaries.
         g.textBaseline = 'alphabetic';
         const every = Math.max(1, Math.ceil(80 / cw));
