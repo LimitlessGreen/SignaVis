@@ -154,6 +154,7 @@ export function renderMainWaveform({
     viewportWidth = 0,
     display = DEFAULT_WAVEFORM_DISPLAY,
     band = null,
+    bandPendingLabel = '',
 }: {
     audioBuffer: AudioBuffer;
     amplitudeCanvas: HTMLCanvasElement;
@@ -168,6 +169,8 @@ export function renderMainWaveform({
     display?: WaveformDisplay;
     /** Draw this band-filtered signal instead of the raw samples. */
     band?: WaveformBandSource | null;
+    /** No band ready yet: the raw signal is drawn and the badge names the band being computed. */
+    bandPendingLabel?: string;
 }) {
     if (!audioBuffer) return;
 
@@ -176,7 +179,7 @@ export function renderMainWaveform({
     if (!ampCtx || !timelineCtx) return;
 
     try {
-        (amplitudeCanvas as any)._aw_lastRender = { audioBuffer, amplitudeCanvas, waveformTimelineCanvas, waveformContent, pixelsPerSecond, waveformHeight, amplitudePeakAbs, showTimeline, scrollLeft, viewportWidth, display, band };
+        (amplitudeCanvas as any)._aw_lastRender = { audioBuffer, amplitudeCanvas, waveformTimelineCanvas, waveformContent, pixelsPerSecond, waveformHeight, amplitudePeakAbs, showTimeline, scrollLeft, viewportWidth, display, band, bandPendingLabel };
     } catch (e) {}
 
     const totalWidth = Math.max(1, Math.floor(audioBuffer.duration * pixelsPerSecond));
@@ -328,7 +331,8 @@ export function renderMainWaveform({
     ampCtx.stroke(clipPath);
     ampCtx.restore();
 
-    drawPeakBadge(ampCtx, width, amplitudePeakAbs, css, danger, band ? `${band.label}${band.pending ? ' \u2026' : ''}` : '');
+    const bandLabel = band ? `${band.label}${band.pending ? ' \u2026' : ''}` : bandPendingLabel ? `${bandPendingLabel} \u2026` : '';
+    drawPeakBadge(ampCtx, width, amplitudePeakAbs, css, danger, bandLabel);
 
     if (showTimeline && timelineHeight > 0) {
         drawWaveformTimeline({

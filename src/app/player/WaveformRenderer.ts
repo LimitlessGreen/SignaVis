@@ -92,9 +92,12 @@ export class WaveformRenderer {
     #bandModuleLoading = false;
     /** Last finished band: shown (marked pending) while a newer one is computed. */
     #bandReady: { samples: Float32Array; key: string; source: WaveformBandSource } | null = null;
-    #bandWantedKey = '';
+    /** Band being computed (samples identity + band key); a change of either restarts it. */
+    #bandWanted: { samples: Float32Array; key: string } | null = null;
     #bandTimer: ReturnType<typeof setTimeout> | null = null;
     #bandToken = 0;
+    /** Band being computed while nothing (or another band) is ready: shown in the badge with "…". */
+    #bandPendingLabel = '';
 
     constructor(deps: WaveformRendererDeps) {
         this.#d = deps.d;
@@ -122,11 +125,16 @@ export class WaveformRenderer {
      * computing the band's pyramid when needed; redraws when that is done.
      */
     #band(): WaveformBandSource | null {
+        this.#bandPendingLabel = '';
         const display = this.#getWaveformDisplay();
         const audioBuffer = this.#getAudioBuffer();
         if (display.band !== 'visible' || !audioBuffer) { this.#cancelBand(); return null; }
+        const coords = this.#getCoords();
+        const requested = { lo: coords?.freqViewMin ?? 0, hi: coords?.freqViewMax ?? coords?.boundedMaxFreq ?? 0 };
         const mod = this.#bandModule;
         if (!mod) {
+            // Raw signal until the filter is loaded, but the badge already names the band.
+            if (requested.lo > 0 || requested.hi > 0) this.#bandPendingLabel = formatBand(requested.lo, requested.hi);
             if (!this.#bandModuleLoading) {
                 this.#bandModuleLoading = true;
                 import('../../domain/bandFilter.ts').then((m) => {
@@ -137,32 +145,41 @@ export class WaveformRenderer {
             }
             return null;
         }
-        const coords = this.#getCoords();
         const sr = audioBuffer.sampleRate;
-        const band = mod.effectiveBand({ lo: coords?.freqViewMin ?? 0, hi: coords?.freqViewMax ?? coords?.boundedMaxFreq ?? 0 }, sr);
+        const band = mod.effectiveBand(requested, sr);
         if (!band) { this.#cancelBand(); return null; }
         const samples = selectedSamples(audioBuffer);
         const key = mod.bandKey(band);
+        // A ready band of other samples (another recording or channel) is useless now: let it go.
+        if (this.#bandReady && this.#bandReady.samples !== samples) this.#bandReady = null;
         const ready = this.#bandReady;
-        if (ready && ready.samples === samples && ready.key === key) return ready.source;
+        if (ready && ready.key === key) return ready.source;
         const cached = mod.cachedBandPeaks(samples, band);
         if (cached) return this.#setBandReady(mod, samples, sr, band, cached).source;
-        if (this.#bandWantedKey !== key) {
-            this.#bandWantedKey = key;
+        const wanted = this.#bandWanted;
+        if (!wanted || wanted.samples !== samples || wanted.key !== key) {
+            this.#bandWanted = { samples, key };
             const token = ++this.#bandToken;
             if (this.#bandTimer) clearTimeout(this.#bandTimer);
             this.#bandTimer = setTimeout(() => {
                 this.#bandTimer = null;
                 mod.bandPeaksAsync(samples, sr, band, { isCancelled: () => token !== this.#bandToken }).then((peaks) => {
                     if (!peaks || token !== this.#bandToken) return;
-                    this.#bandWantedKey = '';
+                    this.#bandWanted = null;
                     this.#setBandReady(mod, samples, sr, band, peaks);
                     this.#redrawAll();
                 }).catch((err) => console.warn('Waveform band filter failed:', err));
             }, BAND_DEBOUNCE_MS);
         }
-        // Meanwhile the previous band of the same samples, marked as pending.
-        return ready && ready.samples === samples ? { ...ready.source, pending: true } : null;
+        this.#bandPendingLabel = formatBand(band.lo, band.hi);
+        // Meanwhile the previous band of the same samples, marked as pending; else the raw signal.
+        return ready ? { ...ready.source, pending: true, label: this.#bandPendingLabel } : null;
+    }
+
+    /** Band state for tests: what would be drawn now, the band shown as pending, the ready band's samples. */
+    inspectBand(): { source: WaveformBandSource | null; pendingLabel: string; readySamples: Float32Array | null } {
+        const source = this.#band();
+        return { source, pendingLabel: this.#bandPendingLabel, readySamples: this.#bandReady?.samples ?? null };
     }
 
     #setBandReady(mod: BandModule, samples: Float32Array, sr: number, band: { lo: number; hi: number }, peaks: ChannelPeaks) {
@@ -178,7 +195,7 @@ export class WaveformRenderer {
 
     #cancelBand(): void {
         this.#bandToken++;
-        this.#bandWantedKey = '';
+        this.#bandWanted = null;
         if (this.#bandTimer) { clearTimeout(this.#bandTimer); this.#bandTimer = null; }
     }
 
@@ -207,6 +224,7 @@ export class WaveformRenderer {
             viewportWidth:     this.#getViewportWidth(),
             display:           this.#getWaveformDisplay(),
             band:              this.#band(),
+            bandPendingLabel:  this.#bandPendingLabel,
         });
         this.#scheduleUiUpdate();
     }
@@ -296,6 +314,9 @@ export class WaveformRenderer {
 
     /** A new file is loading: the old spectrogram image must not stay on screen. */
     resetOverview(): void {
+        // A new file: the ready band (and the samples its filter holds) belongs to the old one.
+        this.#bandReady = null;
+        this.#cancelBand();
         this.#overviewHasImage = false;
         this.#overviewImage = null;
         this.#overviewWaveKey = null;
