@@ -15,6 +15,7 @@ import { keyScope } from '../shared/keymap.ts';
 import { vendorUrl } from '../infrastructure/tauri/runtime.ts';
 import { labelPlaybackBand } from '../domain/labelBand.ts';
 import { createPlayerHTML, DEFAULT_OPTIONS } from '../ui/template.ts';
+import { installPlayerTranslation } from '../ui/playerI18n.ts';
 import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { clamp } from '../shared/utils.ts';
 import { PlayerState } from './PlayerState.ts';
@@ -246,6 +247,7 @@ export class BirdNETPlayer {
     async _init() {
         // 1. Inject player DOM (pass options for section visibility)
         this.container.innerHTML = createPlayerHTML(this.options);
+        this._stopTranslation = installPlayerTranslation(this.container, this.options.locale);
         this.root = /** @type {HTMLElement} */ (this.container.querySelector('.daw-shell'));
 
         // 2. Resolve WaveSurfer (option → global → CDN import)
@@ -289,6 +291,8 @@ export class BirdNETPlayer {
         this._emit('ready', { phase: 'init' });
         return this;
     }
+
+    _stopTranslation: () => void = () => {};
 
     _emit(event: string, detail: unknown = {}): void {
         this._events.emit(event, detail);
@@ -800,6 +804,7 @@ export class BirdNETPlayer {
         this.spectrogramLabels.detach();
         this._state?.dispose();
         this._state = null;
+        this._stopTranslation();
         this.container.innerHTML = '';
     }
 
