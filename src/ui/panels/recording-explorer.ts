@@ -200,7 +200,7 @@ export class RecordingExplorer {
         const chevron = document.createElement('span');
         chevron.className = 'rec-session-chevron';
         chevron.setAttribute('aria-hidden', 'true');
-        chevron.textContent = this._collapsed ? '▸' : '▾';
+        chevron.textContent = '▸';   // CSS turns it down when open
 
         const nameEl = document.createElement('span');
         nameEl.className = 'rec-session-name';
@@ -273,7 +273,7 @@ export class RecordingExplorer {
 
         const toggle = () => {
             this._collapsed = !this._collapsed;
-            chevron.textContent = this._collapsed ? '▸' : '▾';
+            chevron.textContent = '▸';   // CSS turns it down when open
             header.setAttribute('aria-expanded', String(!this._collapsed));
             body.hidden = this._collapsed;
         };
