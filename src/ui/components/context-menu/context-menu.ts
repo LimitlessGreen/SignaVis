@@ -29,6 +29,10 @@
  * @property {boolean}     [disabled]  Greyed out, not interactive.
  * @property {boolean}     [separator] Renders a divider line instead of an item.
  * @property {string}      [shortcut]  Key hint shown on the right (e.g. "F2").
+ * @property {string}      [heading]   Renders a small section title instead of an item.
+ * @property {string}      [hint]      Short text at the right (shortcut, current value, scope).
+ * @property {boolean}     [checked]   A toggle: shows on/off (role menuitemcheckbox).
+ * @property {boolean}     [more]      Opens a further menu (shows ▸).
  */
 
 let _current: any = null;
@@ -58,6 +62,15 @@ export function showContextMenu({ x, y, items }: any) {
       continue;
     }
 
+    if (item.heading) {
+      const h = document.createElement('div');
+      h.className = 'ctx-heading';
+      h.setAttribute('role', 'presentation');
+      h.textContent = item.heading;
+      menu.appendChild(h);
+      continue;
+    }
+
     const row = document.createElement('button');
     row.className = 'ctx-item' + (item.danger ? ' ctx-item--danger' : '');
     row.setAttribute('role', 'menuitem');
@@ -84,6 +97,26 @@ export function showContextMenu({ x, y, items }: any) {
       kbd.className = 'ctx-item-kbd';
       kbd.textContent = item.shortcut;
       row.appendChild(kbd);
+    }
+    if (item.hint) {
+      const hintEl = document.createElement('span');
+      hintEl.className = 'ctx-item-hint';
+      hintEl.textContent = item.hint;
+      row.appendChild(hintEl);
+    }
+    if (typeof item.checked === 'boolean') {
+      row.setAttribute('role', 'menuitemcheckbox');
+      row.setAttribute('aria-checked', String(item.checked));
+      const sw = document.createElement('span');
+      sw.className = 'ctx-item-switch' + (item.checked ? ' is-on' : '');
+      row.appendChild(sw);
+    }
+    if (item.more) {
+      row.setAttribute('aria-haspopup', 'menu');
+      const m = document.createElement('span');
+      m.className = 'ctx-item-more';
+      m.textContent = '▸';
+      row.appendChild(m);
     }
 
     if (!item.disabled) {
