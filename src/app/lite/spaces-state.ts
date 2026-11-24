@@ -22,6 +22,11 @@ export interface SpaceDef {
     arrange?: Record<string, PanelPlacement>;
     /** Fresh layout: panels brought to the front of their tab group (default: the first panel). */
     front?: string[];
+    /**
+     * Panels of this space left out of a fresh layout; placed (by `arrange`) the first time they are
+     * revealed, and then stored like the others. A stored layout may lack them.
+     */
+    onDemand?: string[];
 }
 
 export interface PanelPlacement {
@@ -91,13 +96,14 @@ export function layoutPanelIds(layout: unknown): string[] {
  * panel it is stored under (dockview restores an entry by its own `id` and
  * `contentComponent`, not by the map key), and it holds every panel of the
  * space: panels cannot be closed yet, so a missing one is new (an update)
- * and would otherwise never appear.
+ * and would otherwise never appear. Panels in `onDemand` may be missing
+ * (they are added when revealed).
  */
-export function layoutUsable(layout: unknown, own: ReadonlySet<string>): boolean {
+export function layoutUsable(layout: unknown, own: ReadonlySet<string>, onDemand: ReadonlySet<string> = new Set()): boolean {
     const panels = (layout as any)?.panels;
     if (!panels || typeof panels !== 'object') return false;
     const entries = Object.entries<any>(panels);
-    if ([...own].some((id) => !(id in panels))) return false;
+    if ([...own].some((id) => !(id in panels) && !onDemand.has(id))) return false;
     return entries.length > 0 && entries.every(([key, e]) =>
         own.has(key) && !!e && typeof e === 'object' && e.id === key
         && (e.contentComponent === undefined || e.contentComponent === key));

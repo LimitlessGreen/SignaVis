@@ -5469,50 +5469,111 @@ async function installLiteSpaces() {
     bar = await makeViewBar(catalogView);
     void catalogView.reload();
   }
-  return SpacesShell.create({
-    bar,
-    tabsBefore: fileLabel,   // fixed place right of the logo; the file name may be long
-    replace: workspace,
-    defaultActive: 'annotate',
-    eager: ['annotate'],
-    spaces: [
-      { id: 'browse', title: 'Browse', icon: LayoutGrid,
-        // As in the mockup: fields left, recordings in the middle, map | statistics | selection right, calendar below them.
-        panels: ['lib-recordings', 'lib-fields', 'lib-map', 'lib-stats', 'lib-selection', 'lib-calendar'],
-        arrange: {
-          'lib-fields': { ref: 'lib-recordings', dir: 'left', size: 250 },
-          'lib-map': { ref: 'lib-recordings', dir: 'right', size: 520 },
-          'lib-stats': { ref: 'lib-map', dir: 'within' },
-          'lib-selection': { ref: 'lib-map', dir: 'within' },
-          'lib-calendar': { ref: 'lib-map', dir: 'below', size: 330 },
-        },
-        front: ['lib-map'] },
-      { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor', 'view-list'],
-        arrange: { 'view-list': { ref: 'editor', dir: 'left', size: 290 } } },
-      { id: 'embeddings', title: 'Embeddings', icon: ChartScatter, panels: ['embeddings'], optional: true },
-    ],
-    panels: [
-      { id: 'editor', title: 'Editor', mount: (host) => { host.appendChild(workspace); } },
-      { id: 'view-list', title: 'View', mount: (host) => { host.appendChild(viewListHost); void mountViewList(); } },
-      ...[['recordings', 'Recordings'], ['fields', 'Fields'], ['map', 'Map'], ['stats', 'Statistics'], ['selection', 'Selection'], ['calendar', 'Calendar']].map(([k, title]) => ({
-        id: `lib-${k}`, title,
-        // Any part builds the library (all parts at once); the others are then only placed.
-        mount: (host) => { host.appendChild(libraryHosts[k]); mountLibraryPanel(); },
-        ...(k === 'recordings' ? { onShow: () => focusLibrarySoon() }
-          : k === 'map' || k === 'stats' ? { onShow: () => libraryPartShown(k) } : {}),
-      })),
-      { id: 'embeddings', title: 'Embedding map', mount: (host) => { host.appendChild(embedMapHost); },
-        onShow: () => {
-          if (_embedMapOpened) return;
-          _embedMapOpened = true;
-          if (similarPanel?.openMap) similarPanel.openMap();
-        } },
-    ],
-    storage: folder
-      ? { load: () => folder.readText(SPACES_FILE), save: (text) => folder.writeText(SPACES_FILE, text) }
-      : { load: async () => prefs.get(SPACES_PREF), save: async (text) => { prefs.set(SPACES_PREF, text); } },
-    onSpaceShown: (id) => { if (id === 'annotate') requestAnimationFrame(() => player?.resize?.()); },
-  });
+  // The sidebar tabs become panels of Annotate (mockup Annotate v2, B6); the sidebars themselves go.
+  const sidePanels = [...sidebar.dock(dockHost()), ...rightBar.dock(dockHost())]
+    .filter((p) => p.id !== 'library')   // the library is the Browse space
+    .sort((a, b) => dockRank(a.id) - dockRank(b.id));
+  const sideIds = sidePanels.map((p) => DOCK_ID[p.id] || p.id);
+  const hasCatalog = !!catalogView;
+  let shell;
+  try {
+    shell = await SpacesShell.create({
+      bar,
+      tabsBefore: fileLabel,   // fixed place right of the logo; the file name may be long
+      replace: workspace,
+      defaultActive: 'annotate',
+      eager: ['annotate'],
+      spaces: [
+        { id: 'browse', title: 'Browse', icon: LayoutGrid,
+          // As in the mockup: fields left, recordings in the middle, map | statistics | selection right, calendar below them.
+          panels: ['lib-recordings', 'lib-fields', 'lib-map', 'lib-stats', 'lib-selection', 'lib-calendar'],
+          arrange: {
+            'lib-fields': { ref: 'lib-recordings', dir: 'left', size: 250 },
+            'lib-map': { ref: 'lib-recordings', dir: 'right', size: 520 },
+            'lib-stats': { ref: 'lib-map', dir: 'within' },
+            'lib-selection': { ref: 'lib-map', dir: 'within' },
+            'lib-calendar': { ref: 'lib-map', dir: 'below', size: 330 },
+          },
+          front: ['lib-map'] },
+        { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor', 'view-list', ...sideIds],
+          // Left: View | Files; right: Labels | Properties | Display | Audio, below them Analyse | Similar | Species | Upload.
+          arrange: {
+            'view-list': { ref: 'editor', dir: 'left', size: 290 },
+            files: { ref: 'view-list', dir: 'within' },
+            labels: { ref: 'editor', dir: 'right', size: 400 },
+            properties: { ref: 'labels', dir: 'within' },
+            display: { ref: 'labels', dir: 'within' },
+            audio: { ref: 'labels', dir: 'within' },
+            analyse: { ref: 'labels', dir: 'below', size: 300 },
+            similar: { ref: 'analyse', dir: 'within' },
+            species: { ref: 'analyse', dir: 'within' },
+            upload: { ref: 'analyse', dir: 'within' },
+          },
+          // A catalog project lists its recordings in View; Upload (Xeno-canto) only when asked for.
+          front: [hasCatalog ? 'view-list' : 'files', 'labels', 'analyse'],
+          onDemand: hasCatalog ? ['upload'] : [] },
+        { id: 'embeddings', title: 'Embeddings', icon: ChartScatter, panels: ['embeddings'], optional: true },
+      ],
+      panels: [
+        { id: 'editor', title: 'Editor', mount: (host) => { host.appendChild(workspace); } },
+        { id: 'view-list', title: 'View', mount: (host) => { host.appendChild(viewListHost); void mountViewList(); } },
+        ...sidePanels.map((p) => ({
+          id: DOCK_ID[p.id] || p.id, title: DOCK_TITLE[p.id] || p.label,
+          // Inside .sidebar-body: the panels keep their sidebar look (sizes, controls).
+          mount: (host) => {
+            const body = document.createElement('div');
+            body.className = 'sidebar-body space-side';
+            if (p.hint) body.title = p.hint;
+            body.appendChild(p.element);
+            host.appendChild(body);
+          },
+          onShow: () => { try { p.onActivate?.(); } catch (e) { console.warn('[spaces] panel', p.id, e); } },
+        })),
+        ...[['recordings', 'Recordings'], ['fields', 'Fields'], ['map', 'Map'], ['stats', 'Statistics'], ['selection', 'Selection'], ['calendar', 'Calendar']].map(([k, title]) => ({
+          id: `lib-${k}`, title,
+          // Any part builds the library (all parts at once); the others are then only placed.
+          mount: (host) => { host.appendChild(libraryHosts[k]); mountLibraryPanel(); },
+          ...(k === 'recordings' ? { onShow: () => focusLibrarySoon() }
+            : k === 'map' || k === 'stats' ? { onShow: () => libraryPartShown(k) } : {}),
+        })),
+        { id: 'embeddings', title: 'Embedding map', mount: (host) => { host.appendChild(embedMapHost); },
+          onShow: () => {
+            if (_embedMapOpened) return;
+            _embedMapOpened = true;
+            if (similarPanel?.openMap) similarPanel.openMap();
+          } },
+      ],
+      storage: folder
+        ? { load: () => folder.readText(SPACES_FILE), save: (text) => folder.writeText(SPACES_FILE, text) }
+        : { load: async () => prefs.get(SPACES_PREF), save: async (text) => { prefs.set(SPACES_PREF, text); } },
+      onSpaceShown: (id) => { if (id === 'annotate') requestAnimationFrame(() => player?.resize?.()); },
+    });
+  } catch (e) {
+    // The page is as before (SpacesShell.create undoes itself); the sidebars come back too.
+    sidebar.undock();
+    rightBar.undock();
+    pendingBadges.clear();
+    throw e;
+  }
+  for (const [id, text] of pendingBadges) shell.setBadge(id, text);
+  pendingBadges.clear();
+  return shell;
+}
+/** Sidebar id → dock panel id / title, where they differ. */
+const DOCK_ID = { project: 'files', spectrogram: 'display' };
+const DOCK_TITLE = { project: 'Files' };
+/** Tab order in Annotate (mockup B6); unknown panels last. */
+const DOCK_ORDER = ['project', 'labels', 'properties', 'spectrogram', 'audio', 'analyse', 'similar', 'species', 'upload'];
+const dockRank = (id) => { const i = DOCK_ORDER.indexOf(id); return i < 0 ? DOCK_ORDER.length : i; };
+/** Badges set while the spaces are being built (spaces not assigned yet). */
+const pendingBadges = new Map();
+/** What a docked sidebar forwards to: its tabs are panels of the spaces now. */
+function dockHost() {
+  const panelId = (id) => (id === 'library' ? 'lib-recordings' : DOCK_ID[id] || id);
+  return {
+    reveal: (id) => void spaces?.reveal(panelId(id)),
+    setBadge: (id, text) => { if (spaces) spaces.setBadge(panelId(id), text); else pendingBadges.set(panelId(id), text); },
+  };
 }
 /** The bar showing the current view above the spaces. */
 async function makeViewBar(view) {

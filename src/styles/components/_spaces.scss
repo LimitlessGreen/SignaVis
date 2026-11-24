@@ -154,3 +154,6 @@
 .view-bar-save { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 // The recordings panel shows no chips of its own then; in table mode its bar row would be empty.
 .lib-part--recordings:not(.lib--tiles) .lib-tilebar { display: none; }
+
+// Former sidebar tabs as Annotate panels (Labels, Analyse, Properties, …): fill the panel, scroll inside.
+.space-side { flex: 1; min-width: 0; height: 100%; }

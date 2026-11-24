@@ -24,6 +24,20 @@ const DEFAULT_WIDTH = 300;
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 600;
 
+/** Where the panels went after `dock()` (Lite spaces). */
+export interface SidebarDockHost {
+  reveal: (id: string) => void;
+  setBadge?: (id: string, text: string) => void;
+}
+
+export interface DockedSidebarPanel {
+  id: string;
+  label: string;
+  hint?: string;
+  element: HTMLElement;
+  onActivate?: () => void;
+}
+
 export class Sidebar {
     // TypeScript property declarations (migrated from JS)
     _activeId: any;
@@ -53,6 +67,7 @@ export class Sidebar {
     storageKey: any;
     _collapsed: any;
     _onChange: any;
+    _dock: SidebarDockHost | null = null;
   /**
    * @param {HTMLElement} workspace   The .workspace flex container
    * @param {object}      [options]
@@ -136,6 +151,7 @@ export class Sidebar {
   /** Activate a panel by id. */
   setActive(id: any) {
     if (!this._panels.has(id)) return;
+    if (this._dock) { this._dock.reveal(id); return; }
 
     if (this._activeId && this._panels.has(this._activeId)) {
       const prev = this._panels.get(this._activeId);
@@ -162,11 +178,46 @@ export class Sidebar {
     this._onChange?.(id);
   }
 
+  /**
+   * Lite spaces: the panels move into dock panels and this sidebar disappears.
+   * Afterwards it only forwards: setActive/toggle → `host.reveal`, setBadge → `host.setBadge`;
+   * collapse does nothing and `collapsed` is false (dock panels are always placed).
+   * Returns the panels in registration order; their `onActivate` is the caller's to run
+   * when the dock panel is shown.
+   */
+  dock(host: SidebarDockHost): DockedSidebarPanel[] {
+    if (this._dock) return [];
+    if (this._activeId) this.collapse();
+    this._dock = host;
+    const out: DockedSidebarPanel[] = [];
+    for (const [id, p] of this._panels) {
+      p.element.style.display = '';
+      out.push({ id, label: p.label, hint: p.hint, element: p.element, onActivate: p.onActivate });
+    }
+    this._activityBar.remove();
+    this._sidebarEl.remove();
+    this._handle.remove();
+    return out;
+  }
+
+  /** Undo `dock()` (the spaces could not be built): panels and bars back in their places, collapsed. */
+  undock() {
+    if (!this._dock) return;
+    this._dock = null;
+    for (const p of this._panels.values()) {
+      p.element.style.display = 'none';
+      this._body.appendChild(p.element);
+    }
+    if (this._side === 'right') this._workspace.append(this._handle, this._sidebarEl, this._activityBar);
+    else this._workspace.prepend(this._activityBar, this._sidebarEl, this._handle);
+  }
+
   /** True while no panel is shown. */
-  get collapsed() { return this._collapsed; }
+  get collapsed() { return this._dock ? false : this._collapsed; }
 
   /** Toggle: if panel is active collapse, otherwise activate. */
   toggle(id: any) {
+    if (this._dock) { this._dock.reveal(id); return; }
     if (this._activeId === id && !this._collapsed) {
       this.collapse();
     } else {
@@ -176,6 +227,7 @@ export class Sidebar {
 
   /** Collapse sidebar (hide panel area, keep activity bar). */
   collapse() {
+    if (this._dock) return;
     if (this._activeId && this._panels.has(this._activeId)) {
       const panel = this._panels.get(this._activeId);
       panel.btn.classList.remove('active');
@@ -198,6 +250,7 @@ export class Sidebar {
     const panel = this._panels.get(id);
     if (!panel) return;
     const t = text ? String(text) : '';
+    if (this._dock) { this._dock.setBadge?.(id, t); return; }
     panel.badge.textContent = t;
     panel.badge.style.display = t ? '' : 'none';
   }
@@ -219,7 +272,7 @@ export class Sidebar {
    */
   flashTab(id: any) {
     const panel = this._panels.get(id);
-    if (!panel) return;
+    if (!panel || this._dock) return;
     panel.btn.classList.remove('activity-btn--flash');
     void panel.btn.offsetWidth; // force reflow so animation restarts
     panel.btn.classList.add('activity-btn--flash');

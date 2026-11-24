@@ -64,7 +64,7 @@ export class SpacesShell {
     #o: SpacesShellOptions;
     #state: SpacesState;
     #spaces = new Map<string, SpaceRuntime>();
-    #panels = new Map<string, { def: PanelDef; host: HTMLElement; mounted: boolean }>();
+    #panels = new Map<string, { def: PanelDef; host: HTMLElement; mounted: boolean; title: string }>();
     #tabs: HTMLElement;
     #dv: typeof import('dockview-core') | null = null;
     #saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -84,7 +84,7 @@ export class SpacesShell {
             const host = document.createElement('div');
             host.className = 'space-panel';
             host.dataset.panel = p.id;
-            this.#panels.set(p.id, { def: p, host, mounted: false });
+            this.#panels.set(p.id, { def: p, host, mounted: false, title: p.title });
         }
         for (const def of o.spaces) {
             const el = document.createElement('section');
@@ -184,7 +184,18 @@ export class SpacesShell {
         const sp = [...this.#spaces.values()].find((s) => s.def.panels.includes(panelId));
         if (!sp) return;
         await this.show(sp.def.id);
+        if (sp.api && !sp.api.getPanel(panelId)) this.#place(sp, panelId);
         sp.api?.getPanel(panelId)?.api.setActive();
+    }
+
+    /** Count or note after a panel's title in its tab (e.g. labels of the recording); '' removes it. */
+    setBadge(panelId: string, text: string) {
+        const p = this.#panels.get(panelId);
+        if (!p) return;
+        const title = text ? `${p.def.title} ${text}` : p.def.title;
+        if (p.title === title) return;
+        p.title = title;
+        for (const sp of this.#spaces.values()) sp.api?.getPanel(panelId)?.api.setTitle(title);
     }
 
     /** Write pending changes now (window closes). */
@@ -230,23 +241,17 @@ export class SpacesShell {
         const stored = this.#state.spaces[sp.def.id]?.layout;
         // A panel belongs to the space that lists it, so restored and default layouts never share one.
         const own = new Set(sp.def.panels.filter((id) => this.#panels.has(id)));
+        const onDemand = new Set(sp.def.onDemand ?? []);
         let restored = false;
-        if (stored && layoutUsable(stored, own)) {
+        if (stored && layoutUsable(stored, own, onDemand)) {
             try { api.fromJSON(stored as any); restored = api.panels.length > 0; }
             catch (e) { console.warn(`[spaces] layout of ${sp.def.id} not usable, using the default`, e); api.clear(); }
         }
         if (!restored) {
             let first: string | null = null;
             for (const id of own) {
-                const p = this.#panels.get(id)!;
-                const at = sp.def.arrange?.[id];
-                const ref = at && api.getPanel(at.ref) ? at : null;
-                const size = ref?.size ? (ref.dir === 'left' || ref.dir === 'right' ? { initialWidth: ref.size } : { initialHeight: ref.size }) : {};
-                api.addPanel({
-                    id, component: id, title: p.def.title,
-                    ...(ref ? { position: { referencePanel: ref.ref, direction: ref.dir }, ...size }
-                        : first ? { position: { referencePanel: first } } : {}),
-                });
+                if (onDemand.has(id)) continue;
+                this.#place(sp, id, first);
                 first ??= id;
             }
             for (const id of sp.def.front ?? []) api.getPanel(id)?.api.setActive();
@@ -259,6 +264,21 @@ export class SpacesShell {
             this.#scheduleSave();
         });
         api.onDidActivePanelChange(({ panel }) => { if (panel && !sp.el.hidden) this.#panels.get(panel.id)?.def.onShow?.(); });
+    }
+
+    /** Add a panel to the layout: by its `arrange` entry if that panel is placed, else as a tab next to `fallback`. */
+    #place(sp: SpaceRuntime, id: string, fallback: string | null = sp.api?.panels[0]?.id ?? null) {
+        const api = sp.api!;
+        const p = this.#panels.get(id);
+        if (!p) return;
+        const at = sp.def.arrange?.[id];
+        const ref = at && api.getPanel(at.ref) ? at : null;
+        const size = ref?.size ? (ref.dir === 'left' || ref.dir === 'right' ? { initialWidth: ref.size } : { initialHeight: ref.size }) : {};
+        api.addPanel({
+            id, component: id, title: p.title,
+            ...(ref ? { position: { referencePanel: ref.ref, direction: ref.dir }, ...size }
+                : fallback ? { position: { referencePanel: fallback } } : {}),
+        });
     }
 
     /** Standard sizes of the arranged panels (after a build without a real size). */

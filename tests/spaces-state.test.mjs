@@ -81,3 +81,11 @@ test('layoutUsable: a layout without a panel the space has now (added in an upda
     assert.equal(layoutUsable(layout('lib-recordings', 'lib-fields'), own), false, 'lib-map would be unreachable');
     assert.equal(layoutUsable(layout('lib-recordings', 'lib-fields', 'lib-map'), own), true);
 });
+
+test('layoutUsable: on-demand panels may be missing from a stored layout', () => {
+    const own = new Set(['editor', 'labels', 'upload']);
+    const onDemand = new Set(['upload']);
+    assert.equal(layoutUsable(layout('editor', 'labels'), own, onDemand), true, 'upload is added when revealed');
+    assert.equal(layoutUsable(layout('editor', 'labels', 'upload'), own, onDemand), true, 'and kept once placed');
+    assert.equal(layoutUsable(layout('editor'), own, onDemand), false, 'labels is not on demand');
+});
