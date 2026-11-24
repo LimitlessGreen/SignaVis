@@ -12,6 +12,7 @@ import { getSpectrogramColor } from './spectrogram.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, SNAP_BOX_DEFAULT_CONF, type SnapBox, type SnapBoxSource, type SnapPatch, type SnapResult } from './snapToCall.ts';
 import { prefs } from '../infrastructure/storage/prefs.ts';
 import { labelChannel } from '../shared/channels.ts';
+import { labelColorForName } from './labelColors.ts';
 import { labelProps } from './labelFields.ts';
 
 /** Height of one strip in the 'lanes' label display, and the gap above it. */
@@ -79,20 +80,15 @@ export function getOverlayColorStyle(color: unknown): { fill: string; edge: stri
 }
 
 /**
- * Deterministic color for a label name — same name always produces the same
- * color.  Uses a simple string hash mapped onto a golden-angle hue wheel.
+ * Colour for a label name: the same name keeps its colour, and new names get
+ * palette colours that differ clearly from those in use (domain/labelColors.ts).
  * @param {string} name
  * @returns {string} hex color
  */
 export function colorForName(name: unknown): string {
-    const key = String(name || '').trim().toLowerCase();
+    const key = String(name || '').trim();
     if (!key) return _hslToHex(0, 0, 55); // grey fallback
-    let h = 0;
-    for (let i = 0; i < key.length; i++) {
-        h = ((h << 5) - h + key.charCodeAt(i)) | 0;
-    }
-    const hue = ((h % 360) + 360) % 360;
-    return _hslToHex(hue, 65, 58);
+    return labelColorForName(key);
 }
 
 /**

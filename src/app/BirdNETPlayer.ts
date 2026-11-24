@@ -19,6 +19,7 @@ import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { clamp } from '../shared/utils.ts';
 import { PlayerState } from './PlayerState.ts';
 import { AnnotationLayer, SpectrogramLabelLayer, colorForName, parseColorToRgb } from '../domain/annotations.ts';
+import { assignLabelColors } from '../domain/labelColors.ts';
 import { UndoStack } from '../domain/undoStack.ts';
 import { computeSnapPatch } from './snapPatch.ts';
 import type { SnapPatch } from '../domain/snapToCall.ts';
@@ -461,12 +462,14 @@ export class BirdNETPlayer {
      */
     setAnnotations(annotations: Partial<LinkedLabel>[]) {
         const next = new Map<string, LinkedLabel>();
+        const colors = this._planColors(annotations);
         for (const ann of annotations || []) {
             const id = (ann as any)?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
             const existing = this._linkedLabels.get(id);
             next.set(id, this._normalizeLinkedLabel({
                 ...existing,
                 ...(ann as any),
+                ...this._plannedColor(colors, ann),
                 id,
                 label: (ann as any)?.label ?? (ann as any)?.species ?? existing?.label ?? 'Label',
             }));
@@ -474,6 +477,20 @@ export class BirdNETPlayer {
         this._linkedLabels = next;
         this._syncLinkedLabelsToLayers();
     }
+    /** Colours for a whole set of labels without one: rows and simultaneous labels differ. */
+    _planColors(labels: Partial<LinkedLabel>[] | null | undefined): Map<string, string> {
+        return assignLabelColors((labels || []).map((l: any) => ({
+            label: l?.label ?? l?.species, origin: l?.origin, color: l?.color, start: l?.start, end: l?.end,
+        })));
+    }
+
+    /** The planned colour of a label without one; it replaces the colour its id had before. */
+    _plannedColor(plan: Map<string, string>, label: any): { color?: string } {
+        if (label?.color) return {};
+        const color = plan.get(String(label?.label ?? label?.species ?? '').trim().toLowerCase());
+        return color ? { color } : {};
+    }
+
     clearAnnotations() {
         this._linkedLabels.clear();
         this._syncLinkedLabelsToLayers();
@@ -514,12 +531,14 @@ export class BirdNETPlayer {
      */
     setSpectrogramLabels(labels: Partial<LinkedLabel>[]) {
         const next = new Map<string, LinkedLabel>();
+        const colors = this._planColors(labels);
         for (const lbl of labels || []) {
             const id = (lbl as any)?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
             const existing = this._linkedLabels.get(id);
             next.set(id, this._normalizeLinkedLabel({
                 ...existing,
                 ...(lbl as any),
+                ...this._plannedColor(colors, lbl),
                 id,
                 species: (lbl as any)?.species ?? (lbl as any)?.label ?? existing?.species ?? '',
                 label: (lbl as any)?.label ?? existing?.label ?? (lbl as any)?.species ?? 'Label',
