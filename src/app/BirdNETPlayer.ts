@@ -11,6 +11,7 @@
 //   player.play();
 // ═══════════════════════════════════════════════════════════════════════
 
+import { DEFAULT_WAVEFORM_DISPLAY, type WaveformDisplay } from '../domain/waveformScale.ts';
 import { keyScope } from '../shared/keymap.ts';
 import { vendorUrl } from '../infrastructure/tauri/runtime.ts';
 import { labelPlaybackBand } from '../domain/labelBand.ts';
@@ -1204,6 +1205,15 @@ export class BirdNETPlayer {
     setOverviewMode(mode: 'waveform' | 'spectrogram') { this._state?._setOverviewMode(mode); }
 
     get overviewMode(): 'waveform' | 'spectrogram' { return this._state?._overviewMode ?? 'waveform'; }
+
+    /**
+     * Amplitude view: `scale` 'linear' | 'db', `reference` 'peak' (fit to the loudest sample)
+     * | 'full' (±1 / 0 dBFS), `dbRange` (dB from edge to centre), `rms` (RMS body), `band` 'full'
+     * | 'visible' (filtered to the spectrogram's frequency range). Fields left
+     * out keep their value; the choice is saved like the Settings → Waveform controls.
+     */
+    setWaveformDisplay(display: Partial<WaveformDisplay>) { this._state?._setWaveformDisplay(display); }
+    get waveformDisplay(): WaveformDisplay { return { ...(this._state?._waveformDisplay ?? DEFAULT_WAVEFORM_DISPLAY) }; }
 
     // ── Features (optional building blocks, see playerFeature.ts) ───
 
