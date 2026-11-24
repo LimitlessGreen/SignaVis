@@ -326,6 +326,39 @@ export function createPlayerHTML(opts = {}) {
             </div>
         </div>
 
+        <div class="settings-section" data-aw="waveformSettingsSection">
+            <h3 class="settings-section-title">Waveform</h3>
+            <div class="settings-row">
+                <label class="settings-label" title="Linear: sample values. dB: loudness in dBFS, so quiet calls above the noise stay visible.">Scale</label>
+                <select data-aw="waveformScaleSelect" class="settings-select" aria-label="Waveform scale">
+                    <option value="linear" selected>Linear</option>
+                    <option value="db">dB</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Peak: the loudest sample fills the height. Full scale: the height is ±1 (0 dBFS), so files can be compared.">Height</label>
+                <select data-aw="waveformRefSelect" class="settings-select" aria-label="Waveform height">
+                    <option value="peak" selected>Fit to peak</option>
+                    <option value="full">Full scale</option>
+                </select>
+            </div>
+            <div class="settings-row" data-aw="waveformDbRangeRow" hidden>
+                <label class="settings-label" title="dB shown from the top edge to the centre line; quieter samples sit on the centre line">dB range</label>
+                <select data-aw="waveformDbRangeSelect" class="settings-select" aria-label="dB range">
+                    <option value="36">36 dB</option>
+                    <option value="48">48 dB</option>
+                    <option value="60" selected>60 dB</option>
+                    <option value="72">72 dB</option>
+                    <option value="96">96 dB</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Solid body inside the lighter outline: RMS (average loudness) per pixel column. Clipped samples are always marked red.">
+                    <input type="checkbox" data-aw="waveformRmsCheck" checked> RMS
+                </label>
+            </div>
+        </div>
+
         <div class="settings-section" data-expert>
             <h3 class="settings-section-title">Overlay</h3>
             <div class="settings-row">

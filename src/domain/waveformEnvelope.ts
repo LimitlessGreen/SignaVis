@@ -1,60 +1,73 @@
 import { pumpSamples } from '../shared/pumpSamples.ts';
-// Min/max per block of samples, built once per channel: a fine level (32) for
-// medium zoom, a coarse one (1024, from the fine one) for zoomed-out views of
-// long recordings. Drawing and peak levels then touch a fraction of the samples.
+// Min/max and sum of squares per block of samples, built once per channel: a fine
+// level (32) for medium zoom, a coarse one (1024, from the fine one) for zoomed-out
+// views of long recordings. Drawing, RMS and peak levels then touch a fraction of
+// the samples.
 
 export const PEAK_BLOCK_FINE = 32;
 export const PEAK_BLOCK = 1024;
 
-export type Peaks = { block: number; min: Float32Array; max: Float32Array };
+/** `sq`: sum of squared samples per block (NaN samples skipped), for RMS. */
+export type Peaks = { block: number; min: Float32Array; max: Float32Array; sq: Float32Array };
 export type ChannelPeaks = { fine: Peaks; coarse: Peaks };
 
 const cache = new WeakMap<Float32Array, ChannelPeaks>();
 
-/** Reduce blocks [b0, b1) of `factor` values each into outMin/outMax. */
-function reduceRange(min: Float32Array, max: Float32Array, factor: number, outMin: Float32Array, outMax: Float32Array, b0: number, b1: number): void {
+/** Reduce blocks [b0, b1) of `factor` values each into outMin/outMax/outSq (sums `sq`). */
+function reduceRange(min: Float32Array, max: Float32Array, sq: Float32Array, factor: number, outMin: Float32Array, outMax: Float32Array, outSq: Float32Array, b0: number, b1: number): void {
     for (let b = b0; b < b1; b++) {
-        let lo = Infinity, hi = -Infinity;
+        let lo = Infinity, hi = -Infinity, acc = 0;
         const end = Math.min(min.length, (b + 1) * factor);
         for (let i = b * factor; i < end; i++) {
             if (min[i] < lo) lo = min[i];
             if (max[i] > hi) hi = max[i];
+            acc += sq[i];
         }
-        outMin[b] = lo; outMax[b] = hi;
+        outMin[b] = lo; outMax[b] = hi; outSq[b] = acc;
     }
 }
 
 /**
- * Fine (PEAK_BLOCK_FINE) min/max of `piece`, which starts at a sample offset that is a multiple
- * of PEAK_BLOCK_FINE, into outMin/outMax starting at block b0. Shared with the peaks worker.
+ * Fine (PEAK_BLOCK_FINE) min/max/sum of squares of `piece`, which starts at a sample offset that
+ * is a multiple of PEAK_BLOCK_FINE, into outMin/outMax/outSq starting at block b0. Shared with
+ * the peaks worker.
  */
-export function reduceFineInto(piece: Float32Array, outMin: Float32Array, outMax: Float32Array, b0: number): void {
+export function reduceFineInto(piece: Float32Array, outMin: Float32Array, outMax: Float32Array, outSq: Float32Array, b0: number): void {
     const n = Math.ceil(piece.length / PEAK_BLOCK_FINE);
     for (let b = 0; b < n; b++) {
-        let lo = Infinity, hi = -Infinity;
+        let lo = Infinity, hi = -Infinity, acc = 0;
         const end = Math.min(piece.length, (b + 1) * PEAK_BLOCK_FINE);
         for (let i = b * PEAK_BLOCK_FINE; i < end; i++) {
             const v = piece[i];
             if (v < lo) lo = v;
             if (v > hi) hi = v;
+            if (v === v) acc += v * v;
         }
-        outMin[b0 + b] = lo; outMax[b0 + b] = hi;
+        outMin[b0 + b] = lo; outMax[b0 + b] = hi; outSq[b0 + b] = acc;
     }
 }
 
-function reducePeaks(min: Float32Array, max: Float32Array, factor: number, block: number): Peaks {
-    const n = Math.ceil(min.length / factor);
-    const outMin = new Float32Array(n);
-    const outMax = new Float32Array(n);
-    reduceRange(min, max, factor, outMin, outMax, 0, n);
-    return { block, min: outMin, max: outMax };
+function finePeaks(data: Float32Array, b0: number, b1: number, out: Peaks): void {
+    const s0 = b0 * PEAK_BLOCK_FINE;
+    const s1 = Math.min(data.length, b1 * PEAK_BLOCK_FINE);
+    if (s1 > s0) reduceFineInto(data.subarray(s0, s1), out.min, out.max, out.sq, b0);
+}
+
+function coarseFrom(fine: Peaks): Peaks {
+    const factor = PEAK_BLOCK / PEAK_BLOCK_FINE;
+    const n = Math.ceil(fine.min.length / factor);
+    const out = { block: PEAK_BLOCK, min: new Float32Array(n), max: new Float32Array(n), sq: new Float32Array(n) };
+    reduceRange(fine.min, fine.max, fine.sq, factor, out.min, out.max, out.sq, 0, n);
+    return out;
 }
 
 export function channelPeaks(data: Float32Array): ChannelPeaks {
     let peaks = cache.get(data);
     if (peaks) return peaks;
-    const fine = reducePeaks(data, data, PEAK_BLOCK_FINE, PEAK_BLOCK_FINE);
-    const coarse = reducePeaks(fine.min, fine.max, PEAK_BLOCK / PEAK_BLOCK_FINE, PEAK_BLOCK);
+    const nFine = Math.ceil(data.length / PEAK_BLOCK_FINE);
+    const fine = { block: PEAK_BLOCK_FINE, min: new Float32Array(nFine), max: new Float32Array(nFine), sq: new Float32Array(nFine) };
+    finePeaks(data, 0, nFine, fine);
+    const coarse = coarseFrom(fine);
     peaks = { fine, coarse };
     cache.set(data, peaks);
     return peaks;
@@ -82,20 +95,20 @@ export async function channelPeaksAsync(
     }
     if (!fine) {
         const n = Math.ceil(data.length / PEAK_BLOCK_FINE);
-        const min = new Float32Array(n), max = new Float32Array(n);
+        const out = { block: PEAK_BLOCK_FINE, min: new Float32Array(n), max: new Float32Array(n), sq: new Float32Array(n) };
         for (let b = 0; b < n; b += sliceBlocks) {
-            reduceRange(data, data, PEAK_BLOCK_FINE, min, max, b, Math.min(n, b + sliceBlocks));
+            finePeaks(data, b, Math.min(n, b + sliceBlocks), out);
             await new Promise<void>((r) => setTimeout(r, 0));
             // A synchronous caller may have built it meanwhile.
             const done = cache.get(data);
             if (done) return done;
         }
-        fine = { block: PEAK_BLOCK_FINE, min, max };
+        fine = out;
     }
     // The coarse level reads all fine blocks (16M on 3 h): also in slices.
     const factor = PEAK_BLOCK / PEAK_BLOCK_FINE;
     const nCoarse = Math.ceil(fine.min.length / factor);
-    const cMin = new Float32Array(nCoarse), cMax = new Float32Array(nCoarse);
+    const cMin = new Float32Array(nCoarse), cMax = new Float32Array(nCoarse), cSq = new Float32Array(nCoarse);
     const coarseSlice = Math.max(1, Math.floor(sliceBlocks / factor) * 32);
     for (let b = 0; b < nCoarse; b += coarseSlice) {
         if (b > 0) {
@@ -103,11 +116,11 @@ export async function channelPeaksAsync(
             const done = cache.get(data);
             if (done) return done;
         }
-        reduceRange(fine.min, fine.max, factor, cMin, cMax, b, Math.min(nCoarse, b + coarseSlice));
+        reduceRange(fine.min, fine.max, fine.sq, factor, cMin, cMax, cSq, b, Math.min(nCoarse, b + coarseSlice));
     }
     const done = cache.get(data);
     if (done) return done;
-    const peaks = { fine, coarse: { block: PEAK_BLOCK, min: cMin, max: cMax } };
+    const peaks = { fine, coarse: { block: PEAK_BLOCK, min: cMin, max: cMax, sq: cSq } };
     cache.set(data, peaks);
     return peaks;
 }
@@ -150,7 +163,7 @@ async function finePeaksInWorker(data: Float32Array, createWorker: () => Worker)
         await pumpSamples(data, WORKER_PIECE, async (piece, offset) =>
             (await ask({ type: 'piece', data: piece.buffer, length: piece.length, offset }, [piece.buffer])).data);
         const r = await ask({ type: 'finish' });
-        return { block: PEAK_BLOCK_FINE, min: r.min, max: r.max };
+        return { block: PEAK_BLOCK_FINE, min: r.min, max: r.max, sq: r.sq };
     } finally {
         worker.terminate();
     }
@@ -201,6 +214,48 @@ export function envelopeMinMax(data: Float32Array, start: number, end: number): 
     }
     take(data, data, f1 * PEAK_BLOCK_FINE, end);
     return [lo, hi];
+}
+
+/**
+ * Min, max and RMS of data[start, end) from the same levels as envelopeMinMax (NaN ignored in
+ * min/max, counted as 0 in the RMS). Empty range: lo = Infinity, hi = -Infinity, rms = 0.
+ */
+export function envelopeStats(data: Float32Array, start: number, end: number): { lo: number; hi: number; rms: number } {
+    let lo = Infinity, hi = -Infinity, acc = 0;
+    const samples = (a: number, b: number) => {
+        for (let i = a; i < b; i++) {
+            const v = data[i];
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+            if (v === v) acc += v * v;
+        }
+    };
+    const blocks = (p: Peaks, a: number, b: number) => {
+        for (let i = a; i < b; i++) {
+            if (p.min[i] < lo) lo = p.min[i];
+            if (p.max[i] > hi) hi = p.max[i];
+            acc += p.sq[i];
+        }
+    };
+    const n = Math.max(0, end - start);
+    const f0 = Math.ceil(start / PEAK_BLOCK_FINE), f1 = Math.floor(end / PEAK_BLOCK_FINE);
+    if (f1 - f0 < 2) {
+        samples(start, end);
+    } else {
+        const { fine, coarse } = channelPeaks(data);
+        const r = PEAK_BLOCK / PEAK_BLOCK_FINE;
+        const c0 = Math.ceil(f0 / r), c1 = Math.floor(f1 / r);
+        samples(start, f0 * PEAK_BLOCK_FINE);
+        if (c1 > c0) {
+            blocks(fine, f0, c0 * r);
+            blocks(coarse, c0, c1);
+            blocks(fine, c1 * r, f1);
+        } else {
+            blocks(fine, f0, f1);
+        }
+        samples(f1 * PEAK_BLOCK_FINE, end);
+    }
+    return { lo, hi, rms: n > 0 ? Math.sqrt(Math.max(0, acc) / n) : 0 };
 }
 
 /** Largest |sample| (at least 1e-6), like computeAmplitudePeak. */

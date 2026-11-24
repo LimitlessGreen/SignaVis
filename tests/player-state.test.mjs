@@ -420,3 +420,26 @@ test('PlayerState: an unavailable spectrogram switches to the waveform and says 
     assert.ok(emitted.some(e => e.name === 'spectrogramUnavailable'));
     ps.dispose();
 });
+
+test('PlayerState: dispose() removes the channel and waveform setting listeners', () => {
+    globalThis.Option ??= class { constructor(text, value) { this.text = text; this.value = value; } };
+    const ids = ['channelSelect', 'channelSettingSelect', 'waveformScaleSelect', 'waveformRefSelect', 'waveformDbRangeSelect', 'waveformRmsCheck'];
+    const els = Object.fromEntries(ids.map((id) => {
+        const listeners = new Set();
+        return [id, {
+            value: '', checked: false, options: [], hidden: false, style: {}, dataset: {}, listeners,
+            addEventListener: (t, fn) => listeners.add(fn),
+            removeEventListener: (t, fn) => listeners.delete(fn),
+            add() {}, replaceChildren() {},
+        }];
+    }));
+    const container = createFakeContainer();
+    container.querySelector = (sel) => els[/data-aw="([^"]+)"/.exec(sel)?.[1]] ?? null;
+    const ps = new PlayerState(container, null, null, {
+        engine: new MockAudioEngine(), storage: new InMemoryStorageAdapter(),
+        enableTouchGestures: false, enablePerfOverlay: false,
+    });
+    for (const id of ids) assert.equal(els[id].listeners.size, 1, `${id} bound`);
+    ps.dispose();
+    for (const id of ids) assert.equal(els[id].listeners.size, 0, `${id} left bound after dispose()`);
+});

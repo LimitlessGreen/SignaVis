@@ -21,6 +21,7 @@ import {
     renderFrequencyLabels,
 } from '../../ui/components/waveform/waveform.ts';
 import type { CoordinateSystem } from '../../domain/coordinateSystem.ts';
+import { amplitudeMap, amplitudeTicks, DEFAULT_WAVEFORM_DISPLAY, type WaveformDisplay } from '../../domain/waveformScale.ts';
 
 export interface WaveformRendererDeps {
     d: {
@@ -50,6 +51,8 @@ export interface WaveformRendererDeps {
     getOverviewMode?:        () => OverviewMode;
     /** Whole-file spectrogram image `cols` wide; null → the waveform is shown instead. */
     getOverviewImage?:       (cols: number) => Promise<CanvasImageSource | null>;
+    /** Amplitude scale, reference, dB range and RMS body (default: linear, normalized, RMS). */
+    getWaveformDisplay?:     () => WaveformDisplay;
 }
 
 export type OverviewMode = 'waveform' | 'spectrogram';
@@ -70,11 +73,12 @@ export class WaveformRenderer {
     #getViewportWidth: () => number;
     #getOverviewMode: () => OverviewMode;
     #getOverviewImage: (cols: number) => Promise<CanvasImageSource | null>;
+    #getWaveformDisplay: () => WaveformDisplay;
     #overviewToken = 0;
     /** True while the strip shows a spectrogram image (kept on redraws until a new one is ready). */
     #overviewHasImage = false;
     /** What the strip's waveform was drawn for; skips rescanning every sample when nothing changed. */
-    #overviewWaveKey: { samples: Float32Array; w: number; h: number; peak: number } | null = null;
+    #overviewWaveKey: { samples: Float32Array; w: number; h: number; peak: number; display: WaveformDisplay } | null = null;
     #overviewImage: CanvasImageSource | null = null;
 
     constructor(deps: WaveformRendererDeps) {
@@ -93,6 +97,7 @@ export class WaveformRenderer {
         this.#getViewportWidth = deps.getViewportWidth ?? (() => 0);
         this.#getOverviewMode = deps.getOverviewMode ?? (() => 'waveform');
         this.#getOverviewImage = deps.getOverviewImage ?? (async () => null);
+        this.#getWaveformDisplay = deps.getWaveformDisplay ?? (() => DEFAULT_WAVEFORM_DISPLAY);
     }
 
     // ── Public rendering API ─────────────────────────────────────────
@@ -114,6 +119,7 @@ export class WaveformRenderer {
             showTimeline:      this.#getShowWaveformTimeline(),
             scrollLeft:        this.#getScrollLeft(),
             viewportWidth:     this.#getViewportWidth(),
+            display:           this.#getWaveformDisplay(),
         });
         this.#scheduleUiUpdate();
     }
@@ -137,6 +143,7 @@ export class WaveformRenderer {
             amplitudePeakAbs: this.#getAmplitudePeakAbs(),
             startNorm: r.startNorm,
             endNorm: r.endNorm,
+            display: this.#getWaveformDisplay(),
         });
     }
 
@@ -151,9 +158,11 @@ export class WaveformRenderer {
         const drawWaveform = (force = true) => {
             const rect = overviewContainer.getBoundingClientRect();
             // The selected samples identify buffer and channel selection.
-            const key = { samples: selectedSamples(audioBuffer), w: Math.floor(rect.width), h: Math.floor(rect.height), peak: this.#getAmplitudePeakAbs() };
+            const display = this.#getWaveformDisplay();
+            const key = { samples: selectedSamples(audioBuffer), w: Math.floor(rect.width), h: Math.floor(rect.height), peak: this.#getAmplitudePeakAbs(), display };
             const k = this.#overviewWaveKey;
-            const same = !this.#overviewHasImage && k && k.samples === key.samples && k.w === key.w && k.h === key.h && k.peak === key.peak;
+            const same = !this.#overviewHasImage && k && k.samples === key.samples && k.w === key.w && k.h === key.h && k.peak === key.peak
+                && k.display.scale === display.scale && k.display.reference === display.reference && k.display.dbRange === display.dbRange;
             this.#overviewHasImage = false;
             this.#overviewImage = null;
             if (same && !force) return;
@@ -163,6 +172,7 @@ export class WaveformRenderer {
                 overviewCanvas,
                 overviewContainer,
                 amplitudePeakAbs: this.#getAmplitudePeakAbs(),
+                display,
             });
         };
         if (this.#getOverviewMode() !== 'spectrogram') {
@@ -223,27 +233,34 @@ export class WaveformRenderer {
         if (!el) return;
         el.innerHTML = '';
 
-        const peak     = Math.max(1e-6, this.#getAmplitudePeakAbs() || 1);
+        const display  = this.#getWaveformDisplay();
         const clampedH = this.#getEffectiveWaveformHeight();
         const timelineH = this.#getShowWaveformTimeline()
             ? clamp(Math.round(clampedH * 0.22), 18, 32)
             : 0;
         const ampH = Math.max(32, clampedH - timelineH);
+        const ticks = amplitudeTicks(amplitudeMap(display, this.#getAmplitudePeakAbs()), ampH);
+        el.parentElement?.setAttribute('title', display.scale === 'db'
+            ? `Amplitude in dBFS (${display.reference === 'full' ? 'full scale' : 'fit to peak'}, ${display.dbRange} dB from edge to centre)`
+            : `Sample value (${display.reference === 'full' ? 'full scale ±1' : 'fit to peak'})`);
+        el.classList?.toggle('amplitude-labels--db', display.scale === 'db');
 
-        const fmt = (v: number) => {
-            const a = Math.abs(v);
-            return a >= 1 ? v.toFixed(1) : a >= 0.01 ? v.toFixed(2) : v.toFixed(3);
-        };
-
-        const values = [peak, peak / 2, 0, -peak / 2, -peak];
-        values.forEach((value, i) => {
-            const frac = i / (values.length - 1);
+        // Centred on the tick, kept inside the view (edge labels would stick out).
+        const LABEL_H = 9;
+        for (const t of ticks) {
+            const y = t.frac * ampH;
+            const top = clamp(y - LABEL_H / 2, 1, ampH - LABEL_H - 1);
             const span = document.createElement('span');
-            span.textContent = value === 0 ? '0' : `${value > 0 ? '+' : '\u2212'}${fmt(Math.abs(value))}`;
-            span.style.top = `${frac * ampH}px`;
-            span.style.transform = `translateY(${-frac * 100}%)`;
-            span.style.setProperty?.('--tick-pos', `${frac * 100}%`);
+            span.textContent = t.text;
+            span.style.top = `${top}px`;
+            span.style.setProperty?.('--tick-pos', `${y - top}px`);
             el.appendChild(span);
-        });
+        }
+        if (display.scale === 'db') {
+            const unit = document.createElement('span');
+            unit.className = 'amplitude-unit';
+            unit.textContent = 'dB';
+            el.appendChild(unit);
+        }
     }
 }

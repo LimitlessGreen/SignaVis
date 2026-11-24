@@ -43,12 +43,18 @@ import {
     selectedSamples, onChannelSelectionChange, getChannelSelection, setChannelSelection,
     parseChannelSelection, channelSelectionKey, channelLabel, effectiveSelection, toChannelOption, type ChannelSelection,
 } from '../shared/channels.ts';
+import { normalizeWaveformDisplay, DEFAULT_WAVEFORM_DISPLAY, type WaveformDisplay } from '../domain/waveformScale.ts';
+import { prefs } from '../infrastructure/storage/prefs.ts';
+
+const WAVEFORM_DISPLAY_KEY = 'aw-waveform-display';
 
 /**
  * @typedef {Object} PlayerOptions
  * @property {string}  [viewMode]
  * @property {boolean} [showOverview]
  * @property {'waveform'|'spectrogram'} [overviewMode]  Overview strip content (default 'waveform')
+ * @property {Partial<import('../domain/waveformScale.ts').WaveformDisplay>} [waveformDisplay]
+ *   Amplitude view: scale 'linear'|'db', reference 'peak'|'full', dbRange, rms. Overrides the saved choice.
  * @property {boolean} [transportOverlay]
  * @property {string}  [compactToolbar]
  * @property {boolean} [showWaveformTimeline]
@@ -145,6 +151,7 @@ export class PlayerState {
     _showSpectrogram: any;
     _showOverview: any;
     _overviewMode: OverviewMode = 'waveform';
+    _waveformDisplay: WaveformDisplay = DEFAULT_WAVEFORM_DISPLAY;
     _overviewRedrawTimer: ReturnType<typeof setTimeout> | null = null;
     _transportOverlay: any;
     _keyboardEnabled = true;
@@ -197,9 +204,6 @@ export class PlayerState {
         /** @type {import('../infrastructure/storage/IStorage.ts').IStorage} */
         this._storage = options.storage ?? new LocalStorageAdapter();
         this._offChannelSelection = onChannelSelectionChange(() => this._onChannelSelectionChanged());
-        for (const sel of [this.d.channelSelect, this.d.channelSettingSelect]) {
-            sel?.addEventListener('change', () => setChannelSelection(parseChannelSelection(sel.value)));
-        }
         this._presets = new PresetManager(this.d, {
             onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._regenerateSpectrogram(opts); },
             onStage1Rebuild: () => {
@@ -260,6 +264,9 @@ export class PlayerState {
         this._showSpectrogram = this._viewMode !== 'waveform';
         this._showOverview = this.options.showOverview !== false;
         this._overviewMode = this.options.overviewMode === 'spectrogram' ? 'spectrogram' : 'waveform';
+        this._waveformDisplay = normalizeWaveformDisplay(this.options.waveformDisplay,
+            normalizeWaveformDisplay(prefs.json(WAVEFORM_DISPLAY_KEY, null)));
+        this._syncWaveformDisplayUi();
         this._transportOverlay = this.options.transportOverlay === true;
         this._keyboardEnabled = this.options.keyboardShortcuts !== false;
         this._compactToolbarMode = this.options.compactToolbar && ['auto', 'on', 'off'].includes(this.options.compactToolbar)
@@ -447,6 +454,7 @@ export class PlayerState {
             getScrollLeft:           () => this._getPrimaryScrollLeft(),
             getViewportWidth:        () => this._getViewportWidth(),
             getOverviewMode:         () => this._overviewMode,
+            getWaveformDisplay:      () => this._waveformDisplay,
             getOverviewImage:        (cols: number) => this._spectro.overviewImage(cols),
         });
 
@@ -710,6 +718,11 @@ export class PlayerState {
             channelSelect:          q('channelSelect'),
             channelSettingRow:      q('channelSettingRow'),
             channelSettingSelect:   q('channelSettingSelect'),
+            waveformScaleSelect:    q('waveformScaleSelect'),
+            waveformRefSelect:      q('waveformRefSelect'),
+            waveformDbRangeRow:     q('waveformDbRangeRow'),
+            waveformDbRangeSelect:  q('waveformDbRangeSelect'),
+            waveformRmsCheck:       q('waveformRmsCheck'),
             scaleSelect:            q('scaleSelect'),
             colourScaleSelect:      q('colourScaleSelect'),
             presetSelect:           q('presetSelect'),
@@ -1475,6 +1488,34 @@ export class PlayerState {
         this._emit('overviewmodechange', { mode: next });
     }
 
+    /** Amplitude view: scale, reference, dB range, RMS body. Saved for the next session. */
+    _setWaveformDisplay(patch: Partial<WaveformDisplay>) {
+        const next = normalizeWaveformDisplay({ ...this._waveformDisplay, ...patch }, this._waveformDisplay);
+        const cur = this._waveformDisplay;
+        if (next.scale === cur.scale && next.reference === cur.reference && next.dbRange === cur.dbRange && next.rms === cur.rms) return;
+        this._waveformDisplay = next;
+        prefs.setJson(WAVEFORM_DISPLAY_KEY, next);
+        this._syncWaveformDisplayUi();
+        this._updateAmplitudeLabels();
+        this._drawMainWaveform();
+        this._drawOverviewWaveform();
+        this._emit('waveformdisplaychange', { ...next });
+    }
+
+    _syncWaveformDisplayUi() {
+        const v = this._waveformDisplay, d = this.d;
+        if (d.waveformScaleSelect) d.waveformScaleSelect.value = v.scale;
+        if (d.waveformRefSelect) d.waveformRefSelect.value = v.reference;
+        if (d.waveformDbRangeSelect) {
+            if (![...d.waveformDbRangeSelect.options].some((o) => o.value === String(v.dbRange))) {
+                d.waveformDbRangeSelect.add(new Option(`${v.dbRange} dB`, String(v.dbRange)));
+            }
+            d.waveformDbRangeSelect.value = String(v.dbRange);
+        }
+        if (d.waveformDbRangeRow) d.waveformDbRangeRow.hidden = v.scale !== 'db';
+        if (d.waveformRmsCheck) d.waveformRmsCheck.checked = v.rms;
+    }
+
     /** Spectrogram tiles/colors changed: redraw the spectrogram overview, at most a few times a second. */
     _scheduleOverviewSpectrogram() {
         if (this._overviewMode !== 'spectrogram' || this._overviewRedrawTimer) return;
@@ -1914,6 +1955,16 @@ export class PlayerState {
         };
 
         bindUiControllers(this.d, this, on);
+
+        const d = this.d;
+        for (const sel of [d.channelSelect, d.channelSettingSelect]) {
+            on(sel, 'change', () => setChannelSelection(parseChannelSelection(sel!.value)));
+        }
+        // Settings → Waveform
+        on(d.waveformScaleSelect, 'change', () => this._setWaveformDisplay({ scale: d.waveformScaleSelect!.value as WaveformDisplay['scale'] }));
+        on(d.waveformRefSelect, 'change', () => this._setWaveformDisplay({ reference: d.waveformRefSelect!.value as WaveformDisplay['reference'] }));
+        on(d.waveformDbRangeSelect, 'change', () => this._setWaveformDisplay({ dbRange: Number(d.waveformDbRangeSelect!.value) }));
+        on(d.waveformRmsCheck, 'change', () => this._setWaveformDisplay({ rms: d.waveformRmsCheck!.checked }));
     }
 
     _bindTouchGestures() {
