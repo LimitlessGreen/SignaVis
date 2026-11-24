@@ -204,13 +204,7 @@ export class PlayerState {
         const host = parseHostSpectrogramSettings(options.spectrogramSettings);
         this._presets = new PresetManager(this.d, {
             onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._regenerateSpectrogram(opts); },
-            onStage1Rebuild: () => {
-                if (this._spectro.hasData) {
-                    this._spectro.buildGrayscale();
-                    this._spectro.buildBaseImage(this._presets.currentColorScheme);
-                    this._drawSpectrogram();
-                }
-            },
+            onStage1Rebuild: () => this._rebuildStage1(),
             storage: this._storage,
             defaultPreset: options.defaultPreset,
             hostSettings: host.dsp,
@@ -1036,11 +1030,37 @@ export class PlayerState {
      */
     setSpectrogramSettings(settings: HostSpectrogramSettings | null) {
         const { dsp, contrastRangeDb } = parseHostSpectrogramSettings(settings);
-        const before = JSON.stringify([this._presets.hostSettings, this._spectro.contrastRangeDb]);
+        const before: Record<string, unknown> = this._presets.getCurrentPresetSettings();
+        const rangeChanged = this._spectro.contrastRangeDb !== contrastRangeDb;
         this._presets.setHostSettings(dsp);
         this._spectro.contrastRangeDb = contrastRangeDb;
-        if (JSON.stringify([this._presets.hostSettings, contrastRangeDb]) === before) return;
-        if (this.audioBuffer) this._regenerateSpectrogram({ autoAdjust: true });
+        if (!this.audioBuffer) return;
+        const after: Record<string, unknown> = this._presets.getCurrentPresetSettings();
+        const changed = Object.keys({ ...before, ...after })
+            .filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+        // Only the spectrogram values need a new run; colours and contrast reuse them.
+        if (changed.some(k => k !== 'colorScheme')) {
+            this._regenerateSpectrogram({ autoAdjust: true });
+            return;
+        }
+        if (!this._spectro.hasData) return;
+        const recontrast = rangeChanged && (this.d.gainModeSelect?.value || 'auto') === 'auto';
+        // As the contrast button does: new sliders, then rebuild the colours.
+        if (recontrast) this._spectro.autoContrast(false);
+        if (changed.length) {
+            this._rebuildStage1();
+        } else if (recontrast) {
+            this._spectro.buildBaseImage(this._presets.currentColorScheme);
+            this._drawSpectrogram();
+        }
+    }
+
+    /** Recolour the computed spectrogram (colour scheme, noise reduction, CLAHE). */
+    _rebuildStage1() {
+        if (!this._spectro.hasData) return;
+        this._spectro.buildGrayscale();
+        this._spectro.buildBaseImage(this._presets.currentColorScheme);
+        this._drawSpectrogram();
     }
 
     /** Recompute after a setting changed; a hidden spectrogram waits until it is shown. */
