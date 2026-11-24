@@ -198,6 +198,8 @@ export class BirdNETPlayer {
      * @param {string[]}    [options.labelTableColumns] - columns the built-in table starts with, e.g.
      *   ['species', 'start', 'end', 'conf'] (default: the labeling app's set).
      *   Both need the full 'signavis' entry; with 'signavis/core' pass features: [labelTable({ columns })].
+     * @param {boolean}     [options.playOnLabelClick] - clicking a label (on the spectrogram, the waveform,
+     *   the overview or in the table) also plays it; selectLabel() from the host does not (default: false)
      * @param {PlayerFeature[]} [options.features] - optional building blocks to install, e.g.
      *   [labelTable()] from 'signavis/label-table' (see playerFeature.ts)
      */
@@ -813,6 +815,7 @@ export class BirdNETPlayer {
             if (interaction === 'click' || interaction === 'ctrl-click') {
                 this._activeLabelId = id;
                 this.setSelectedOverviewSegment(id);
+                this._playClickedLabel(e?.detail);
             } else {
                 // Hover: only update when nothing is sticky-clicked yet, or when clearing.
                 if (!this._activeLabelId || id === null) this._activeLabelId = id;
@@ -1214,6 +1217,15 @@ export class BirdNETPlayer {
 
     /** Emit a player event (for features), e.g. emit('labelfocus', { id, source, interaction }). */
     emit(event: PlayerEventName | string, detail: unknown = {}): void { this._emit(event, detail); }
+
+    /** With options.playOnLabelClick: plays a label the user clicked (not ctrl-click, not selectLabel()). */
+    _playClickedLabel(detail: any) {
+        if (!this.options.playOnLabelClick || detail?.interaction !== 'click' || detail?.source === 'api') return;
+        const id = String(detail?.id || '').trim();
+        const l = id ? this._linkedLabels.get(id) : null;
+        // After the click's own handlers: a seek there (the table moves the playhead) stops segments.
+        if (l) queueMicrotask(() => this.playLabelSegment(l));
+    }
 
     /** Select a label as if it was clicked: highlights it everywhere and scrolls it into view. */
     selectLabel(id: string | null) {
