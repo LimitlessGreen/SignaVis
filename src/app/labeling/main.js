@@ -2619,8 +2619,8 @@ const labelList = new LabelList({
   onSync:  (opts) => opts?.structural ? syncToPlayer() : syncToPlayerSoft(),
   onEdit:  (id) => {
     selectLabel(id, {});
-    sidebar.setActive('properties');
-    sidebar.flashTab('properties');
+    rightBar.setActive('properties');   // Properties is a tab of the right bar
+    rightBar.flashTab('properties');
     // Delay so the panel is visible before scrolling + highlighting
     setTimeout(() => propsPanel.highlightLabelSection(), 60);
   },
