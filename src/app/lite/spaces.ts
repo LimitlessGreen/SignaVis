@@ -53,6 +53,8 @@ interface SpaceRuntime {
     el: HTMLElement;
     tab: HTMLButtonElement;
     api: DockviewApi | null;
+    /** Default layout built while hidden (eager): its sizes are applied when it is first shown. */
+    sizesPending?: boolean;
 }
 
 const SAVE_DELAY_MS = 600;
@@ -172,6 +174,7 @@ export class SpacesShell {
         this.#syncTabs();
         if (!sp.api) this.#build(sp);
         else sp.api.layout(sp.el.clientWidth, sp.el.clientHeight, true);
+        if (sp.sizesPending && sp.el.clientWidth > 0) { sp.sizesPending = false; this.#applySizes(sp); }
         for (const p of sp.api?.panels ?? []) if (p.api.isVisible) this.#panels.get(p.id)?.def.onShow?.();
         this.#o.onSpaceShown?.(id);
     }
@@ -248,12 +251,24 @@ export class SpacesShell {
             }
             for (const id of sp.def.front ?? []) api.getPanel(id)?.api.setActive();
             if (first) api.getPanel(first)?.api.setActive();
+            // Hidden (built eagerly): dockview splits a zero-size area evenly; set the sizes once it is shown.
+            if (sp.el.clientWidth === 0) sp.sizesPending = true;
         }
         api.onDidLayoutChange(() => {
             (this.#state.spaces[sp.def.id] ??= { layout: null }).layout = api.toJSON();
             this.#scheduleSave();
         });
         api.onDidActivePanelChange(({ panel }) => { if (panel && !sp.el.hidden) this.#panels.get(panel.id)?.def.onShow?.(); });
+    }
+
+    /** Standard sizes of the arranged panels (after a build without a real size). */
+    #applySizes(sp: SpaceRuntime) {
+        for (const [id, at] of Object.entries(sp.def.arrange ?? {})) {
+            if (!at.size) continue;
+            const group = sp.api?.getPanel(id)?.group;
+            if (!group) continue;
+            group.api.setSize(at.dir === 'left' || at.dir === 'right' ? { width: at.size } : { height: at.size });
+        }
     }
 
     #renderer(id: string): IContentRenderer {
