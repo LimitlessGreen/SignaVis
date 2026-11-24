@@ -1314,6 +1314,14 @@ export class BirdNETPlayer {
 
     // ── Annotation Toolbar ──────────────────────────────────────────
 
+    /**
+     * Snap and Stamp, for a host that shows them elsewhere (Lite: the editor's label bar).
+     * They keep working wherever they are put; view-only mode still hides them.
+     */
+    labelToolButtons(): HTMLButtonElement[] {
+        return [this._snapBtn, this._stampBtn].filter(Boolean) as HTMLButtonElement[];
+    }
+
     _injectAnnotationToolbar() {
         const secondary = this.root?.querySelector('[data-aw="toolbarSecondary"]');
         if (!secondary) return;

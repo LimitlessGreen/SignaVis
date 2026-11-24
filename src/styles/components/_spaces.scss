@@ -157,3 +157,52 @@
 
 // Former sidebar tabs as Annotate panels (Labels, Analyse, Properties, …): fill the panel, scroll inside.
 .space-side { flex: 1; min-width: 0; height: 100%; }
+
+// ── Editor panel (Annotate v2, mockup B6): head above the player, label bar below ──
+body.lite-editor-chrome .topbar .file-label { display: none; }   // the head shows the recording
+.editor-head, .editor-labelbar {
+  display: flex; align-items: center; gap: 10px; flex: none; min-width: 0;
+  padding: 4px 10px; font-size: 12px;
+  background: var(--color-bg-surface);
+}
+.editor-head {
+  min-height: 32px; border-bottom: 1px solid var(--color-border);
+  &.is-empty .eh-name { color: var(--color-text-secondary); font-weight: 500; }
+}
+.eh-name {
+  font-family: var(--font-mono, ui-monospace, monospace); font-weight: 650; font-size: 12.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 60px; flex: 0 0 auto; max-width: 50%;
+}
+.eh-meta { color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.eh-spacer, .elb-spacer { flex: 1 1 0; min-width: 0; }
+.eh-state { flex: none; &[hidden] { display: none; } }
+.eh-nav {
+  display: inline-flex; align-items: center; gap: 2px; flex: none;
+  &[hidden] { display: none; }
+}
+.eh-pos { min-width: 92px; text-align: center; font-variant-numeric: tabular-nums; color: var(--color-text-secondary); }
+.eh-btn {
+  width: 24px; height: 24px; border: 1px solid var(--color-border); border-radius: 5px; cursor: pointer;
+  background: none; color: var(--color-text-primary); font-size: 15px; line-height: 1;
+  &:hover:not(:disabled) { border-color: var(--color-accent); }
+  &:disabled { opacity: .4; cursor: default; }
+}
+.editor-labelbar {
+  min-height: 40px; border-top: 1px solid var(--color-border);
+  .species-search { flex: 0 1 340px; min-width: 120px; }
+}
+.elb-caption { color: var(--color-text-secondary); white-space: nowrap; }
+.elb-template { display: flex; align-items: center; flex: 0 1 380px; min-width: 120px; }
+.elb-tools {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  // Snap / Stamp come from the player toolbar; here they show their labels.
+  .toolbar-btn { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; }
+  .toolbar-btn .tb-label { display: inline; }
+}
+.elb-done {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  color: #15803d; border-color: color-mix(in srgb, #22c55e 50%, var(--color-border));
+  kbd { font-size: 10px; padding: 0 4px; border: 1px solid currentColor; border-radius: 3px; opacity: .7; }
+  &.is-done { color: var(--color-text-secondary); border-color: var(--color-border); }
+  &[hidden] { display: none; }
+}

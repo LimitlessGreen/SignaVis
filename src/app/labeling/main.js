@@ -3784,6 +3784,7 @@ if (isLite()) {
     // No catalog at startup (first import now): the library's view becomes the shared one, with its bar.
     if (!catalogView) {
       catalogView = libView.view;
+      watchEditorView(catalogView);
       void makeViewBar(catalogView).then((el) => spaces?.setBar(el));
       mountViewList();
     }
@@ -5469,6 +5470,7 @@ async function installLiteSpaces() {
     bar = await makeViewBar(catalogView);
     void catalogView.reload();
   }
+  await installEditorChrome();
   // The sidebar tabs become panels of Annotate (mockup Annotate v2, B6); the sidebars themselves go.
   const sidePanels = [...sidebar.dock(dockHost()), ...rightBar.dock(dockHost())]
     .filter((p) => p.id !== 'library')   // the library is the Browse space
@@ -5558,6 +5560,44 @@ async function installLiteSpaces() {
   for (const [id, text] of pendingBadges) shell.setBadge(id, text);
   pendingBadges.clear();
   return shell;
+}
+// ── Lite: editor head (recording, state, place in the view) and label bar (template, tools, Mark done) ──
+let editorHead = null;
+let editorLabelBar = null;
+let _editorViewUnsub = null;
+async function installEditorChrome() {
+  const { EditorHead, EditorLabelBar } = await import('../../ui/panels/editor-chrome.ts');
+  const main = document.querySelector('#workspace > .main-area');
+  if (!main) return;
+  editorHead = new EditorHead({ prev: () => void viewList?.prev(), next: () => void viewList?.next() });
+  editorLabelBar = new EditorLabelBar({ toggleDone: () => void viewList?.toggleDone() });
+  main.prepend(editorHead.el);
+  main.append(editorLabelBar.el);
+  // The label template moves out of the top bar (placeholder, or the widget once the taxonomy built it).
+  const template = document.querySelector('#speciesSearchMount, .topbar .species-search');
+  if (template) editorLabelBar.templateSlot.appendChild(template);
+  for (const b of player.labelToolButtons()) editorLabelBar.toolsSlot.appendChild(b);
+  document.body.classList.add('lite-editor-chrome');   // hides the file name in the top bar (now in the head)
+  new MutationObserver(refreshEditorPlace).observe(fileLabel, { childList: true, characterData: true, subtree: true });
+  watchEditorView(catalogView);
+}
+/** Follow the shared view (set at start, or by the first import into a new catalog). */
+function watchEditorView(view) {
+  _editorViewUnsub?.();
+  _editorViewUnsub = view ? view.subscribe(() => refreshEditorPlace()) : null;
+  refreshEditorPlace();
+}
+async function refreshEditorPlace() {
+  if (!editorHead) return;
+  const { rowOfOpen } = await import('../../ui/panels/editor-chrome.ts');
+  const text = fileLabel.textContent?.trim() || '';
+  const name = text === 'No file loaded' ? '' : text;
+  const v = catalogView;
+  const row = v ? rowOfOpen(v.rows[v.current], name) : null;
+  const place = { row, index: row ? v.current : -1, total: v?.total ?? 0 };
+  editorHead.setName(name);
+  editorHead.setPlace(place, !!v);
+  editorLabelBar.setPlace(place);
 }
 /** Sidebar id → dock panel id / title, where they differ. */
 const DOCK_ID = { project: 'files', spectrogram: 'display' };
