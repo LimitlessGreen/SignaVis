@@ -89,3 +89,13 @@ test('layoutUsable: on-demand panels may be missing from a stored layout', () =>
     assert.equal(layoutUsable(layout('editor', 'labels', 'upload'), own, onDemand), true, 'and kept once placed');
     assert.equal(layoutUsable(layout('editor'), own, onDemand), false, 'labels is not on demand');
 });
+
+test('parseSpacesState: keeps the folded panels of a space, drops anything else', () => {
+    const text = JSON.stringify({ version: 1, active: 'browse', spaces: {
+        browse: { layout: null, collapsed: ['analyse', 3, null, 'species'] },
+        library: { layout: null, collapsed: 'analyse' },
+    } });
+    const st = parseSpacesState(text, DEFS, 'browse');
+    assert.deepEqual(st.spaces.browse.collapsed, ['analyse', 'species']);
+    assert.equal(st.spaces.library?.collapsed, undefined);
+});

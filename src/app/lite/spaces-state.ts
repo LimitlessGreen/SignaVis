@@ -27,6 +27,13 @@ export interface SpaceDef {
      * revealed, and then stored like the others. A stored layout may lack them.
      */
     onDemand?: string[];
+    /**
+     * Panels whose tab group folds to its tab row: a click on the active tab folds or unfolds it
+     * (mockup B6: Analyse | Similar | Species | Upload below the right panels).
+     */
+    collapsible?: string[];
+    /** Fresh layout: the groups of these panels start folded. */
+    startCollapsed?: string[];
 }
 
 export interface PanelPlacement {
@@ -40,6 +47,8 @@ export interface StoredSpace {
     layout: unknown | null;
     /** Optional space that was made available once (stays, so the tab does not jump in and out). */
     available?: boolean;
+    /** Panels of folded groups (dockview stores sizes, not the fold, so it is kept here). */
+    collapsed?: string[];
 }
 
 export interface SpacesState {
@@ -65,9 +74,11 @@ export function parseSpacesState(text: string | null | undefined, defs: readonly
     if (raw.spaces && typeof raw.spaces === 'object') {
         for (const [id, s] of Object.entries<any>(raw.spaces)) {
             if (!ids.has(id) || !s || typeof s !== 'object') continue;
+            const collapsed = Array.isArray(s.collapsed) ? s.collapsed.filter((x: unknown) => typeof x === 'string') : [];
             state.spaces[id] = {
                 layout: isLayout(s.layout) ? s.layout : null,
                 ...(s.available === true ? { available: true } : {}),
+                ...(collapsed.length ? { collapsed } : {}),
             };
         }
     }

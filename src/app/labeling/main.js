@@ -5513,7 +5513,9 @@ async function installLiteSpaces() {
           },
           // A catalog project lists its recordings in View; Upload (Xeno-canto) only when asked for.
           front: [hasCatalog ? 'view-list' : 'files', 'labels', 'analyse'],
-          onDemand: hasCatalog ? ['upload'] : [] },
+          onDemand: hasCatalog ? ['upload'] : [],
+        // The lower right group folds to its tabs (B6); a click on a tab opens it.
+        collapsible: ['analyse'], startCollapsed: ['analyse'] },
         { id: 'embeddings', title: 'Embeddings', icon: ChartScatter, panels: ['embeddings'], optional: true },
       ],
       panels: [

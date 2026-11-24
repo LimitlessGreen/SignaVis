@@ -206,3 +206,14 @@ body.lite-editor-chrome .topbar .file-label { display: none; }   // the head sho
   &.is-done { color: var(--color-text-secondary); border-color: var(--color-border); }
   &[hidden] { display: none; }
 }
+
+// Folded tab group (SpaceDef.collapsible): only the tab row is left; a tab click opens it again.
+.dockview-theme-signavis .is-folded {
+  .dv-content-container { display: none; }
+  .dv-tab { color: var(--color-text-secondary); }
+  .dv-tabs-and-actions-container::after {
+    content: '▴'; margin-left: auto; padding: 0 10px; align-self: center;
+    color: var(--color-text-secondary); pointer-events: none;
+  }
+}
+.dockview-theme-signavis .dv-tab { cursor: pointer; }
