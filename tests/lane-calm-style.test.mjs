@@ -17,3 +17,8 @@ test('lanes hide the colour dot and the bar meter', () => {
     assert.match(lanes, /&:not\(\.active\) \.spectrogram-label-text::before \{ display: none; \}/);
     assert.match(lanes, /\.spectrogram-label-conf-meter \{ display: none; \}/);
 });
+
+test('lanes show the confidence as a fill and bottom edge up to --label-conf', () => {
+    assert.match(lanes, /&\.has-conf \{/);
+    assert.match(lanes, /calc\(var\(--label-conf, 0\) \* 100%\)/);
+});

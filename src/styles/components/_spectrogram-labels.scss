@@ -557,6 +557,25 @@
     .spectrogram-label-conf { margin-left: auto; padding-left: 6px; border-left: 0; font-weight: 500; opacity: 0.85; }
     .spectrogram-label-conf-meter { display: none; }
 
+    // Confidence as the strip itself: tinted in the species colour up to the confidence,
+    // with a 2 px edge along the bottom, so 90 % and 40 % differ at a glance
+    &.has-conf {
+        --lane-bg: rgba(0, 0, 0, 0.62);
+        --lane-fill: color-mix(in srgb, var(--label-c) 32%, var(--lane-bg));
+        background: linear-gradient(90deg, var(--lane-fill) 0 calc(var(--label-conf, 0) * 100%), var(--lane-bg) 0);
+        &::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            height: 2px;
+            width: calc(var(--label-conf, 0) * 100%);
+            background: var(--label-c);
+            pointer-events: none;
+        }
+        &.selected, &.focused { --lane-bg: rgba(0, 0, 0, 0.8); }
+    }
+
     &::after {
         content: '';
         position: absolute;
