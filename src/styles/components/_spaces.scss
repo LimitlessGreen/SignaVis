@@ -65,6 +65,8 @@
   .lib-stats { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .lib-spacer { display: none; }
   .lib-viewswitch button { white-space: nowrap; }
+  // Map and statistics are panels of their own here.
+  [data-act="open-map"], [data-act="open-stats"] { display: none; }
 }
 
 // ── Dock theme: dockview variables on the SignaVis tokens ───────────

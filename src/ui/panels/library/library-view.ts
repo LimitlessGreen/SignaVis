@@ -12,7 +12,7 @@ import {
     periodsWithShift, sameSunWindow, sunWindowLabel, SUN_EVENTS, SUN_PRESETS,
     type DatasetInfo, type SunEvent,
     type ClockPeriod, type ClockShift, type DeviceInfo,
-    type CatalogRow, type CatalogSort, type Facets, type HashProgress, type Integrity,
+    type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HashProgress, type Integrity,
 } from '../../../domain/catalog/catalog-types.ts';
 import {
     clockDuration, gridWindow, HEAT_FONT, heatGeometry, heatLut, moveIndex, scrollToShow, thumbPixels,
@@ -75,6 +75,8 @@ export interface LibraryViewOptions {
      * in its own panel; `el` is then the recordings part (head, chips, table/tiles). Needs `embedded`.
      */
     split?: boolean;
+    /** Split: bring a part's panel to the front (header buttons Map, Statistics). */
+    revealPart?: (part: keyof LibraryParts) => void;
 }
 
 /** The library cut into panel-sized pieces (LibraryViewOptions.split). */
@@ -83,6 +85,8 @@ export interface LibraryParts {
     calendar: HTMLElement;
     recordings: HTMLElement;
     selection: HTMLElement;
+    map: HTMLElement;
+    stats: HTMLElement;
 }
 
 export class LibraryView {
@@ -196,8 +200,12 @@ export class LibraryView {
             const calendar = part('calendar', this.el.querySelector('.lib-heat')!);
             const selection = part('selection', this.#side.el);
             this.el.classList.add('lib-part', 'lib-part--recordings');
-            this.parts = { fields, calendar, recordings: this.el, selection };
-            this.#roots = [this.el, fields, calendar, selection];
+            const map = document.createElement('div');
+            map.className = 'lib-part lib-part--map';
+            const stats = document.createElement('div');
+            stats.className = 'lib-part lib-part--stats';
+            this.parts = { fields, calendar, recordings: this.el, selection, map, stats };
+            this.#roots = [this.el, fields, calendar, selection];   // map and stats handle their own events
         }
         this.#expand = new ExpandedView({
             projectRoot: o.projectRoot,
@@ -307,6 +315,8 @@ export class LibraryView {
         this.#unlisten?.();
         this.#unlisten = null;
         this.#unsubscribe();
+        this.#mapPart?.dispose();
+        this.#mapPart = null;
         if (this.#ownView) this.#v.dispose();
     }
 
@@ -464,6 +474,7 @@ export class LibraryView {
         this.#renderStats();
         this.#drawHeat();
         this.#updateSide();
+        this.#syncParts();
     }
 
     /** Picks the selection panel shows (to skip redundant updates). */
@@ -904,8 +915,8 @@ export class LibraryView {
         else if (act === 'view-table' || act === 'view-grid') this.#setView(act === 'view-grid' ? 'grid' : 'table');
         else if (act === 'open-import') this.#showImport();
         else if (act === 'open-entities') this.#showEntities();
-        else if (act === 'open-stats') this.#showStats();
-        else if (act === 'open-map') this.#showMap();
+        else if (act === 'open-stats') { if (this.parts) this.#o.revealPart?.('stats'); else this.#showStats(); }
+        else if (act === 'open-map') { if (this.parts) this.#o.revealPart?.('map'); else this.#showMap(); }
         else if (act === 'clear-area') { this.#v.filter.bbox = null; void this.reload(); }
         else if (act === 'hash-start' || act === 'hash-full') {
             const full = act === 'hash-full';
@@ -1036,10 +1047,7 @@ export class LibraryView {
     #showMap() {
         const dlg = new MapDialog({
             projectRoot: this.#o.projectRoot, filter: { ...this.#v.filter, bbox: null }, devices: this.#v.facets?.devices ?? [],
-            onArea: (bbox) => { this.#v.filter = { ...this.#v.filter, bbox }; this.#hideImport(); void this.reload(); },
-            onSite: (id) => { this.#v.filter = { ...this.#v.filter, siteIds: [id], bbox: null }; this.#hideImport(); void this.reload(); },
-            onWithoutPosition: () => { this.#v.filter = { ...this.#v.filter, hasPosition: false, bbox: null }; this.#hideImport(); void this.reload(); },
-            onChanged: () => void this.reload({ keepPicks: true }),
+            ...this.#mapActions(() => this.#hideImport()),
         });
         this.#showHost('Map', dlg.el);   // disposes a map shown before
         this.#mapDialog = dlg;
@@ -1050,17 +1058,68 @@ export class LibraryView {
         const filtered = Object.values(tf).some((v) => v != null && v !== false && !(Array.isArray(v) && !v.length));
         this.#showHost('Statistics', new StatsDialog({
             projectRoot: this.#o.projectRoot, filter: { ...tf }, filtered,
-            onPickWeek: (siteId, week) => {
-                // The same recordings the cell counts: its local Monday–Sunday, and "(no site)" really without one.
-                const sunday = new Date(Date.parse(`${week}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
-                this.#v.filter = {
-                    ...this.#v.filter, siteIds: siteId == null ? [] : [siteId], noSite: siteId == null,
-                    fromMs: null, toMs: null, localDayFrom: week, localDayTo: sunday,
-                };
-                this.#hideImport();
-                void this.reload();
-            },
+            onPickWeek: (siteId, week) => { this.#hideImport(); this.#pickWeek(siteId, week); },
         }).el);
+    }
+
+    /** Map clicks change the shared filter (dialog: `done` closes it first). */
+    #mapActions(done: () => void) {
+        const set = (f: CatalogFilter) => { done(); void this.#v.setFilter(f); };
+        return {
+            onArea: (bbox: [number, number, number, number]) => set({ ...this.#v.filter, bbox }),
+            onSite: (id: number) => set({ ...this.#v.filter, siteIds: [id], bbox: null }),
+            onWithoutPosition: () => set({ ...this.#v.filter, hasPosition: false, bbox: null }),
+            onChanged: () => void this.reload({ keepPicks: true }),
+        };
+    }
+
+    /** Statistics cell: the same recordings it counts — its local Monday–Sunday, and "(no site)" really without one. */
+    #pickWeek(siteId: number | null, week: string) {
+        const sunday = new Date(Date.parse(`${week}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
+        void this.#v.setFilter({
+            ...this.#v.filter, siteIds: siteId == null ? [] : [siteId], noSite: siteId == null,
+            fromMs: null, toMs: null, localDayFrom: week, localDayTo: sunday,
+        });
+    }
+
+    // ── Map and statistics as panels (split) ───────────────────────
+    #mapPart: MapDialog | null = null;
+    #statsPart: StatsDialog | null = null;
+    /** The filter changed since the part last loaded (it loads when shown). */
+    #partStale = { map: false, stats: false };
+
+    /** A part's panel became visible: build it the first time, reload it when the filter changed meanwhile. */
+    partShown(part: keyof LibraryParts) {
+        if (!this.parts || this.#disposed) return;
+        const f = this.#v.filter;
+        if (part === 'map') {
+            if (!this.#mapPart) {
+                this.#mapPart = new MapDialog({
+                    projectRoot: this.#o.projectRoot, filter: { ...f, bbox: null }, area: f.bbox ?? null,
+                    devices: this.#v.facets?.devices ?? [], panel: true, ...this.#mapActions(() => {}),
+                });
+                this.parts.map.replaceChildren(this.#mapPart.el);
+            } else if (this.#partStale.map) this.#mapPart.setFilter({ ...f, bbox: null }, f.bbox ?? null);
+            this.#partStale.map = false;
+        } else if (part === 'stats') {
+            if (!this.#statsPart) {
+                this.#statsPart = new StatsDialog({
+                    projectRoot: this.#o.projectRoot, filter: { ...f }, filtered: !isEmptyFilter(f),
+                    onPickWeek: (siteId, week) => this.#pickWeek(siteId, week),
+                });
+                this.parts.stats.replaceChildren(this.#statsPart.el);
+            } else if (this.#partStale.stats) void this.#statsPart.setFilter({ ...f }, !isEmptyFilter(f));
+            this.#partStale.stats = false;
+        }
+    }
+
+    /** New query: visible parts follow now, hidden ones when shown. */
+    #syncParts() {
+        if (!this.parts) return;
+        this.#partStale = { map: !!this.#mapPart, stats: !!this.#statsPart };
+        for (const k of ['map', 'stats'] as const) {
+            if (this.#partStale[k] && this.parts[k].isConnected && this.parts[k].offsetParent !== null) this.partShown(k);
+        }
     }
 
     #hideImport() {

@@ -3676,7 +3676,7 @@ document.getElementById('panelBirdnet').appendChild(explorePanel.el);
 /** Lite spaces (src/app/lite/spaces.ts); null in the web app and until built. */
 let spaces = null;
 /** Spaces: the library's parts, one panel each (Browse). */
-const LIB_PARTS = ['recordings', 'fields', 'calendar', 'selection'];
+const LIB_PARTS = ['recordings', 'fields', 'map', 'stats', 'selection', 'calendar'];
 const libraryHosts = Object.fromEntries(LIB_PARTS.map((k) => {
   const el = document.createElement('div');
   el.className = 'space-fill';
@@ -3685,6 +3685,8 @@ const libraryHosts = Object.fromEntries(LIB_PARTS.map((k) => {
 const embedMapHost = document.createElement('div');
 embedMapHost.className = 'space-fill';
 let mountLibraryPanel = () => {};
+/** Spaces: a library part's panel (map, stats) became visible. */
+let libraryPartShown = (_part) => {};
 let _embedMapOpened = false;
 /** Store size the hosted map was last loaded for (null: not read yet). */
 let _embedStoreKey = null;
@@ -3743,6 +3745,7 @@ if (isLite()) {
   libPanel.className = 'scroll-panel library-panel';
   let libView = null;
   const closeLibrary = () => { libView?.dispose(); libView?.el.remove(); libView = null; void refreshLibraryPanel(); };
+  libraryPartShown = (part) => libView?.partShown(part);
   /** Spaces: the library lives in Browse (built once, stays while a recording is open in Annotate). */
   mountLibraryPanel = () => {
     const root = libRoot();
@@ -3755,6 +3758,7 @@ if (isLite()) {
       projectRoot: root,
       embedded: true,
       split: true,
+      revealPart: (k) => void spaces?.reveal(`lib-${k}`),
       openRecording: (path) => openCatalogRecording(path, () => spaces?.reveal('editor')),
     });
     for (const k of LIB_PARTS) libraryHosts[k].replaceChildren(libView.parts[k]);
@@ -5400,22 +5404,27 @@ async function installLiteSpaces() {
     eager: ['annotate'],
     spaces: [
       { id: 'browse', title: 'Browse', icon: LayoutGrid,
-        panels: ['lib-recordings', 'lib-fields', 'lib-calendar', 'lib-selection'],
+        // As in the mockup: fields left, recordings in the middle, map | statistics | selection right, calendar below them.
+        panels: ['lib-recordings', 'lib-fields', 'lib-map', 'lib-stats', 'lib-selection', 'lib-calendar'],
         arrange: {
           'lib-fields': { ref: 'lib-recordings', dir: 'left', size: 250 },
-          'lib-selection': { ref: 'lib-recordings', dir: 'right', size: 280 },
-          'lib-calendar': { ref: 'lib-recordings', dir: 'above', size: 150 },
-        } },
+          'lib-map': { ref: 'lib-recordings', dir: 'right', size: 520 },
+          'lib-stats': { ref: 'lib-map', dir: 'within' },
+          'lib-selection': { ref: 'lib-map', dir: 'within' },
+          'lib-calendar': { ref: 'lib-map', dir: 'below', size: 330 },
+        },
+        front: ['lib-map'] },
       { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor'] },
       { id: 'embeddings', title: 'Embeddings', icon: ChartScatter, panels: ['embeddings'], optional: true },
     ],
     panels: [
       { id: 'editor', title: 'Editor', mount: (host) => { host.appendChild(workspace); } },
-      ...[['recordings', 'Recordings'], ['fields', 'Fields'], ['calendar', 'Calendar'], ['selection', 'Selection']].map(([k, title]) => ({
+      ...[['recordings', 'Recordings'], ['fields', 'Fields'], ['map', 'Map'], ['stats', 'Statistics'], ['selection', 'Selection'], ['calendar', 'Calendar']].map(([k, title]) => ({
         id: `lib-${k}`, title,
         // Any part builds the library (all parts at once); the others are then only placed.
         mount: (host) => { host.appendChild(libraryHosts[k]); mountLibraryPanel(); },
-        ...(k === 'recordings' ? { onShow: () => focusLibrarySoon() } : {}),
+        ...(k === 'recordings' ? { onShow: () => focusLibrarySoon() }
+          : k === 'map' || k === 'stats' ? { onShow: () => libraryPartShown(k) } : {}),
       })),
       { id: 'embeddings', title: 'Embedding map', mount: (host) => { host.appendChild(embedMapHost); },
         onShow: () => {

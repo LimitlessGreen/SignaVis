@@ -237,6 +237,7 @@ export class SpacesShell {
                 });
                 first ??= id;
             }
+            for (const id of sp.def.front ?? []) api.getPanel(id)?.api.setActive();
             if (first) api.getPanel(first)?.api.setActive();
         }
         api.onDidLayoutChange(() => {

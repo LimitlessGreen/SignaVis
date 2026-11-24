@@ -41,11 +41,21 @@ export class StatsDialog {
         void this.load();
     }
 
+    /** Follow a new library filter (panel). */
+    setFilter(filter: CatalogFilter, filtered: boolean) {
+        this.#o = { ...this.#o, filter, filtered };
+        return this.load();
+    }
+
+    #loadGen = 0;
+
     async load() {
+        const gen = ++this.#loadGen;
         try {
-            this.#render(await catalogApi.stats(this.#o.projectRoot, this.#o.filter));
+            const st = await catalogApi.stats(this.#o.projectRoot, this.#o.filter);
+            if (gen === this.#loadGen) this.#render(st);
         } catch (e) {
-            this.el.innerHTML = `<p class="lib-warn">Error: ${esc(e)}</p>`;
+            if (gen === this.#loadGen) this.el.innerHTML = `<p class="lib-warn">Error: ${esc(e)}</p>`;
         }
     }
 
