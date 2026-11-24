@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.3] - Unreleased
+## [1.4.3] - 2026-11-24
 
 ### Fixed
 - **SignaVis Lite: updating a .deb install** failed with "invalid updater
