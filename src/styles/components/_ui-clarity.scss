@@ -81,15 +81,6 @@
   padding: 0 4px; border-radius: 3px;
   background: var(--input-bg-weak); color: var(--color-text-primary);
 }
-.rec-set-adopt {
-  padding: 0 2px; border: 0; background: none; cursor: pointer;
-  font-size: 10px; white-space: nowrap; flex-shrink: 0;
-  color: var(--color-accent); text-decoration: underline dotted;
-  &:hover { text-decoration: underline; }
-  &:disabled { opacity: 0.5; cursor: default; }
-}
-.rec-set-adopted { font-size: 11px; white-space: nowrap; flex-shrink: 0; color: var(--color-success, var(--color-text-secondary)); }
-
 // Read-only / locked labels: see _label-tokens.scss (thin frame + dashed tag, lock icon).
 
 // Labels tab header: "Labels   3"
@@ -170,17 +161,21 @@
 .rec-section-clear { font-size: 10px; text-transform: none; letter-spacing: 0; }
 .rec-sets-list { list-style: none; margin: 0; padding: 2px 0 4px; }
 .rec-set {
-  display: flex; align-items: center; gap: 7px;
-  padding: 3px 8px 3px 22px;
+  padding: 2px 6px 2px 22px;
   cursor: pointer;
+  border-radius: 6px;
+  margin: 1px 4px 1px 0;
+  border: 1px solid transparent;
   &:hover { background: var(--color-accent-faint); }
   &:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; }
   &.rec-set--current { background: var(--input-bg-weak); }
-  &.rec-set--focus { box-shadow: inset 0 0 0 1px var(--set-color); }
+  &.rec-set--focus { border-color: var(--set-color); background: var(--color-accent-faint); }
   &.rec-set--hidden .rec-set-text { opacity: 0.45; }
+  .set-bar { padding: 2px 0 4px 0; margin-left: -6px; }
 }
+.rec-set-top { display: flex; align-items: center; gap: 7px; min-height: 30px; }
 .rec-set-swatch {
-  width: 10px; height: 10px; flex-shrink: 0; padding: 0; cursor: pointer;
+  width: 10px; height: 10px; flex-shrink: 0;
   border-radius: 2px; border: 1.5px solid var(--set-color); background: var(--set-color);
   .rec-set--hidden & { background: transparent; }
 }
@@ -194,21 +189,12 @@
   font-size: 10px; color: var(--color-text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.rec-set-actions { display: none; flex-shrink: 0; align-items: center; }
-.rec-set:hover .rec-set-actions, .rec-set:focus-within .rec-set-actions { display: inline-flex; }
 .rec-set-dots {
   display: inline-flex; gap: 2px; flex-shrink: 0;
   i { width: 6px; height: 6px; border-radius: 50%; background: var(--set-color); }
   i.is-hidden { background: transparent; box-shadow: inset 0 0 0 1px var(--set-color); }
 }
 .recording-explorer-row--unfocused { opacity: 0.35; }
-.rec-set-edit {
-  border: 0; background: none; padding: 0 3px; cursor: pointer;
-  font-size: 11px; color: var(--color-text-secondary);
-  &:hover { color: var(--color-accent); }
-}
-.rec-set-rename { width: 100%; font-size: 11px; padding: 0 3px; }
-.rec-set--editing .rec-set-actions { display: none !important; }
 
 // Select look: _player-clarity.scss (with $global-scope for the library).
 

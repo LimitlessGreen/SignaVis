@@ -9,7 +9,9 @@
 
   > * + * { border-top: 1px solid var(--color-border); }
   .recording-explorer { border-bottom: 0; padding-bottom: 4px; }
-  .rec-session-header { margin: 0; border-radius: 0; }
+  // Inside the hub the explorer is part of one card: no own frame, rail or inset box
+  .rec-session-header { margin: 0; border: 0; border-radius: 0; padding-left: 12px; &::before { display: none; } }
+  .rec-session-body { margin: 0; border: 0; border-radius: 0; background: none; }
 }
 
 .project-location {
