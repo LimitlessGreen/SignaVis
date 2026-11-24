@@ -109,3 +109,12 @@ test('display name: imported sets keep their XC name and show the user\'s name',
   assert.equal(setDisplayName({ name: 'XC123 set' }), 'XC123 set');
   assert.equal(setDisplayName(null, 'My labels'), 'My labels');
 });
+
+test('Del and the bar never widen the scope when the local action is disabled', () => {
+  const s = { ...base, kind: 'own', scope: 'recording', total: 0, recordings: 3 };
+  const calls = [];
+  const h = { remove: (w) => calls.push(w) };
+  assert.equal(setKeyAction(s, h, { key: 'Delete' }), null);
+  assert.ok(!setBarActions(s, h).some((a) => a.key === 'remove'));
+  assert.deepEqual(calls, []);
+});

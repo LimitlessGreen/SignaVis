@@ -1861,7 +1861,7 @@ function renameLabelSet(id, newName) {
   // is notified and persistence happens via the debounced updateSet.
   // Imported sets keep `name` (XC re-import matches by it) and get a display name.
   const s = state.labelSets.get(id);
-  if (s && !isOwnSet(s) && id !== OWN_SOURCE_ID) updateSet(id, { displayName: newName });
+  if (s && id !== OWN_SOURCE_ID && (s.origin || 'manual') !== 'manual') updateSet(id, { displayName: newName });
   else updateSet(id, { name: newName });
 }
 
@@ -1876,9 +1876,11 @@ function removeLabelSet(id, where = 'all') {
   const name = setDisplayName(s, own ? 'My labels' : 'set');
   const undo = snapshotLabels();   // saves the recording on screen first
   const activeId = recordingManager.activeId || null;
-  const r = removeSetLabels(id, where, state.labels, recordingManager.getAll(), activeId, OWN_SOURCE_ID);
+  // While a recording loads its stored labels are not live yet: treat it like any other entry
+  const live = !activeId || labelStore.entryId === activeId;
+  const r = removeSetLabels(id, where, live ? state.labels : [], recordingManager.getAll(), live ? activeId : null, OWN_SOURCE_ID);
   for (const [entryId, anns] of r.entries) recordingManager.update(entryId, { annotations: anns });
-  labelStore.replaceAll(r.live);
+  if (live) labelStore.replaceAll(r.live);
   if (!own && !r.usedElsewhere) {
     // BirdBox keeps its raw rows to re-fuse on slider changes: drop them with the set
     if (s?.origin === BIRDBOX_ORIGIN) forgetBirdboxResults();
@@ -2709,10 +2711,16 @@ const labelList = new LabelList({
     syncToPlayer();
   },
   // onConvertSetToManual: (setId) => convertSetToManual(setId),  // hidden for now
+  // Labels tab: only the recording on screen (the count shown is for it)
   onAdoptSet: (setId) => {
     const undo = snapshotLabels();
-    const n = adoptSetLabels(setId);
-    if (n) showUndoToast(`Copied ${n} label${n === 1 ? '' : 's'} into my labels`, undo);
+    const src = adoptSources(state.labels.filter((l) => l.setId === setId), state.labels, 'all');
+    if (!src.length) return;
+    labelStore.add(adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets)));
+    touchOwnSet(OWN_SOURCE_ID);
+    syncToPlayer();
+    const n = src.length;
+    showUndoToast(`Copied ${n} label${n === 1 ? '' : 's'} into my labels`, undo);
   },
   onAdoptLabel: (labelId) => adoptOneLabel(labelId),
   // converted detections are hidden; the set menu can show them again

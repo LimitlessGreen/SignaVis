@@ -125,7 +125,8 @@ export function setBarActions(s: SetDesc, h: SetHandlers): BarAction[] {
     const src = s.sourceName === 'xeno-canto' ? 'XC' : 'Source';
     out.push({ key: 'source', label: src, title: `Open on ${s.sourceName || 'source page'}`, icon: SET_ICON.ext, action: h.openSource });
   }
-  const rm = removeEntries(s, h).find((i) => !i.disabled);
+  const first = removeEntries(s, h)[0];   // never fall back to a wider scope
+  const rm = first && !first.disabled ? first : null;
   if (rm) out.push({ key: 'remove', label: s.kind === 'own' ? 'Clear' : 'Remove', title: `${rm.label} (Del, undo possible)`, icon: SET_ICON.trash, tone: 'danger', action: rm.action });
   return out;
 }
@@ -134,7 +135,7 @@ export function setBarActions(s: SetDesc, h: SetHandlers): BarAction[] {
 export function setKeyAction(s: SetDesc, h: SetHandlers, e: { key: string; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean }): (() => void) | null {
   if (e.ctrlKey || e.metaKey || e.altKey) return null;
   if (e.key === 'F2') return h.rename || null;
-  if (e.key === 'Delete') return removeEntries(s, h).find((i) => !i.disabled)?.action || null;
+  if (e.key === 'Delete') { const first = removeEntries(s, h)[0]; return first && !first.disabled ? first.action : null; }
   if (e.key === 'h' || e.key === 'H') return h.toggleHidden || null;
   if ((e.key === 'c' || e.key === 'C') && s.kind === 'imported' && s.pending > 0) return h.adopt || null;
   return null;

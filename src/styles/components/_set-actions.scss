@@ -47,3 +47,19 @@
 .lt-src-head .lt-chev:hover { background: var(--color-accent-faint); }
 .lt-src--selected > .lt-src-head { box-shadow: inset 2px 0 0 var(--color-accent); }
 .lt-src > .set-bar { background: var(--color-bg-tertiary); padding: 0 8px 6px 26px; }
+
+/* ── Context menu shortcut hint (here, not in _context-menu: that partial ships in label-table.css) ─────────────────────────────────────────────────────── */
+.ctx-item-kbd {
+  margin-left: auto;
+  padding-left: 18px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--color-text-secondary);
+}
+
+/* Touch: bigger targets, more room between eye and ⋯ */
+@media (pointer: coarse) {
+  .set-ctl { gap: 8px; }
+  .set-ctl-btn { width: 36px; height: 32px; }
+  .set-bar-btn { height: 32px; padding: 0 10px; }
+}
