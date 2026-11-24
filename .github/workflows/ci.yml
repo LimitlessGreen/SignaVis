@@ -363,11 +363,6 @@ jobs:
           fi
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
             npx tauri build --bundles ${{ matrix.bundles }} "${extra[@]}"
-            # The bundler signs only the AppImage; a .deb install updates from
-            # the "linux-x86_64-deb" entry, which needs its own signature.
-            for deb in target/release/bundle/deb/*.deb; do
-              [ -e "$deb" ] && npx tauri signer sign "$deb"
-            done
           else
             echo "::warning::TAURI_SIGNING_PRIVATE_KEY not set — building without updater artifacts"
             npx tauri build --bundles ${{ matrix.bundles }} "${extra[@]}" --config '{"bundle":{"createUpdaterArtifacts":false}}'
