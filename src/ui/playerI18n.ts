@@ -37,7 +37,7 @@ export function translateText(tr: Translation, text: string): string | null {
         }
     }
     if (out == null || out === key) return null;
-    return text.replace(key, out);
+    return text.replace(key, () => out!);
 }
 
 const ATTRS = ['title', 'aria-label', 'placeholder'];
