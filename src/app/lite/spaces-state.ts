@@ -15,6 +15,17 @@ export interface SpaceDef {
     panels: string[];
     /** Hidden until something says it is useful (Embeddings: once embeddings exist). */
     optional?: boolean;
+    /**
+     * Fresh layout: where a panel goes relative to one placed before it (default: a tab next to the
+     * previous one). Panels are placed in `panels` order; size in px across the split.
+     */
+    arrange?: Record<string, PanelPlacement>;
+}
+
+export interface PanelPlacement {
+    ref: string;
+    dir: 'left' | 'right' | 'above' | 'below' | 'within';
+    size?: number;
 }
 
 export interface StoredSpace {

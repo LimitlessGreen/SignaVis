@@ -49,6 +49,24 @@
 }
 .lib-embedded .lib-head h2 { display: none; }   // the panel tab already says "Library"
 
+// Library split into panels (LibraryView `split`): each part fills its panel.
+.lib-part {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--color-bg-primary); color: var(--color-text-primary);
+  outline: none;
+}
+.lib-part--fields > .lib-facets { flex: 1; width: auto; border-right: 0; }
+.lib-part--selection > .lib-side { flex: 1; width: auto; border-left: 0; }
+.lib-part--calendar > .lib-heat { flex: 1; height: auto; min-height: 110px; border-bottom: 0; }
+// Recordings panel: one header line; the summary gives way first (full text in its tooltip).
+.lib-part--recordings .lib-head {
+  gap: 8px; padding: 4px 10px; white-space: nowrap;
+  .lib-stats { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .lib-spacer { display: none; }
+  .lib-viewswitch button { white-space: nowrap; }
+}
+
 // ── Dock theme: dockview variables on the SignaVis tokens ───────────
 .dockview-theme-signavis {
   --dv-paneview-active-outline-color: var(--color-accent);

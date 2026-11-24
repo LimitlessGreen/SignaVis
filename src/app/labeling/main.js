@@ -3675,8 +3675,13 @@ function createGeoAwareSpeciesSearch(opts) {
 document.getElementById('panelBirdnet').appendChild(explorePanel.el);
 /** Lite spaces (src/app/lite/spaces.ts); null in the web app and until built. */
 let spaces = null;
-const libraryHost = document.createElement('div');
-libraryHost.className = 'space-fill';
+/** Spaces: the library's parts, one panel each (Browse). */
+const LIB_PARTS = ['recordings', 'fields', 'calendar', 'selection'];
+const libraryHosts = Object.fromEntries(LIB_PARTS.map((k) => {
+  const el = document.createElement('div');
+  el.className = 'space-fill';
+  return [k, el];
+}));
 const embedMapHost = document.createElement('div');
 embedMapHost.className = 'space-fill';
 let mountLibraryPanel = () => {};
@@ -3743,16 +3748,16 @@ if (isLite()) {
     const root = libRoot();
     if (libView) return;
     if (!root) {
-      libraryHost.innerHTML = '<p class="lib-hint space-hint">The library manages large collections of recordings (sites, recorders, time ranges). Open a project folder first (Project tab in Annotate).</p>';
+      libraryHosts.recordings.innerHTML = '<p class="lib-hint space-hint">The library manages large collections of recordings (sites, recorders, time ranges). Open a project folder first (Project tab in Annotate).</p>';
       return;
     }
-    libraryHost.replaceChildren();
     libView = new LibraryView({
       projectRoot: root,
       embedded: true,
+      split: true,
       openRecording: (path) => openCatalogRecording(path, () => spaces?.reveal('editor')),
     });
-    libraryHost.appendChild(libView.el);
+    for (const k of LIB_PARTS) libraryHosts[k].replaceChildren(libView.parts[k]);
   };
   let _catalogOpenSeq = 0;
   /**
@@ -3793,7 +3798,7 @@ if (isLite()) {
     const root = libRoot();
     if (!root) return;
     if (spaces) {
-      void spaces.reveal('library').then(() => {
+      void spaces.reveal('lib-recordings').then(() => {
         libView?.focus();
         if (startImport) libView?.el.querySelector('[data-act="open-import"]')?.click();
       });
@@ -5394,14 +5399,24 @@ async function installLiteSpaces() {
     defaultActive: 'annotate',
     eager: ['annotate'],
     spaces: [
-      { id: 'browse', title: 'Browse', icon: LayoutGrid, panels: ['library'] },
+      { id: 'browse', title: 'Browse', icon: LayoutGrid,
+        panels: ['lib-recordings', 'lib-fields', 'lib-calendar', 'lib-selection'],
+        arrange: {
+          'lib-fields': { ref: 'lib-recordings', dir: 'left', size: 250 },
+          'lib-selection': { ref: 'lib-recordings', dir: 'right', size: 280 },
+          'lib-calendar': { ref: 'lib-recordings', dir: 'above', size: 150 },
+        } },
       { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor'] },
       { id: 'embeddings', title: 'Embeddings', icon: ChartScatter, panels: ['embeddings'], optional: true },
     ],
     panels: [
       { id: 'editor', title: 'Editor', mount: (host) => { host.appendChild(workspace); } },
-      { id: 'library', title: 'Library', mount: (host) => { host.appendChild(libraryHost); mountLibraryPanel(); },
-        onShow: () => focusLibrarySoon() },
+      ...[['recordings', 'Recordings'], ['fields', 'Fields'], ['calendar', 'Calendar'], ['selection', 'Selection']].map(([k, title]) => ({
+        id: `lib-${k}`, title,
+        // Any part builds the library (all parts at once); the others are then only placed.
+        mount: (host) => { host.appendChild(libraryHosts[k]); mountLibraryPanel(); },
+        ...(k === 'recordings' ? { onShow: () => focusLibrarySoon() } : {}),
+      })),
       { id: 'embeddings', title: 'Embedding map', mount: (host) => { host.appendChild(embedMapHost); },
         onShow: () => {
           if (_embedMapOpened) return;
@@ -5417,7 +5432,7 @@ async function installLiteSpaces() {
 }
 /** Keys (arrows, Enter) go to the library once Browse is shown. */
 function focusLibrarySoon() {
-  requestAnimationFrame(() => libraryHost.querySelector('.lib-overlay')?.focus());
+  requestAnimationFrame(() => libraryHosts.recordings.querySelector('.lib-overlay')?.focus());
 }
 
 // ── Lite: window title and close guard ──────────────────────────────

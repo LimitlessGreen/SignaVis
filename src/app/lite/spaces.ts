@@ -227,7 +227,14 @@ export class SpacesShell {
             let first: string | null = null;
             for (const id of own) {
                 const p = this.#panels.get(id)!;
-                api.addPanel({ id, component: id, title: p.def.title, ...(first ? { position: { referencePanel: first } } : {}) });
+                const at = sp.def.arrange?.[id];
+                const ref = at && api.getPanel(at.ref) ? at : null;
+                const size = ref?.size ? (ref.dir === 'left' || ref.dir === 'right' ? { initialWidth: ref.size } : { initialHeight: ref.size }) : {};
+                api.addPanel({
+                    id, component: id, title: p.def.title,
+                    ...(ref ? { position: { referencePanel: ref.ref, direction: ref.dir }, ...size }
+                        : first ? { position: { referencePanel: first } } : {}),
+                });
                 first ??= id;
             }
             if (first) api.getPanel(first)?.api.setActive();

@@ -70,10 +70,27 @@ export interface LibraryViewOptions {
     embedded?: boolean;
     /** Shared view (spaces: one view for all panels); without one the library makes its own. */
     view?: CatalogView;
+    /**
+     * Spaces: hand out fields, calendar and selection as separate elements (`parts`), each placed
+     * in its own panel; `el` is then the recordings part (head, chips, table/tiles). Needs `embedded`.
+     */
+    split?: boolean;
+}
+
+/** The library cut into panel-sized pieces (LibraryViewOptions.split). */
+export interface LibraryParts {
+    fields: HTMLElement;
+    calendar: HTMLElement;
+    recordings: HTMLElement;
+    selection: HTMLElement;
 }
 
 export class LibraryView {
     el: HTMLElement;
+    /** Separate pieces when made with `split`; null for the one-piece library. */
+    readonly parts: LibraryParts | null = null;
+    /** Elements the library's DOM lives in (one, or the four parts): queried and listened to. */
+    #roots: HTMLElement[];
     #o: LibraryViewOptions;
     /** Filter, dataset, rows and selection; shared with the other library panels (spaces). */
     #v: CatalogView;
@@ -166,6 +183,22 @@ export class LibraryView {
           <div class="lib-import-host" hidden></div>`;
         this.#side = new SelectionPanel({ projectRoot: o.projectRoot, onApplied: () => void this.reload({ keepPicks: true }) });
         this.el.querySelector('.lib-body')!.appendChild(this.#side.el);
+        this.#roots = [this.el];
+        if (o.split) {
+            const part = (kind: string, child: Element) => {
+                const p = document.createElement('div');
+                p.className = `lib-part lib-part--${kind}`;
+                p.tabIndex = -1;
+                p.appendChild(child);
+                return p;
+            };
+            const fields = part('fields', this.el.querySelector('.lib-facets')!);
+            const calendar = part('calendar', this.el.querySelector('.lib-heat')!);
+            const selection = part('selection', this.#side.el);
+            this.el.classList.add('lib-part', 'lib-part--recordings');
+            this.parts = { fields, calendar, recordings: this.el, selection };
+            this.#roots = [this.el, fields, calendar, selection];
+        }
         this.#expand = new ExpandedView({
             projectRoot: o.projectRoot,
             rowAt: (i) => this.#v.rowAt(i),
@@ -187,22 +220,25 @@ export class LibraryView {
             onDatasetsChanged: () => { this.#v.datasetsChanged(); this.#reloadOnClose = true; },
         });
         this.el.appendChild(this.#expand.el);
-        this.el.addEventListener('lib-pick-all', () => this.#v.selectAllShown());
-        this.el.addEventListener('lib-pick-none', () => this.#v.selectNone());
-        this.el.addEventListener('click', (e) => this.#onClick(e));
-        this.el.addEventListener('change', (e) => this.#onChange(e));
-        this.el.addEventListener('input', (e) => this.#onSearch(e));
-        this.el.addEventListener('keydown', (e) => this.#onKey(e));
-        this.el.querySelector('.lib-grid')!.addEventListener('scroll', () => this.#renderRows(), { passive: true });
-        this.el.querySelector('.lib-grid')!.addEventListener('dblclick', (e) => {
+        for (const r of this.#roots) {
+            r.addEventListener('lib-pick-all', () => this.#v.selectAllShown());
+            r.addEventListener('lib-pick-none', () => this.#v.selectNone());
+            r.addEventListener('click', (e) => this.#onClick(e));
+            r.addEventListener('change', (e) => this.#onChange(e));
+            r.addEventListener('input', (e) => this.#onSearch(e));
+            r.addEventListener('keydown', (e) => this.#onKey(e));
+        }
+        this.#q('.lib-grid')!.addEventListener('scroll', () => this.#renderRows(), { passive: true });
+        this.#q('.lib-grid')!.addEventListener('dblclick', (e) => {
             const r = (e.target as HTMLElement).closest<HTMLElement>('[data-i]');
             if (r) void this.#open(Number(r.dataset.i));
         });
-        new ResizeObserver(() => { this.#renderRows(); this.#drawHeat(); }).observe(this.el);
+        const ro = new ResizeObserver(() => { this.#renderRows(); this.#drawHeat(); });
+        for (const r of this.#roots) ro.observe(r);
         void catalogApi.onHashProgress((p) => {
             if (p.projectRoot !== this.#o.projectRoot) return;
             this.#hash = p.finished ? null : p;
-            if (p.error) this.el.querySelector('.lib-stats')!.textContent = `Analysing files stopped: ${p.error} (start it again to continue)`;
+            if (p.error) this.#setStats(`Analysing files stopped: ${p.error} (start it again to continue)`);
             if (p.finished) void this.#loadIntegrity(); else this.#renderIntegrity();
         }).then((u) => { if (this.#disposed) u(); else this.#unlisten = u; }).catch(() => {});
         this.#applyView();
@@ -212,13 +248,23 @@ export class LibraryView {
         void this.#loadIntegrity();
     }
 
+    /** First match in the library's elements (all parts when split). */
+    #q<T extends Element = Element>(sel: string): T | null {
+        for (const r of this.#roots) { const x = r.querySelector<T>(sel); if (x) return x; }
+        return null;
+    }
+
+    #qa<T extends Element = Element>(sel: string): T[] {
+        return this.#roots.flatMap((r) => [...r.querySelectorAll<T>(sel)]);
+    }
+
     #applyView() {
         this.el.classList.toggle('lib--tiles', this.#view === 'grid');
-        this.el.querySelectorAll<HTMLElement>('.lib-viewswitch [data-act]').forEach((b) =>
+        this.#qa<HTMLElement>('.lib-viewswitch [data-act]').forEach((b) =>
             b.setAttribute('aria-pressed', String(b.dataset.act === `view-${this.#view}`)));
-        this.el.querySelectorAll<HTMLElement>('.lib-tilebar [data-act="tile-hz"]').forEach((b) =>
+        this.#qa<HTMLElement>('.lib-tilebar [data-act="tile-hz"]').forEach((b) =>
             b.setAttribute('aria-pressed', String(Number(b.dataset.v) === this.#tile.maxHz)));
-        this.el.querySelector<HTMLInputElement>('[data-k="tile-zoom"]')!.value = String(this.#tile.zoom);
+        this.#q<HTMLInputElement>('[data-k="tile-zoom"]')!.value = String(this.#tile.zoom);
     }
 
     #setTile(change: Partial<{ zoom: number; maxHz: number; show: { site: boolean; device: boolean } }>) {
@@ -237,7 +283,7 @@ export class LibraryView {
         this.#view = v;
         prefs.set(VIEW_KEY, v);
         this.#applyView();
-        const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
+        const grid = this.#q<HTMLElement>('.lib-grid')!;
         grid.scrollTop = 0;
         this.#renderRows();
         if (this.#v.current >= 0) this.#reveal(this.#v.current);
@@ -249,7 +295,7 @@ export class LibraryView {
     }
 
     #reveal(i: number) {
-        const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
+        const grid = this.#q<HTMLElement>('.lib-grid')!;
         const [y, h] = this.#itemBox(i);
         const top = scrollToShow(y, h, grid.scrollTop, grid.clientHeight);
         if (top != null) grid.scrollTop = top;
@@ -271,7 +317,7 @@ export class LibraryView {
     }
 
     #renderIntegrity() {
-        const host = this.el.querySelector<HTMLElement>('.lib-integrity')!;
+        const host = this.#q<HTMLElement>('.lib-integrity')!;
         const it = this.#integrity;
         const parts: string[] = [];
         if (this.#hash) {
@@ -296,7 +342,7 @@ export class LibraryView {
         const [devices, shifts] = await Promise.all([catalogApi.devices(this.#o.projectRoot), catalogApi.clockShifts(this.#o.projectRoot)]);
         this.#devices = devices;
         this.#shifts = shifts;
-        const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
+        const host = this.#q<HTMLElement>('.lib-import-host')!;
         const fmt = (t: string | null) => (t ? t.replace('T', ' ') : 'start');
         const periodRow = (p: ClockPeriod, i: number) => `<div class="lib-row lib-period" data-i="${i}">
             <input class="input" type="datetime-local" step="1" data-k="from" value="${esc(p.from ?? '')}" title="Recorder time from which this clock applies; empty = from the first recording">
@@ -381,7 +427,7 @@ export class LibraryView {
             }
         } catch (e) {
             const out = t.closest('tr')?.querySelector('[data-k="clock-result"]');
-            if (out) out.textContent = `Error: ${e}`; else this.el.querySelector('.lib-stats')!.textContent = `Error: ${e}`;
+            if (out) out.textContent = `Error: ${e}`; else this.#setStats(`Error: ${e}`);
         } finally {
             // Also after a partial failure: times written so far changed rows and dataset counts.
             if (clocksChanged) { this.#v.datasetsChanged(); void this.reload(); }
@@ -391,7 +437,7 @@ export class LibraryView {
     #showDuplicates() {
         const it = this.#integrity;
         if (!it) return;
-        const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
+        const host = this.#q<HTMLElement>('.lib-import-host')!;
         host.innerHTML = `<div class="lib-import-head"><h3>Identical copies</h3>
             <span class="lib-stats">${it.duplicateGroups.toLocaleString()} groups of files with the same content${it.duplicateGroups > it.duplicates.length ? ` (first ${it.duplicates.length} shown)` : ''}</span>
             <span class="lib-spacer"></span><button class="btn btn--sm btn--ghost" data-act="import-close" title="Close">✕</button></div>
@@ -413,7 +459,7 @@ export class LibraryView {
         if (change === 'rows') { this.#renderRows(); return; }
         if (change === 'selection') { this.#markSelection(); return; }
         // query
-        if (this.#v.error) { this.el.querySelector('.lib-stats')!.textContent = `Catalog error: ${this.#v.error}`; return; }
+        if (this.#v.error) { this.#setStats(`Catalog error: ${this.#v.error}`); return; }
         this.#renderFacets();
         this.#renderStats();
         this.#drawHeat();
@@ -437,19 +483,24 @@ export class LibraryView {
         void this.#side.show(this.#v.selection, this.#v.pickedCount, lists);
     }
 
+    /** Summary line (also its tooltip: the panel header may cut it off). */
+    #setStats(text: string) {
+        const el = this.#q<HTMLElement>('.lib-stats');
+        if (el) { el.textContent = text; el.title = text; }
+    }
+
     #renderStats() {
         const f = this.#v.facets;
         if (!f) return;
         const hours = f.seconds ? `${formatDuration(f.seconds)} · ` : '';
         const span = f.firstMs != null && f.lastMs != null
             ? ` · ${new Date(f.firstMs).toISOString().slice(0, 10)} – ${new Date(f.lastMs).toISOString().slice(0, 10)}` : '';
-        this.el.querySelector('.lib-stats')!.textContent =
-            `${f.total.toLocaleString()} recordings · ${hours}${formatBytes(f.bytes)}${span}${f.noStart ? ` · ${f.noStart} without start time` : ''}`;
+        this.#setStats(`${f.total.toLocaleString()} recordings · ${hours}${formatBytes(f.bytes)}${span}${f.noStart ? ` · ${f.noStart} without start time` : ''}`);
     }
 
     #renderFacets() {
         const f = this.#v.facets;
-        const host = this.el.querySelector('.lib-facets')!;
+        const host = this.#q('.lib-facets')!;
         if (!f) { host.innerHTML = ''; return; }
         const max = (vals: Facets['sites']) => Math.max(1, ...vals.map((v) => v.count));
         const list = (kind: 'site' | 'device' | 'tag', title: string, vals: Facets['sites'], sel: number[] = []) => vals.length ? `
@@ -533,7 +584,7 @@ export class LibraryView {
         const root = this.#o.projectRoot;
         const a = this.#v.active;
         if (act !== 'ds-del') this.#confirmDelete = false;
-        const fail = (e: unknown) => { this.el.querySelector('.lib-stats')!.textContent = `Dataset: ${e}`; };
+        const fail = (e: unknown) => { this.#setStats(`Dataset: ${e}`); };
         try {
             if (act === 'ds-all') { this.#v.activeDs = null; this.#v.filter = {}; }
             else if (act === 'ds-open') {
@@ -608,7 +659,7 @@ export class LibraryView {
         if (tf.unassigned) chips.push(['unassigned', 'without site/recorder']);
         if (tf.sun) chips.push(['sun', `☀ ${sunWindowLabel(tf.sun)}`]);
         this.#chipText = chips.map((c) => c[1]).join(' · ');
-        const host = this.el.querySelector<HTMLElement>('.lib-viewbar')!;
+        const host = this.#q<HTMLElement>('.lib-viewbar')!;
         host.innerHTML = chips.length
             ? chips.map(([k, label, color, id]) => `<span class="lib-chip" data-k="${k}"${id != null ? ` data-id="${id}"` : ''}${color ? ` style="--pill:${color}"` : ''}>${esc(label)}<button data-act="chip-clear" title="Remove this filter">×</button></span>`).join('')
               + (chips.length > 1 ? '<button class="lib-chip lib-chip--reset" data-act="chip-clear" data-k="all">Reset</button>' : '')
@@ -640,9 +691,9 @@ export class LibraryView {
     #renderRows() {
         if (this.#view === 'grid') { this.#renderTiles(); return; }
         this.#cols = 1;
-        const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
-        const spacer = this.el.querySelector<HTMLElement>('.lib-grid-spacer')!;
-        const host = this.el.querySelector<HTMLElement>('.lib-grid-rows')!;
+        const grid = this.#q<HTMLElement>('.lib-grid')!;
+        const spacer = this.#q<HTMLElement>('.lib-grid-spacer')!;
+        const host = this.#q<HTMLElement>('.lib-grid-rows')!;
         const total = this.#v.facets?.total ?? this.#v.rows.length;
         spacer.style.height = `${total * ROW_H}px`;
         const first = Math.max(0, Math.floor(grid.scrollTop / ROW_H) - 5);
@@ -659,14 +710,15 @@ export class LibraryView {
               <span class="c-size">${r.size != null ? formatBytes(r.size) : ''}</span><span class="c-lab">${r.labels || ''}</span></div>`;
         }
         host.innerHTML = html;
-        this.el.querySelectorAll<HTMLElement>('.lib-grid-head [data-sort]').forEach((h) =>
+        this.#qa<HTMLElement>('.lib-grid-head [data-sort]').forEach((h) =>
             h.classList.toggle('is-sorted', h.dataset.sort === this.#v.sort));
     }
 
     #drawHeat() {
-        const c = this.el.querySelector<HTMLCanvasElement>('.lib-heat');
+        const c = this.#q<HTMLCanvasElement>('.lib-heat');
         if (!c) return;
-        const W = c.clientWidth || 600, H = 110, PLOT = 96, LEFT = 24;
+        // One-piece library: a 110 px strip; calendar panel: as tall as the panel.
+        const W = c.clientWidth || 600, H = Math.max(110, this.parts ? c.clientHeight : 0), PLOT = H - 14, LEFT = 24;
         const dpr = window.devicePixelRatio || 1;
         c.width = Math.round(W * dpr);
         c.height = Math.round(H * dpr);
@@ -701,7 +753,7 @@ export class LibraryView {
     /** Mark picked and current rows without re-rendering (a re-render between the clicks would break double-click). */
     #markSelection() {
         const v = this.#v;
-        this.el.querySelectorAll<HTMLElement>('.lib-r').forEach((el) => {
+        this.#qa<HTMLElement>('.lib-r').forEach((el) => {
             const k = Number(el.dataset.i);
             el.classList.toggle('is-sel', v.isPicked(v.rows[k]?.id));
             el.classList.toggle('is-cur', k === v.current);
@@ -710,9 +762,9 @@ export class LibraryView {
     }
 
     #renderTiles() {
-        const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
-        const spacer = this.el.querySelector<HTMLElement>('.lib-grid-spacer')!;
-        const host = this.el.querySelector<HTMLElement>('.lib-grid-rows')!;
+        const grid = this.#q<HTMLElement>('.lib-grid')!;
+        const spacer = this.#q<HTMLElement>('.lib-grid-spacer')!;
+        const host = this.#q<HTMLElement>('.lib-grid-rows')!;
         const total = this.#v.facets?.total ?? this.#v.rows.length;
         const { w, h } = TILE_SIZES[this.#tile.zoom];
         const tw = this.#tileW, th = this.#tileH;
@@ -801,7 +853,7 @@ export class LibraryView {
                 for (const r of res) {
                     this.#thumbs.set(r.recordingId, r.thumb ?? r.error ?? 'no preview');
                     this.#trimThumbs();
-                    const c = this.el.querySelector<HTMLCanvasElement>(`.lib-tile canvas[data-id="${r.recordingId}"]`);
+                    const c = this.#q<HTMLCanvasElement>(`.lib-tile canvas[data-id="${r.recordingId}"]`);
                     if (c) {
                         this.#drawThumb(c);
                         if (r.error) c.closest<HTMLElement>('.lib-tile')!.title += ` — no preview: ${r.error}`;
@@ -819,7 +871,7 @@ export class LibraryView {
         this.#v.select(i);
         const path = await catalogApi.recordingPath(this.#o.projectRoot, row.id);
         if (!path) {
-            this.el.querySelector('.lib-stats')!.textContent = 'This recording\'s source folder is not located on this computer.';
+            this.#setStats('This recording\'s source folder is not located on this computer.');
             return;
         }
         await this.#o.openRecording(path, row);
@@ -863,7 +915,7 @@ export class LibraryView {
             };
             this.#renderIntegrity();
             void catalogApi.hashStart(this.#o.projectRoot, full)
-                .catch((err) => { this.#hash = null; this.el.querySelector('.lib-stats')!.textContent = String(err); })
+                .catch((err) => { this.#hash = null; this.#setStats(String(err)); })
                 .finally(() => void this.#loadIntegrity());
         }
         else if (act === 'hash-stop') void catalogApi.hashCancel();
@@ -924,7 +976,7 @@ export class LibraryView {
         this.#searchTimer = setTimeout(() => {
             this.#v.filter.pathContains = t.value.trim() || null;
             void this.reload().then(() => {
-                const inp = this.el.querySelector<HTMLInputElement>('[data-k="path"]');
+                const inp = this.#q<HTMLInputElement>('[data-k="path"]');
                 if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
             });
         }, 300);
@@ -934,7 +986,7 @@ export class LibraryView {
         if ((e.target as HTMLElement).closest('input, textarea, select')) return;
         if (this.#expand.onKey(e)) return;
         if (e.key === 'Escape') {
-            if (!this.el.querySelector<HTMLElement>('.lib-import-host')!.hidden) this.#hideImport(); else this.#o.onClose?.();
+            if (!this.#q<HTMLElement>('.lib-import-host')!.hidden) this.#hideImport(); else this.#o.onClose?.();
         } else if (e.key.startsWith('Arrow')) {
             const j = moveIndex(this.#v.current, e.key, this.#cols, this.#v.rows.length);
             if (j < 0) return;
@@ -950,7 +1002,7 @@ export class LibraryView {
     }
 
     #showImport() {
-        const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
+        const host = this.#q<HTMLElement>('.lib-import-host')!;
         this.#importDialog = new ImportDialog({
             projectRoot: this.#o.projectRoot,
             onImported: () => {
@@ -967,7 +1019,7 @@ export class LibraryView {
     }
 
     #showHost(title: string, content: HTMLElement) {
-        const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
+        const host = this.#q<HTMLElement>('.lib-import-host')!;
         this.#importDialog = null;
         this.#mapDialog?.dispose();   // replaced by another dialog: stop its map and observer
         this.#mapDialog = null;
@@ -1014,7 +1066,7 @@ export class LibraryView {
     #hideImport() {
         this.#mapDialog?.dispose();
         this.#mapDialog = null;
-        const host = this.el.querySelector<HTMLElement>('.lib-import-host')!;
+        const host = this.#q<HTMLElement>('.lib-import-host')!;
         host.hidden = true;
         host.innerHTML = '';
         this.#importDialog = null;
