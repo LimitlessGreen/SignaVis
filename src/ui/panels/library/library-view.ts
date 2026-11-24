@@ -21,6 +21,7 @@ import {
 import { CatalogView, type ViewChange } from '../../../domain/catalog/catalog-view.ts';
 import { chipsText, viewChips, type ChipKind } from '../../../domain/catalog/view-chips.ts';
 import { brushDays, brushHours, dayBars, filterDays, hourBars, isOnlyBar, setPeriod } from '../../../domain/catalog/histogram.ts';
+import { calendarBrush, cellAt, cellInView, sunLines, type CalCell } from '../../../domain/catalog/calendar.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 import { prefs } from '../../../infrastructure/storage/prefs.ts';
 import { ImportDialog, timeZones } from './import-dialog.ts';
@@ -168,7 +169,7 @@ export class LibraryView {
           <div class="lib-body">
             <aside class="lib-facets"></aside>
             <main class="lib-main">
-              <canvas class="lib-heat" height="110" title="Recordings per day (columns) and hour (rows, local time)"></canvas>
+              <canvas class="lib-heat" height="110" title="Recordings per day (columns) and local hour (rows). Click a day, drag to pick days and hours."></canvas>
               <div class="lib-tilebar">
                 <div class="lib-viewbar" title="Active filters — × removes one"></div>
                 <span class="lib-seg" role="group" aria-label="Frequency range of the spectrograms"
@@ -237,6 +238,10 @@ export class LibraryView {
             r.addEventListener('change', (e) => this.#onChange(e));
             r.addEventListener('input', (e) => this.#onSearch(e));
             r.addEventListener('keydown', (e) => this.#onKey(e));
+        }
+        const heat = this.#q<HTMLCanvasElement>('.lib-heat')!;
+        for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'] as const) {
+            heat.addEventListener(type, (e) => this.#onCalendar(e as PointerEvent));
         }
         const facets = this.#q('.lib-facets')!;
         for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'] as const) {
@@ -763,6 +768,10 @@ export class LibraryView {
             h.classList.toggle('is-sorted', h.dataset.sort === this.#v.sort));
     }
 
+    /** Calendar geometry of the last drawing (for clicks, drags and the tooltip). */
+    #cal: { left: number; top: number; cw: number; ch: number; days: string[]; counts: Map<string, number> } | null = null;
+    #calBrush: { a: CalCell; b: CalCell } | null = null;
+
     #drawHeat() {
         const c = this.#q<HTMLCanvasElement>('.lib-heat');
         if (!c) return;
@@ -776,19 +785,84 @@ export class LibraryView {
         g.scale(dpr, dpr);
         g.clearRect(0, 0, W, H);
         const days = continuousDays(this.#v.heat.map((h) => h.day));
+        this.#cal = null;
         if (!days.length) return;
         const css = getComputedStyle(this.el);
         const accent = css.getPropertyValue('--color-accent').trim() || '#38bdf8';
         const muted = css.getPropertyValue('--color-text-secondary').trim() || '#888';
+        const strong = css.getPropertyValue('--color-text-primary').trim() || '#fff';
         const max = Math.max(...this.#v.heat.map((h) => h.count));
         const cw = (W - LEFT) / days.length;
         const idx = new Map(days.map((d, i) => [d, i]));
-        g.fillStyle = accent;
+        const counts = new Map<string, number>();
+        const tf = this.#v.filter;
         for (const h of this.#v.heat) {
-            g.globalAlpha = 0.15 + 0.85 * (h.count / max);
+            counts.set(`${h.day}|${h.hour}`, h.count);
+            const on = cellInView(h.day, h.hour, tf);
+            // Cells outside the period / time of day stay visible, dimmed: the rest of the calendar is still a click away.
+            g.fillStyle = on ? accent : muted;
+            g.globalAlpha = on ? 0.15 + 0.85 * (h.count / max) : 0.08 + 0.17 * (h.count / max);
             g.fillRect(LEFT + idx.get(h.day)! * cw, TOP + h.hour * ch, Math.max(1, cw - 0.5), ch - 0.5);
         }
         g.globalAlpha = 1;
+        this.#cal = { left: LEFT, top: TOP, cw, ch, days, counts };
+        // Sunrise and sunset at the mean position of the recordings, in each day's local clock.
+        const sun = sunLines(days, this.#v.facets?.days ?? [], this.#v.facets?.center);
+        if (sun) {
+            g.save();
+            g.strokeStyle = '#f59e0b';
+            g.lineWidth = 1.25;
+            g.setLineDash([4, 3]);
+            for (const k of ['rise', 'set'] as const) {
+                g.beginPath();
+                let open = false;
+                sun.forEach((s, i) => {
+                    const v = s[k];
+                    if (v == null) { open = false; return; }
+                    const x = LEFT + (i + 0.5) * cw, y = TOP + v * ch;
+                    if (open) g.lineTo(x, y); else g.moveTo(x, y);
+                    open = true;
+                });
+                g.stroke();
+            }
+            g.restore();
+        }
+        // Picked recordings (of the loaded rows) and the current one.
+        const cellOf = (r: CatalogRow | undefined) => {
+            if (r?.startMs == null) return null;
+            const t = new Date(r.startMs + (r.localOffsetMin ?? 0) * 60_000);
+            const i = idx.get(t.toISOString().slice(0, 10));
+            return i == null ? null : { i, hour: t.getUTCHours() };
+        };
+        const marked = new Set<string>();
+        g.strokeStyle = strong;
+        g.lineWidth = 1;
+        for (const r of this.#v.rows) {
+            if (!this.#v.isPicked(r.id)) continue;
+            const cell = cellOf(r);
+            if (!cell || marked.has(`${cell.i}|${cell.hour}`)) continue;
+            marked.add(`${cell.i}|${cell.hour}`);
+            g.strokeRect(LEFT + cell.i * cw + 0.5, TOP + cell.hour * ch + 0.5, Math.max(1, cw - 1.5), ch - 1.5);
+        }
+        const cur = cellOf(this.#v.rows[this.#v.current ?? -1]);
+        if (cur) {
+            g.lineWidth = 2;
+            g.strokeRect(LEFT + cur.i * cw, TOP + cur.hour * ch, Math.max(2, cw - 0.5), ch - 0.5);
+        }
+        if (this.#calBrush) {
+            const { a, b } = this.#calBrush;
+            const [i0, i1] = [Math.min(a.i, b.i), Math.max(a.i, b.i)];
+            const [h0, h1] = a.i !== b.i && a.hour === b.hour ? [0, 23] : [Math.min(a.hour, b.hour), Math.max(a.hour, b.hour)];
+            // In the text colour: accent on accent cells would not show.
+            g.fillStyle = strong;
+            g.globalAlpha = 0.22;
+            g.fillRect(LEFT + i0 * cw, TOP + h0 * ch, (i1 - i0 + 1) * cw, (h1 - h0 + 1) * ch);
+            g.globalAlpha = 1;
+            g.strokeStyle = strong;
+            g.lineWidth = 1.5;
+            g.setLineDash([]);
+            g.strokeRect(LEFT + i0 * cw, TOP + h0 * ch, (i1 - i0 + 1) * cw, (h1 - h0 + 1) * ch);
+        }
         g.fillStyle = muted;
         g.font = `${HEAT_FONT}px sans-serif`;
         g.textBaseline = 'middle';
@@ -797,6 +871,38 @@ export class LibraryView {
         g.textBaseline = 'alphabetic';
         const every = Math.max(1, Math.ceil(80 / cw));
         for (let i = 0; i < days.length; i += every) g.fillText(days[i].slice(5), LEFT + i * cw, H - 2);
+    }
+
+    /** Calendar: click a day, drag a rectangle (days, and hours when it spans several rows); tooltip per cell. */
+    #onCalendar(e: PointerEvent) {
+        const c = e.currentTarget as HTMLCanvasElement;
+        const cal = this.#cal;
+        if (!cal) return;
+        const r = c.getBoundingClientRect();
+        const x = e.clientX - r.left, y = e.clientY - r.top;
+        const cell = cellAt(x, y, { ...cal, days: cal.days.length });
+        if (e.type === 'pointerdown') {
+            if (e.button !== 0 || x < cal.left) return;
+            c.setPointerCapture(e.pointerId);
+            this.#calBrush = { a: cell, b: cell };
+            return;
+        }
+        if (e.type === 'pointermove') {
+            const day = cal.days[cell.i];
+            const hh = (h: number) => String(h).padStart(2, '0');
+            c.title = x < cal.left ? 'Recordings per day (columns) and local hour (rows). Click a day, drag to pick days and hours.'
+                : `${day} ${hh(cell.hour)}–${hh(cell.hour + 1)} h: ${(cal.counts.get(`${day}|${cell.hour}`) ?? 0).toLocaleString()} recordings`;
+            if (this.#calBrush && (cell.i !== this.#calBrush.b.i || cell.hour !== this.#calBrush.b.hour)) {
+                this.#calBrush.b = cell;
+                this.#drawHeat();
+            }
+            return;
+        }
+        const brush = this.#calBrush;
+        this.#calBrush = null;
+        if (!brush || e.type === 'pointercancel') { this.#drawHeat(); return; }
+        Object.assign(this.#v.filter, calendarBrush(cal.days, brush.a, brush.b, this.#v.filter));
+        void this.reload();
     }
 
     /** Mark picked and current rows without re-rendering (a re-render between the clicks would break double-click). */
@@ -808,6 +914,7 @@ export class LibraryView {
             el.classList.toggle('is-cur', k === v.current);
         });
         if (this.#pickKey !== this.#sideKey) this.#updateSide();
+        this.#drawHeat();   // picked and current cells
     }
 
     #renderTiles() {

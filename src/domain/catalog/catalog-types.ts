@@ -94,8 +94,10 @@ export interface Facets {
     noStart: number; sites: FacetValue[]; devices: FacetValue[]; tags?: FacetValue[];
     /** Recordings per local day / per local hour (0–23), each without its own part of the filter. */
     days?: DayCount[]; hours?: number[];
+    /** Mean position [lat, lon] of the recordings with one (for sun times). */
+    center?: [number, number] | null;
 }
-export interface DayCount { day: string; count: number }
+export interface DayCount { day: string; count: number; offsetMin?: number | null }
 export interface HeatCell { day: string; hour: number; count: number }
 export interface DuplicateGroup { hash: string; size: number; paths: string[]; verified: boolean }
 export interface Integrity {

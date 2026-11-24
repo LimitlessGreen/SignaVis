@@ -61,7 +61,8 @@ pub(crate) const LOCAL_DAY: &str = "date(((r.start_ms + COALESCE(r.local_offset_
 
 #[derive(Clone, Copy, PartialEq)]
 /// Filter part to leave out: a facet counts under the rest, so its own other values stay visible.
-pub(crate) enum Skip { None, Site, Device, Tag, Dataset, Period, Hour }
+/// `Time` leaves out both period and time of day (the calendar shows them dimmed instead).
+pub(crate) enum Skip { None, Site, Device, Tag, Dataset, Period, Hour, Time }
 
 pub(crate) fn where_clause(cat: &Catalog, f: &Filter, skip: Skip) -> Result<(String, Vec<Box<dyn ToSql>>)> {
     where_depth(cat, f, skip, 0)
@@ -109,13 +110,13 @@ fn where_depth(cat: &Catalog, f: &Filter, skip: Skip, depth: usize) -> Result<(S
     }
     if f.unassigned { push("(r.site_id IS NULL OR r.device_id IS NULL)".into(), vec![], &mut p); }
     if f.no_site { push("r.site_id IS NULL".into(), vec![], &mut p); }
-    if skip != Skip::Period {
+    if skip != Skip::Period && skip != Skip::Time {
         if let Some(d) = &f.local_day_from { push(format!("{LOCAL_DAY} >= ?"), vec![Box::new(d.clone())], &mut p); }
         if let Some(d) = &f.local_day_to { push(format!("{LOCAL_DAY} <= ?"), vec![Box::new(d.clone())], &mut p); }
         if let Some(v) = f.from_ms { push("r.start_ms >= ?".into(), vec![Box::new(v)], &mut p); }
         if let Some(v) = f.to_ms { push("r.start_ms < ?".into(), vec![Box::new(v)], &mut p); }
     }
-    if let (Some(a), Some(b), true) = (f.hour_from, f.hour_to, skip != Skip::Hour) {
+    if let (Some(a), Some(b), true) = (f.hour_from, f.hour_to, skip != Skip::Hour && skip != Skip::Time) {
         let (a, b) = (a as i64, b as i64);
         let op = if a <= b { "AND" } else { "OR" };
         push(format!("({LOCAL_HOUR} >= ? {op} {LOCAL_HOUR} < ?)"), vec![Box::new(a), Box::new(b)], &mut p);
@@ -259,11 +260,18 @@ pub struct Facets {
     pub days: Vec<DayCount>,
     /// Recordings per local hour 0–23, under the filter without its own time of day.
     pub hours: Vec<i64>,
+    /// Mean position [lat, lon] of the recordings with a position (own, else the site's); for sun times.
+    pub center: Option<[f64; 2]>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DayCount { pub day: String, pub count: i64 }
+pub struct DayCount {
+    pub day: String,
+    pub count: i64,
+    /// UTC offset of the recordings' local time that day (minutes; the largest when they differ).
+    pub offset_min: Option<i64>,
+}
 
 fn facet(cat: &Catalog, f: &Filter, skip: Skip, table: &str, col: &str) -> Result<Vec<FacetValue>> {
     let (w, p) = where_clause(cat, f, skip)?;
@@ -296,9 +304,9 @@ pub fn facets(cat: &Catalog, f: &Filter) -> Result<Facets> {
     tags.sort_by(nat);
     let days = {
         let (w, p) = where_clause(cat, f, Skip::Period)?;
-        let sql = format!("SELECT {LOCAL_DAY}, COUNT(*) {FROM} WHERE {w} AND r.start_ms IS NOT NULL GROUP BY 1 ORDER BY 1");
+        let sql = format!("SELECT {LOCAL_DAY}, COUNT(*), MAX(r.local_offset_min) {FROM} WHERE {w} AND r.start_ms IS NOT NULL GROUP BY 1 ORDER BY 1");
         let mut st = cat.conn.prepare(&sql)?;
-        st.query_map(params_from_iter(p.iter()), |r| Ok(DayCount { day: r.get(0)?, count: r.get(1)? }))?
+        st.query_map(params_from_iter(p.iter()), |r| Ok(DayCount { day: r.get(0)?, count: r.get(1)?, offset_min: r.get(2)? }))?
             .collect::<std::result::Result<Vec<_>, _>>()?
     };
     let mut hours = vec![0i64; 24];
@@ -311,7 +319,12 @@ pub fn facets(cat: &Catalog, f: &Filter) -> Result<Facets> {
             if (0..24).contains(&h) { hours[h as usize] = n; }
         }
     }
-    Ok(Facets { total, bytes, seconds, first_ms, last_ms, no_start, sites, devices, tags, days, hours })
+    let center = {
+        let sql = format!("SELECT AVG({POS_LAT}), AVG({POS_LON}) {FROM} WHERE {w} AND {POS_LAT} IS NOT NULL");
+        let (lat, lon): (Option<f64>, Option<f64>) = cat.conn.query_row(&sql, params_from_iter(p.iter()), |r| Ok((r.get(0)?, r.get(1)?)))?;
+        lat.zip(lon).map(|(a, b)| [a, b])
+    };
+    Ok(Facets { total, bytes, seconds, first_ms, last_ms, no_start, sites, devices, tags, days, hours, center })
 }
 
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
@@ -354,8 +367,10 @@ pub fn ids(cat: &Catalog, f: &Filter) -> Result<Vec<i64>> {
 pub struct HeatCell { pub day: String, pub hour: i64, pub count: i64 }
 
 /// Recordings per local day × hour (calendar heatmap).
+/// Recordings per local day and hour under the filter without its period and time of day
+/// (the calendar dims cells outside them, so the rest stays in view and clickable).
 pub fn heatmap(cat: &Catalog, f: &Filter) -> Result<Vec<HeatCell>> {
-    let (w, p) = where_clause(cat, f, Skip::None)?;
+    let (w, p) = where_clause(cat, f, Skip::Time)?;
     let sql = format!("SELECT {LOCAL_DAY}, {LOCAL_HOUR}, COUNT(*) {FROM} WHERE {w} AND r.start_ms IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2");
     let mut st = cat.conn.prepare(&sql)?;
     let v = st.query_map(params_from_iter(p.iter()), |r| Ok(HeatCell { day: r.get(0)?, hour: r.get(1)?, count: r.get(2)? }))?
@@ -502,5 +517,21 @@ mod tests {
         assert_eq!(h.iter().map(|c| c.count).sum::<i64>(), 48);
         assert_eq!(h[0].day, "2023-03-13");
         assert_eq!(h[0].hour, 0);
+        // Period and time of day do not narrow the calendar (it dims instead); other filters do.
+        let f = Filter { local_day_from: Some("2023-03-14".into()), hour_from: Some(3), hour_to: Some(4), ..Default::default() };
+        assert_eq!(heatmap(&cat, &f).unwrap().iter().map(|c| c.count).sum::<i64>(), 48);
+        let f = Filter { path_contains: Some("loose".into()), ..Default::default() };
+        assert!(heatmap(&cat, &f).unwrap().iter().map(|c| c.count).sum::<i64>() < 48);
+    }
+
+    #[test]
+    fn facets_center_and_day_offsets() {
+        let cat = fixture();
+        assert!(facets(&cat, &Filter::default()).unwrap().center.is_none(), "fixture has no positions");
+        cat.conn.execute("UPDATE recording SET lat = 52.0, lon = 8.0 WHERE id = 1", []).unwrap();
+        cat.conn.execute("UPDATE recording SET lat = 54.0, lon = 10.0, local_offset_min = 120 WHERE id = 2", []).unwrap();
+        let f = facets(&cat, &Filter::default()).unwrap();
+        assert_eq!(f.center, Some([53.0, 9.0]));
+        assert!(f.days.iter().any(|d| d.offset_min == Some(120)));
     }
 }
