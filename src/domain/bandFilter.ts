@@ -9,7 +9,7 @@
 // No filtered copy of the file is kept (3 h at 48 kHz would be 2 GB): the
 // whole file streams through the filter into the min/max/RMS pyramid once
 // per band, and zoomed-in views filter just the visible samples, starting
-// a little earlier so the filter has settled.
+// early enough (from the slowest pole) that the filter has settled.
 // Loaded lazily (only when the waveform band is switched on).
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -38,7 +38,8 @@ function biquad(kind: 'hp' | 'lp', sr: number, f: number, q: number): Biquad {
 /** The band actually filtered for this sample rate (edges outside the signal dropped), or null for none. */
 export function effectiveBand(band: Band | null | undefined, sr: number): Band | null {
     if (!band || !(sr > 0)) return null;
-    const lo = band.lo >= MIN_HP_HZ ? band.lo : 0;
+    // A cutoff at or above Nyquist makes an unstable biquad: such edges are left out.
+    const lo = band.lo >= MIN_HP_HZ && band.lo < NYQ_FRAC * sr ? band.lo : 0;
     const hi = band.hi > 0 && band.hi < NYQ_FRAC * sr ? band.hi : 0;
     if (!lo && !hi) return null;
     if (lo && hi && hi <= lo) return null;
@@ -78,10 +79,30 @@ export class BandFilter {
     }
 }
 
-/** Samples run through the filter before a range so it has settled (~10 periods of the lower edge, ≤ 1 s). */
+/** Residual of the initial filter state at the start of a range. */
+const SETTLE_EPS = 1e-5;
+/** Longest lead-in, in seconds (a 1 Hz high-pass needs ~5 s). */
+const MAX_WARMUP_S = 10;
+
+/** Largest pole radius of z² + a1·z + a2. */
+function poleRadius(c: Biquad): number {
+    const disc = c.a1 * c.a1 - 4 * c.a2;
+    if (disc < 0) return Math.sqrt(Math.max(0, c.a2));
+    const r = Math.sqrt(disc);
+    return Math.max(Math.abs((-c.a1 + r) / 2), Math.abs((-c.a1 - r) / 2));
+}
+
+/**
+ * Samples run through the filter before a range so the initial state has decayed to
+ * SETTLE_EPS: set by the slowest pole (near-Nyquist low-passes and very low high-passes
+ * ring long), not by the cutoff period.
+ */
 export function warmupSamples(band: Band, sr: number): number {
-    const f = band.lo || band.hi;
-    return Math.min(Math.ceil(sr), Math.ceil(10 * sr / Math.max(f, 10)));
+    let r = 0;
+    for (const c of designBand(band, sr)) r = Math.max(r, poleRadius(c));
+    if (!(r > 0)) return 0;
+    if (r >= 1) return Math.ceil(MAX_WARMUP_S * sr);
+    return Math.min(Math.ceil(MAX_WARMUP_S * sr), Math.ceil(Math.log(SETTLE_EPS) / Math.log(r)) + 8);
 }
 
 /** data[start, end) band-filtered (filter started `warmupSamples` earlier). */

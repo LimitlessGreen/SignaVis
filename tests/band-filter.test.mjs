@@ -70,3 +70,26 @@ test('bandPeaksAsync builds the pyramid of the filtered signal in slices, cached
     assert.equal(await bandPeaksAsync(x, SR, other, { sliceSamples: 8192, isCancelled: () => true }), null);
     assert.equal(cachedBandPeaks(x, other), null, 'cancelled builds are not cached');
 });
+
+test('effectiveBand drops a high-pass edge at or above the Nyquist limit (unstable filter)', () => {
+    assert.equal(effectiveBand({ lo: 23_800, hi: 0 }, SR), null);
+    assert.equal(effectiveBand({ lo: 30_000, hi: 40_000 }, SR), null);
+    const y = run({ lo: 23_800, hi: 0 }, sine(1000, 4800));   // would blow up if the band were used
+    assert.ok(y.every(Number.isFinite));
+});
+
+test('filterRange settles for slow poles too: near-Nyquist low-pass and 1 Hz high-pass', () => {
+    const n = 6 * SR;
+    const x = new Float32Array(n);
+    let s = 9;
+    for (let i = 0; i < n; i++) { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; x[i] = (s / 2 ** 32) * 2 - 1 + 0.7 * Math.sin(i / 7000); }
+    for (const band of [{ lo: 0, hi: 23_000 }, { lo: 1, hi: 0 }, { lo: 1000, hi: 10_000 }]) {
+        const full = run(band, x);
+        const start = 5 * SR, end = start + 2000;
+        const part = filterRange(x, SR, band, start, end);
+        let err = 0;
+        for (let i = 0; i < part.length; i++) err = Math.max(err, Math.abs(part[i] - full[start + i]));
+        assert.ok(err < 1e-3, `${JSON.stringify(band)}: max deviation ${err} (lead-in ${warmupSamples(band, SR)})`);
+    }
+    assert.ok(warmupSamples({ lo: 1000, hi: 10_000 }, SR) <= 2000, 'interior bands keep a short lead-in');
+});
