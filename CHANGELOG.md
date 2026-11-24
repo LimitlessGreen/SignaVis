@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.3] - Unreleased
+
+### Fixed
+- **SignaVis Lite: updating a .deb install** failed with "invalid updater
+  binary format" (the updater downloaded the AppImage). The release now
+  publishes the .deb signature and lists the .deb for .deb installs.
+
 ## [1.4.2] - 2026-11-24
 
 ### Added
