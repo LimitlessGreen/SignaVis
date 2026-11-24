@@ -94,6 +94,18 @@ test('setHostSettings replaces the previous ones; a reset returns to them', () =
     assert.equal(d.colorSchemeSelect.value, DSP_PROFILES.classicSmall.colorScheme);
 });
 
+test('a later host change keeps the controls the user set', () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.setItem('aw-favourite-preset', 'perch');
+    const d = makeDom();
+    const m = manager(d, storage, {});
+    m.applyFavouritePresetControls();
+    d.overlapSelect.value = '1';
+    m.setHostSettings({ colorScheme: 'jet' });
+    assert.equal(d.overlapSelect.value, '1');
+    assert.equal(d.colorSchemeSelect.value, 'jet');
+});
+
 test('contrast from the top: black lies the range below white, white stays put when clamped', () => {
     // White 60 dB above the noise floor, 40 dB range: black 20 dB above the floor.
     assert.deepEqual(contrastFromTop(-20, -80, 40), { floor: 20, range: 40 });

@@ -92,13 +92,38 @@ export class PresetManager {
 
     /**
      * Settings the host app fixes (checked DSP fields, see parseHostSpectrogramSettings).
-     * They apply over the favourite, the last-used settings and the default preset, and
-     * a reset returns to them. Writes the controls; the caller regenerates.
+     * At start they apply over the favourite, the last-used settings and the default
+     * preset, and a reset returns to them. A later change writes only the fields the host
+     * sets; a field it no longer sets returns to the start value. Writes the controls;
+     * the caller regenerates.
      */
     setHostSettings(settings: Record<string, any>) {
+        const prev = this.#hostSettings;
         this.#hostSettings = { ...settings };
-        this.applyFavouritePresetControls();
+        const start: Record<string, any> = { ...DSP_SETTINGS_DEFAULTS, ...(this.#startSettings() ?? {}) };
+        const released = Object.fromEntries(
+            Object.keys(prev).filter(k => !(k in settings)).map(k => [k, start[k]]));
+        this.#applyControls({ ...this.getCurrentPresetSettings(), ...released, ...settings });
+        this.updatePresetButtons();
+        this.syncQualitySlider();
         this.updatePcenSectionDimming();
+    }
+
+    /** The favourite preset, else the last-used settings, else the default preset. */
+    #startSettings(): Record<string, any> | undefined {
+        const fav = this.getFavouritePreset();
+        let p;
+        if (fav) {
+            p = fav.startsWith('user:')
+                ? this.loadUserPresets()[fav.slice(5)]
+                : DSP_PROFILES[fav];
+        }
+        if (!p) p = this.loadLastSettings();
+        if (!p) {
+            const defaultKey = this.#d.presetSelect?.value || this.#defaultPreset;
+            p = DSP_PROFILES[defaultKey];
+        }
+        return p;
     }
 
     get hostSettings(): Record<string, any> { return { ...this.#hostSettings }; }
@@ -293,17 +318,7 @@ export class PresetManager {
      */
     applyFavouritePresetControls() {
         const fav = this.getFavouritePreset();
-        let p;
-        if (fav) {
-            p = fav.startsWith('user:')
-                ? this.loadUserPresets()[fav.slice(5)]
-                : DSP_PROFILES[fav];
-        }
-        if (!p) p = this.loadLastSettings();
-        if (!p) {
-            const defaultKey = this.#d.presetSelect?.value || this.#defaultPreset;
-            p = DSP_PROFILES[defaultKey];
-        }
+        const p = this.#startSettings();
         if (!p) return;
         const host = this.#hostSettings;
         this.#applyControls({ ...p, ...host });
