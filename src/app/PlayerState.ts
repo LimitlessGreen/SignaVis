@@ -204,13 +204,6 @@ export class PlayerState {
         /** @type {import('../infrastructure/storage/IStorage.ts').IStorage} */
         this._storage = options.storage ?? new LocalStorageAdapter();
         this._offChannelSelection = onChannelSelectionChange(() => this._onChannelSelectionChanged());
-        for (const sel of [this.d.channelSelect, this.d.channelSettingSelect]) {
-            sel?.addEventListener('change', () => setChannelSelection(parseChannelSelection(sel.value)));
-        }
-        this.d.waveformScaleSelect?.addEventListener('change', () => this._setWaveformDisplay({ scale: this.d.waveformScaleSelect!.value as any }));
-        this.d.waveformRefSelect?.addEventListener('change', () => this._setWaveformDisplay({ reference: this.d.waveformRefSelect!.value as any }));
-        this.d.waveformDbRangeSelect?.addEventListener('change', () => this._setWaveformDisplay({ dbRange: Number(this.d.waveformDbRangeSelect!.value) }));
-        this.d.waveformRmsCheck?.addEventListener('change', () => this._setWaveformDisplay({ rms: this.d.waveformRmsCheck!.checked }));
         this._presets = new PresetManager(this.d, {
             onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._regenerateSpectrogram(opts); },
             onStage1Rebuild: () => {
@@ -1962,6 +1955,16 @@ export class PlayerState {
         };
 
         bindUiControllers(this.d, this, on);
+
+        const d = this.d;
+        for (const sel of [d.channelSelect, d.channelSettingSelect]) {
+            on(sel, 'change', () => setChannelSelection(parseChannelSelection(sel!.value)));
+        }
+        // Settings → Waveform
+        on(d.waveformScaleSelect, 'change', () => this._setWaveformDisplay({ scale: d.waveformScaleSelect!.value as WaveformDisplay['scale'] }));
+        on(d.waveformRefSelect, 'change', () => this._setWaveformDisplay({ reference: d.waveformRefSelect!.value as WaveformDisplay['reference'] }));
+        on(d.waveformDbRangeSelect, 'change', () => this._setWaveformDisplay({ dbRange: Number(d.waveformDbRangeSelect!.value) }));
+        on(d.waveformRmsCheck, 'change', () => this._setWaveformDisplay({ rms: d.waveformRmsCheck!.checked }));
     }
 
     _bindTouchGestures() {
