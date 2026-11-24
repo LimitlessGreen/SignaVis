@@ -126,7 +126,6 @@ export class SpectrogramController extends EventTarget {
     _sfGeneration: number;
     _sampleRateHz: number;
     _zoomRedrawRafId: number;
-    _freqAxisRafId: number | undefined;
     _lastFreqAxisH: number;
     value: any;
     constructor(d: any) {
@@ -174,7 +173,6 @@ export class SpectrogramController extends EventTarget {
         // Internal redraw debounce rAF id
         this._zoomRedrawRafId = 0;
         // Freq-axis height sync rAF id
-        this._freqAxisRafId = /** @type {number|undefined} */ (undefined);
         this._lastFreqAxisH = 0;
     }
 
@@ -1468,7 +1466,6 @@ export class SpectrogramController extends EventTarget {
 
     destroy() {
         if (this._zoomRedrawRafId) { cancelAnimationFrame(this._zoomRedrawRafId); this._zoomRedrawRafId = 0; }
-        if (typeof this._freqAxisRafId === 'number') { cancelAnimationFrame(this._freqAxisRafId); this._freqAxisRafId = undefined; }
         this._sfProcessor.dispose();
         this.colorizer.dispose();
         this._wasmSvc?.then((svc) => svc.dispose(), () => {});
@@ -1563,15 +1560,10 @@ export class SpectrogramController extends EventTarget {
         if (!h || !this._d.freqAxisSpacer) return;
         if (this._lastFreqAxisH === h) return;
         this._lastFreqAxisH = h;
-        if (typeof this._freqAxisRafId === 'number') cancelAnimationFrame(this._freqAxisRafId);
-        this._freqAxisRafId = requestAnimationFrame(() => {
-            this._freqAxisRafId = undefined;
-            const ch = this._d.spectrogramCanvas?.height;
-            if (ch > 0) {
-                this._d.freqAxisSpacer.style.height = `${ch}px`;
-                if (this._d.crosshairCanvas) this._d.crosshairCanvas.style.marginTop = `-${ch}px`;
-            }
-        });
+        // In the same frame as the canvas: a frame later the crosshair layer would
+        // still sit below the canvas and the player would briefly grow by its height.
+        this._d.freqAxisSpacer.style.height = `${h}px`;
+        if (this._d.crosshairCanvas) this._d.crosshairCanvas.style.marginTop = `-${h}px`;
     }
 
     _clamp(v: number, lo: number, hi: number) { return v < lo ? lo : v > hi ? hi : v; }
