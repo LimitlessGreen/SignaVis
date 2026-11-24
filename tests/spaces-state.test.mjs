@@ -75,3 +75,9 @@ test('vendored dockview stylesheet is the installed one, with its licence', () =
     assert.ok(file === vendoredFile(d), 'run node scripts/vendor-dockview-css.mjs after updating dockview-core');
     assert.match(file, /Permission is hereby granted/);
 });
+
+test('layoutUsable: a layout without a panel the space has now (added in an update) is not used', () => {
+    const own = new Set(['lib-recordings', 'lib-fields', 'lib-map']);
+    assert.equal(layoutUsable(layout('lib-recordings', 'lib-fields'), own), false, 'lib-map would be unreachable');
+    assert.equal(layoutUsable(layout('lib-recordings', 'lib-fields', 'lib-map'), own), true);
+});

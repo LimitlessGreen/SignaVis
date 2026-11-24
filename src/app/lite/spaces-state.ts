@@ -20,6 +20,8 @@ export interface SpaceDef {
      * previous one). Panels are placed in `panels` order; size in px across the split.
      */
     arrange?: Record<string, PanelPlacement>;
+    /** Fresh layout: panels brought to the front of their tab group (default: the first panel). */
+    front?: string[];
 }
 
 export interface PanelPlacement {
@@ -85,14 +87,17 @@ export function layoutPanelIds(layout: unknown): string[] {
 
 /**
  * A stored layout is only used when every panel in it belongs to this space
- * (a panel's element can live in one place only) and every entry names the
- * panel it is stored under: dockview restores an entry by its own `id` and
- * `contentComponent`, not by the map key.
+ * (a panel's element can live in one place only), every entry names the
+ * panel it is stored under (dockview restores an entry by its own `id` and
+ * `contentComponent`, not by the map key), and it holds every panel of the
+ * space: panels cannot be closed yet, so a missing one is new (an update)
+ * and would otherwise never appear.
  */
 export function layoutUsable(layout: unknown, own: ReadonlySet<string>): boolean {
     const panels = (layout as any)?.panels;
     if (!panels || typeof panels !== 'object') return false;
     const entries = Object.entries<any>(panels);
+    if ([...own].some((id) => !(id in panels))) return false;
     return entries.length > 0 && entries.every(([key, e]) =>
         own.has(key) && !!e && typeof e === 'object' && e.id === key
         && (e.contentComponent === undefined || e.contentComponent === key));
