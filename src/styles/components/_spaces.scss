@@ -230,3 +230,57 @@ body.lite-top-menus .topbar-right > .tb-sep { display: none; }
   strong { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 }
 .top-settings-btn svg { width: 15px; height: 15px; }
+
+// ── Suggestions panel + review strip (Annotate v2, mockup B4/B6) ──
+$sugg-ok: #3fb26f; $sugg-no: #e0566b; $sugg-maybe: #e7a33a;
+.sugg-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 12.5px; }
+.sugg-empty { padding: 16px; color: var(--color-text-secondary); }
+.sugg-head { padding: 8px 10px; border-bottom: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 6px; }
+.sugg-row { display: flex; align-items: center; gap: 10px; }
+.sugg-min input { width: 56px; }
+.sugg-row .sugg-btn { margin-left: auto; }
+.sugg-bar { display: flex; height: 4px; border-radius: 2px; background: var(--color-border); overflow: hidden;
+  .seg.accepted { background: $sugg-ok; } .seg.rejected { background: $sugg-no; } .seg.unsure { background: $sugg-maybe; } }
+.sugg-list { flex: 1 1 0; overflow: auto; padding: 4px 10px; }
+.sugg-group { padding: 6px 0; border-bottom: 1px solid var(--color-border); }
+.sugg-ghead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sugg-twisty { background: none; border: 0; color: inherit; cursor: pointer; padding: 0 2px; }
+.sugg-species { font-weight: 650; }
+.sugg-count { color: var(--color-text-secondary); margin-right: auto; }
+.sugg-unexpected { color: $sugg-maybe; font-size: 11px; }
+.sugg-btn { border: 1px solid var(--color-border); background: transparent; color: inherit; border-radius: 4px; padding: 3px 8px;
+  cursor: pointer; white-space: nowrap;
+  &.small { padding: 1px 6px; font-size: 11.5px; }
+  &.ok { color: $sugg-ok; border-color: rgba($sugg-ok, .5); } &.no { color: $sugg-no; border-color: rgba($sugg-no, .5); }
+  &.maybe { color: $sugg-maybe; border-color: rgba($sugg-maybe, .5); }
+  &:disabled { opacity: .45; cursor: default; }
+  kbd { margin-left: 6px; font-size: 10px; opacity: .7; border: 1px solid currentColor; border-radius: 3px; padding: 0 3px; } }
+.sugg-strip { position: relative; height: 22px; margin: 14px 2px 6px; background: rgba(127,127,127,.12); border-radius: 3px; cursor: ew-resize;
+  .tick { position: absolute; top: 4px; width: 3px; height: 14px; margin-left: -1px; background: var(--color-text-secondary); opacity: .7;
+    &.accepted { background: $sugg-ok; opacity: 1; } &.rejected { background: $sugg-no; } &.unsure { background: $sugg-maybe; } }
+  .thr { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: #4aa3ff; }
+  .thr-label { position: absolute; top: -14px; transform: translateX(-50%); font-size: 10px; color: #4aa3ff; } }
+.sugg-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 6px; }
+.sugg-tile { position: relative; padding: 0; border: 2px solid transparent; border-radius: 4px; background: #1d1033; cursor: pointer;
+  aspect-ratio: 120 / 56; overflow: hidden;
+  .thumb { width: 100%; height: 100%; display: block; }
+  .conf, .time, .runs, .mark { position: absolute; font: 600 10.5px var(--font-mono, monospace); padding: 0 3px; border-radius: 2px;
+    background: rgba(0,0,0,.6); color: #fff; }
+  .conf { top: 2px; right: 2px; color: #ffd27a; } .time { bottom: 2px; left: 2px; } .runs { bottom: 2px; right: 2px; background: #2d5bd0; }
+  .mark { top: 2px; left: 2px; }
+  &.open { border-style: dashed; border-color: rgba(255,255,255,.25); }
+  &.accepted { border-color: $sugg-ok; .mark { background: $sugg-ok; } }
+  &.rejected { border-color: rgba($sugg-no, .6); opacity: .55; .mark { background: $sugg-no; } }
+  &.unsure { border-style: dashed; border-color: $sugg-maybe; .mark { background: $sugg-maybe; } }
+  &.current { outline: 2px solid #fff; outline-offset: 1px; } }
+.sugg-foot { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--color-border); flex-wrap: wrap; }
+.review-strip { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--color-border);
+  background: rgba($sugg-maybe, .06);
+  &[hidden] { display: none; }
+  .rs-text { margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .rs-conf { color: #c07d00; font-family: var(--font-mono, monospace); }
+  .rs-also { color: var(--color-text-secondary); }
+  .rs-state.accepted { color: $sugg-ok; } .rs-state.rejected { color: $sugg-no; } .rs-state.unsure { color: $sugg-maybe; } }
+// narrow editor: keys only in the tooltips, so the species and its confidence stay readable
+body.lite-editor-chrome .main-area { container-type: inline-size; }
+@container (max-width: 900px) { .review-strip .sugg-btn kbd { display: none; } .review-strip .rs-also { display: none; } }

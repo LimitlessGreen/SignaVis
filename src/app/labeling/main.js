@@ -48,7 +48,7 @@ import { openLabelNameEditor } from '../../domain/annotations.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
 import { keyScope } from '../../shared/keymap.ts';
 import { installOverlayPeekKey } from '../../ui/components/similar-review/overlay-peek.ts';
-import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, withoutAdopted, applyPlayerRestore, migrateSessionState } from '../../app/annotation-sets.ts';
+import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, adoptedSourceIds, withoutAdopted, applyPlayerRestore, migrateSessionState } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator } from '../../app/label-sources.ts';
 import { XenoCantoPanel, defaultSetInfo, SET_LICENSES } from '../../ui/panels/xc-panel.ts';
 import { AnnotatorProfile, onboardingPending } from '../../app/annotator-profile.ts';
@@ -1176,6 +1176,7 @@ const labelViews = new RenderScheduler([
   }],
   ['badge', () => sidebar.setBadge('labels', state.labels.length || '')],
   ['explore', () => explorePanel.notifyLabelsChanged()],
+  ['suggestions', () => { void refreshSuggestions(); }],
   ['props', () => {
     // Keep properties panel in sync with fresh label reference
     if (!propsPanel._pinnedLabel) return;
@@ -1210,9 +1211,9 @@ const labelStore = new LabelStore({ freeze: !!import.meta.env.DEV });
 // Every label change: save it to its recording now, redraw the views in the next microtask.
 // A change can name the views it needs (meta.views), e.g. leave out the player when the
 // player made the change itself. load/clear show stored labels: nothing to save back.
-const ALL_LABEL_VIEWS = ['player', 'list', 'badge', 'explore', 'props'];
+const ALL_LABEL_VIEWS = ['player', 'list', 'badge', 'explore', 'props', 'suggestions'];
 /** Views after an edit on the spectrogram / waveform (the explore panel catches up on the next full sync) */
-const EDIT_VIEWS = ['player', 'list', 'badge', 'props'];
+const EDIT_VIEWS = ['player', 'list', 'badge', 'props', 'suggestions'];
 labelStore.subscribe((change) => {
   if (change.kind !== 'load' && change.kind !== 'clear') saveCurrentAnnotationsIfNeeded();
   labelViews.invalidate(...(change.views ?? ALL_LABEL_VIEWS));
@@ -5478,6 +5479,7 @@ async function installLiteSpaces() {
     void catalogView.reload();
   }
   await installEditorChrome();
+  await installSuggestions();
   // The sidebar tabs become panels of Annotate (mockup Annotate v2, B6); the sidebars themselves go.
   const sidePanels = [...sidebar.dock(dockHost()), ...rightBar.dock(dockHost())]
     .filter((p) => p.id !== 'library')   // the library is the Browse space
@@ -5504,12 +5506,13 @@ async function installLiteSpaces() {
             'lib-calendar': { ref: 'lib-map', dir: 'below', size: 330 },
           },
           front: ['lib-map'] },
-        { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor', 'view-list', ...sideIds],
+        { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor', 'view-list', 'suggestions', ...sideIds],
           // Left: View | Files; right: Labels | Properties | Display | Audio, below them Analyse | Similar | Species | Upload.
           arrange: {
             'view-list': { ref: 'editor', dir: 'left', size: 290 },
             files: { ref: 'view-list', dir: 'within' },
-            labels: { ref: 'editor', dir: 'right', size: 400 },
+            suggestions: { ref: 'editor', dir: 'right', size: 400 },
+            labels: { ref: 'suggestions', dir: 'within' },
             properties: { ref: 'labels', dir: 'within' },
             display: { ref: 'labels', dir: 'within' },
             audio: { ref: 'labels', dir: 'within' },
@@ -5519,7 +5522,7 @@ async function installLiteSpaces() {
             upload: { ref: 'analyse', dir: 'within' },
           },
           // A catalog project lists its recordings in View; Upload (Xeno-canto) only when asked for.
-          front: [hasCatalog ? 'view-list' : 'files', 'labels', 'analyse'],
+          front: [hasCatalog ? 'view-list' : 'files', 'suggestions', 'analyse'],
           onDemand: hasCatalog ? ['upload'] : [],
         // The lower right group folds to its tabs (B6); a click on a tab opens it.
         collapsible: ['analyse'], startCollapsed: ['analyse'] },
@@ -5527,6 +5530,7 @@ async function installLiteSpaces() {
       ],
       panels: [
         { id: 'editor', title: 'Editor', mount: (host) => { host.appendChild(workspace); } },
+        { id: 'suggestions', title: 'Suggestions', mount: (host) => { host.appendChild(suggPanel.el); labelViews.invalidate('suggestions'); } },
         { id: 'view-list', title: 'View', mount: (host) => { host.appendChild(viewListHost); void mountViewList(); } },
         ...sidePanels.map((p) => ({
           id: DOCK_ID[p.id] || p.id, title: DOCK_TITLE[p.id] || p.label,
@@ -5693,6 +5697,128 @@ async function refreshEditorPlace() {
   editorHead.setPlace(place, !!v);
   editorLabelBar.setPlace(place);
 }
+// ── Lite: BirdNET suggestions to review (Annotate v2, mockup B4/B6) ──
+let suggPanel = null, reviewStrip = null, _suggCurrent = null, _suggGroups = [], _suggEntry = null;
+const SUGG_ORIGIN = 'BirdNET';
+async function installSuggestions() {
+  const { SuggestionsPanel, ReviewStrip } = await import('../../ui/panels/suggestions-panel.ts');
+  suggPanel = new SuggestionsPanel({
+    pick: (s) => showSuggestion(s, { play: false }),
+    decide: (list, d) => decideSuggestions(list, d),
+    changed: () => labelViews.invalidate('suggestions'),
+    patch: (s) => {
+      const half = Math.min(6, (s.end - s.start) / 2);
+      try { return player.computeSnapPatch?.((s.start + s.end) / 2, half) ?? null; } catch { return null; }
+    },
+  });
+  reviewStrip = new ReviewStrip({
+    decide: (d) => { if (_suggCurrent) decideSuggestions([_suggCurrent], d, { advance: true }); },
+    step: (dir) => stepSuggestion(dir),
+    play: () => { if (_suggCurrent) player.playSegment(_suggCurrent.start, _suggCurrent.end); },
+  });
+  editorHead?.el.after(reviewStrip.el);
+  // A / X / U while a suggestion is under review (before the player's X = delete and the app's U = upload)
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || !_suggCurrent || reviewStrip.el.hidden) return;
+    if (spaces && spaces.active !== 'annotate') return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    const d = { a: 'accepted', x: 'rejected', u: 'unsure' }[e.key.toLowerCase()];
+    if (!d) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    decideSuggestions([_suggCurrent], d, { advance: true });
+  }, true);
+  labelViews.invalidate('suggestions');
+}
+
+async function refreshSuggestions() {
+  if (!suggPanel) return;
+  const { buildSuggestions, reviewProgress } = await import('../../app/suggestions.ts');
+  const dets = state.labels.filter((l) => l.origin === SUGG_ORIGIN);
+  // another recording: drop its tiles and the suggestion under review
+  if (_suggEntry !== state._labelsEntryId) { _suggEntry = state._labelsEntryId; _suggCurrent = null; suggPanel.clearThumbs(); }
+  // adopted detections stay in state.labels (only hidden in the views); their copies name them
+  const adopted = OWN_SOURCE_ID ? adoptedSourceIds(state.labels, OWN_SOURCE_ID) : new Set();
+  _suggGroups = buildSuggestions(dets, { join: suggPanel.join, minConfidence: suggPanel.minConfidence, adoptedIds: adopted });
+  const order = _suggGroups.flatMap((g) => g.suggestions);
+  // keep the current one across rebuilds (same key), else drop it
+  _suggCurrent = _suggCurrent ? order.find((s) => s.key === _suggCurrent.key) || null : null;
+  const progress = reviewProgress(_suggGroups);
+  suggPanel.render(state._labelsEntryId || dets.length ? { groups: _suggGroups, progress, current: _suggCurrent?.key ?? null } : null);
+  const open = progress.total - progress.reviewed;
+  spaces?.setBadge?.('suggestions', open ? String(open) : '');
+  updateReviewStrip(order);
+}
+
+function updateReviewStrip(order = _suggGroups.flatMap((g) => g.suggestions)) {
+  if (!reviewStrip) return;
+  const s = _suggCurrent;
+  if (!s) { reviewStrip.show(null, 0, 0); return; }
+  const others = state.labels
+    .filter((l) => l.origin === SUGG_ORIGIN && l.start < s.end && l.end > s.start
+      && String(l.scientificName || l.label) !== String(s.scientificName || s.species))
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+    .map((l) => ({ species: l.label, confidence: l.confidence ?? 0 }));
+  const seen = new Set();
+  reviewStrip.show(s, order.findIndex((x) => x.key === s.key), order.length,
+    others.filter((o) => (seen.has(o.species) ? false : seen.add(o.species))));
+}
+
+function showSuggestion(s, { play = false } = {}) {
+  _suggCurrent = s;
+  if (!s) { labelViews.invalidate('suggestions'); return; }
+  const best = [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+  if (best && state.labels.some((l) => l.id === best.id)) selectLabel(best.id);
+  if (play) player.playSegment(s.start, s.end);
+  labelViews.invalidate('suggestions');
+}
+
+function stepSuggestion(dir) {
+  const order = _suggGroups.flatMap((g) => g.suggestions);
+  if (!order.length) return;
+  const i = _suggCurrent ? order.findIndex((s) => s.key === _suggCurrent.key) : -1;
+  showSuggestion(order[(i + dir + order.length) % order.length]);
+}
+
+/**
+ * Accept: copy into my labels (adoptSources: call box from BirdBox when there is one).
+ * Reject / unsure / open: `review` on the detections. One undo step for the whole decision.
+ */
+async function decideSuggestions(list, d, { advance = false } = {}) {
+  if (!list?.length) return;
+  const { setReview, nextOpen } = await import('../../app/suggestions.ts');
+  const undo = snapshotLabels();
+  let n = 0;
+  if (d === 'accepted') {
+    if (!OWN_SOURCE_ID) { selectionMeta.textContent = 'No own label set to copy into'; return; }
+    // the most confident window of each suggestion stands for it (a run is one call series)
+    const picks = list.map((s) => [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0]);
+    const live = picks.map((w) => state.labels.find((l) => l.id === w.id)).filter(Boolean);
+    const src = adoptSources(live.map(({ review, ...l }) => l), state.labels, 'best');
+    if (src.length) {
+      labelStore.add(adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets)));
+      touchOwnSet(OWN_SOURCE_ID);
+    }
+    n = src.length;
+  } else {
+    // a decision other than accept also takes back an earlier copy of these windows
+    const ids = new Set(list.flatMap((s) => s.windows.map((w) => String(w.id))));
+    const copies = state.labels.filter((l) => l.setId === OWN_SOURCE_ID && ids.has(String(l.adoptedFrom?.id)));
+    for (const c of copies) labelStore.remove(c.id);
+    for (const s of list) for (const w of setReview(s, d)) { labelStore.patch(w.id, { review: w.review }); n += 1; }
+  }
+  const verb = { accepted: 'Accepted', rejected: 'Rejected', unsure: 'Marked unsure', open: 'Reopened' }[d];
+  showUndoToast(`${verb} ${list.length === 1 ? list[0].species : `${list.length} suggestions`}`, undo);
+  await refreshSuggestions();
+  if (advance) {
+    const next = nextOpen(_suggGroups, list[list.length - 1].key);
+    if (next) showSuggestion(next, { play: true });
+    else { _suggCurrent = null; updateReviewStrip(); selectionMeta.textContent = 'All suggestions reviewed – Mark done (D)'; }
+  }
+  return n;
+}
+
 /** Sidebar id → dock panel id / title, where they differ. */
 const DOCK_ID = { project: 'files', spectrogram: 'display' };
 const DOCK_TITLE = { project: 'Files' };
