@@ -9,15 +9,16 @@
 
 import {
     bboxLabel, copyName, safeColor, datasetCountText, fixedClockLabel, formatBytes, isEmptyFilter, localTime, normalizeFilter,
-    periodsWithShift, pickRows, sameFilter, sameSunWindow, sunWindowLabel, SUN_EVENTS, SUN_PRESETS,
+    periodsWithShift, sameSunWindow, sunWindowLabel, SUN_EVENTS, SUN_PRESETS,
     type DatasetInfo, type SunEvent,
     type ClockPeriod, type ClockShift, type DeviceInfo,
-    type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type Facets, type HashProgress, type HeatCell, type Integrity,
+    type CatalogRow, type CatalogSort, type Facets, type HashProgress, type Integrity,
 } from '../../../domain/catalog/catalog-types.ts';
 import {
     clockDuration, gridWindow, heatLut, moveIndex, scrollToShow, thumbPixels,
     type Thumb, type ThumbSpec,
 } from '../../../domain/catalog/thumb-grid.ts';
+import { CatalogView, type ViewChange } from '../../../domain/catalog/catalog-view.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 import { prefs } from '../../../infrastructure/storage/prefs.ts';
 import { ImportDialog, timeZones } from './import-dialog.ts';
@@ -30,7 +31,6 @@ import { DatasetDialog } from './dataset-dialog.ts';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const ROW_H = 26;
-const PAGE = 500;
 /** Tile grid: thumbnail sizes (drawn 1:1, also the card width), gap and caption height (px). */
 /** Zoom steps of the grid (thumbnail = card width; each step has its own cached previews). */
 const TILE_SIZES = [{ w: 120, h: 64 }, { w: 152, h: 80 }, { w: 184, h: 96 }, { w: 232, h: 120 }, { w: 300, h: 156 }] as const;
@@ -68,22 +68,17 @@ export interface LibraryViewOptions {
     onClose?: () => void;
     /** Placed in a panel (Lite spaces) instead of covering the window: no close button, Esc does not close. */
     embedded?: boolean;
+    /** Shared view (spaces: one view for all panels); without one the library makes its own. */
+    view?: CatalogView;
 }
 
 export class LibraryView {
     el: HTMLElement;
     #o: LibraryViewOptions;
-    #filter: CatalogFilter = {};
-    #sort: CatalogSort = 'start';
-    #facets: Facets | null = null;
-    #heat: HeatCell[] = [];
-    #rows: CatalogRow[] = [];
-    #next: CatalogCursor | null = null;
-    /** The page request in flight and the query generation it belongs to. */
-    #page: { gen: number; p: Promise<void> } | null = null;
+    /** Filter, dataset, rows and selection; shared with the other library panels (spaces). */
+    #v: CatalogView;
+    #unsubscribe: () => void;
     #disposed = false;
-    #gen = 0;
-    #selected = -1;
     #importDialog: ImportDialog | null = null;
     #searchTimer: ReturnType<typeof setTimeout> | null = null;
     #integrity: Integrity | null = null;
@@ -91,11 +86,6 @@ export class LibraryView {
     #shifts: ClockShift[] = [];
     #hash: HashProgress | null = null;
     #unlisten: (() => void) | null = null;
-    /** Picked recording ids (multi-select) and the anchor row for Shift+click. */
-    #picked = new Set<number>();
-    #anchor: number | null = null;
-    /** Bulk edit applies to everything the filter shows. */
-    #pickAll = false;
     #side: SelectionPanel;
     #mapDialog: MapDialog | null = null;
     /** Table or tile grid (spectrogram thumbnails). */
@@ -119,12 +109,9 @@ export class LibraryView {
         } catch { return d; }
     })();
     #expand: ExpandedView;
-    #datasets: DatasetInfo[] = [];
-    /** Open dataset: static → filter.datasetId; dynamic → its saved filter loaded into the controls. */
-    #activeDs: number | null = null;
     #confirmDelete = false;
-    /** Dataset counts are reloaded only after changes (a dynamic dataset over a big catalog can take a second). */
-    #dsStale = true;
+    /** The view was made here (overlay) rather than handed in (spaces). */
+    #ownView: boolean;
     #reloadOnClose = false;
 
     get #spec(): ThumbSpec { return { ...TILE_SIZES[this.#tile.zoom], maxHz: this.#tile.maxHz }; }
@@ -133,6 +120,9 @@ export class LibraryView {
 
     constructor(o: LibraryViewOptions) {
         this.#o = o;
+        this.#ownView = !o.view;
+        this.#v = o.view ?? new CatalogView(o.projectRoot, catalogApi);
+        this.#unsubscribe = this.#v.subscribe((c) => this.#onView(c));
         this.el = document.createElement('div');
         this.el.className = o.embedded ? 'lib-overlay lib-embedded' : 'lib-overlay';
         this.el.tabIndex = -1;
@@ -178,16 +168,8 @@ export class LibraryView {
         this.el.querySelector('.lib-body')!.appendChild(this.#side.el);
         this.#expand = new ExpandedView({
             projectRoot: o.projectRoot,
-            rowAt: async (i) => {
-                const gen = this.#gen;
-                while (i >= this.#rows.length && this.#next && gen === this.#gen) {
-                    const before = this.#rows.length;
-                    await this.#loadMore(gen);
-                    if (this.#rows.length === before) break;   // no progress (error or end)
-                }
-                return gen === this.#gen ? this.#rows[i] ?? null : null;
-            },
-            total: () => this.#facets?.total ?? this.#rows.length,
+            rowAt: (i) => this.#v.rowAt(i),
+            total: () => this.#v.total,
             open: (i) => void this.#open(i),
             onIndex: (i) => {
                 if (i == null) {
@@ -196,17 +178,17 @@ export class LibraryView {
                     if (this.#reloadOnClose) { this.#reloadOnClose = false; void this.reload({ keepPicks: true }); }
                     return;
                 }
-                this.#select(i, { keepPicks: true });
+                this.#v.select(i, { keepPicks: true });
                 this.#reveal(i);
             },
             maxHz: () => this.#tile.maxHz,
             color: valueColor,
-            datasets: () => this.#datasets.filter((d) => d.kind === 'static'),
-            onDatasetsChanged: () => { this.#dsStale = true; this.#reloadOnClose = true; },
+            datasets: () => this.#v.datasets.filter((d) => d.kind === 'static'),
+            onDatasetsChanged: () => { this.#v.datasetsChanged(); this.#reloadOnClose = true; },
         });
         this.el.appendChild(this.#expand.el);
-        this.el.addEventListener('lib-pick-all', () => { this.#picked.clear(); this.#pickAll = true; this.#renderRows(); this.#updateSide(); });
-        this.el.addEventListener('lib-pick-none', () => { this.#picked.clear(); this.#pickAll = false; this.#renderRows(); this.#updateSide(); });
+        this.el.addEventListener('lib-pick-all', () => this.#v.selectAllShown());
+        this.el.addEventListener('lib-pick-none', () => this.#v.selectNone());
         this.el.addEventListener('click', (e) => this.#onClick(e));
         this.el.addEventListener('change', (e) => this.#onChange(e));
         this.el.addEventListener('input', (e) => this.#onSearch(e));
@@ -224,7 +206,9 @@ export class LibraryView {
             if (p.finished) void this.#loadIntegrity(); else this.#renderIntegrity();
         }).then((u) => { if (this.#disposed) u(); else this.#unlisten = u; }).catch(() => {});
         this.#applyView();
-        void this.reload();
+        // A shared view that is already loaded is only shown; a new one loads now.
+        if (this.#v.facets || this.#v.loading) { this.#onView('query'); this.#renderRows(); }
+        else void this.reload();
         void this.#loadIntegrity();
     }
 
@@ -238,7 +222,7 @@ export class LibraryView {
     }
 
     #setTile(change: Partial<{ zoom: number; maxHz: number; show: { site: boolean; device: boolean } }>) {
-        const keep = this.#selected;
+        const keep = this.#v.current;
         this.#tile = { ...this.#tile, ...change };
         prefs.setJson(TILE_KEY, this.#tile);
         if (change.zoom !== undefined || change.maxHz !== undefined) this.#thumbs.clear();
@@ -256,7 +240,7 @@ export class LibraryView {
         const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
         grid.scrollTop = 0;
         this.#renderRows();
-        if (this.#selected >= 0) this.#reveal(this.#selected);
+        if (this.#v.current >= 0) this.#reveal(this.#v.current);
     }
 
     /** Top and height (px) of item i in the current view. */
@@ -272,7 +256,13 @@ export class LibraryView {
         this.#renderRows();
     }
 
-    dispose() { this.#disposed = true; this.#unlisten?.(); this.#unlisten = null; }
+    dispose() {
+        this.#disposed = true;
+        this.#unlisten?.();
+        this.#unlisten = null;
+        this.#unsubscribe();
+        if (this.#ownView) this.#v.dispose();
+    }
 
     async #loadIntegrity() {
         try { this.#integrity = await catalogApi.integrity(this.#o.projectRoot); } catch { this.#integrity = null; }
@@ -394,7 +384,7 @@ export class LibraryView {
             if (out) out.textContent = `Error: ${e}`; else this.el.querySelector('.lib-stats')!.textContent = `Error: ${e}`;
         } finally {
             // Also after a partial failure: times written so far changed rows and dataset counts.
-            if (clocksChanged) { this.#dsStale = true; void this.reload(); }
+            if (clocksChanged) { this.#v.datasetsChanged(); void this.reload(); }
         }
     }
 
@@ -414,90 +404,41 @@ export class LibraryView {
 
     focus() { this.el.focus(); }
 
-    async reload(opts: { keepPicks?: boolean } = {}) {
-        const gen = ++this.#gen;
-        this.el.dataset.loading = '1';   // tests and styles: a reload is under way
-        try { await this.#reload(gen, opts); } finally { if (gen === this.#gen) delete this.el.dataset.loading; }
-    }
+    reload(opts: { keepPicks?: boolean } = {}): Promise<void> { return this.#v.reload(opts); }
 
-    async #reload(gen: number, opts: { keepPicks?: boolean }) {
-        this.#rows = [];
-        this.#next = null;
-        this.#selected = -1;
-        if (!opts.keepPicks) { this.#picked.clear(); this.#pickAll = false; this.#anchor = null; }
-        try {
-            const [facets, heat, datasets] = await Promise.all([
-                catalogApi.facets(this.#o.projectRoot, this.#filter),
-                catalogApi.heatmap(this.#o.projectRoot, this.#filter),
-                this.#dsStale || opts.keepPicks
-                    ? catalogApi.datasets(this.#o.projectRoot).catch(() => this.#datasets)
-                    : Promise.resolve(this.#datasets),
-            ]);
-            if (gen !== this.#gen) return;
-            this.#facets = facets;
-            this.#heat = heat;
-            this.#datasets = datasets;
-            this.#dsStale = false;
-            if (this.#activeDs != null && !datasets.some((d) => d.id === this.#activeDs)) this.#activeDs = null;
-        } catch (e) {
-            if (gen !== this.#gen) return;   // a newer reload owns the view
-            this.#facets = null;
-            this.el.querySelector('.lib-stats')!.textContent = `Catalog error: ${e}`;
-            return;
-        }
+    /** The shared view changed (this panel or another one changed it). */
+    #onView(change: ViewChange) {
+        if (change === 'loading') { this.el.dataset.loading = '1'; return; }   // tests and styles: a reload is under way
+        if (change === 'ready') { delete this.el.dataset.loading; return; }
+        if (change === 'rows') { this.#renderRows(); return; }
+        if (change === 'selection') { this.#markSelection(); return; }
+        // query
+        if (this.#v.error) { this.el.querySelector('.lib-stats')!.textContent = `Catalog error: ${this.#v.error}`; return; }
         this.#renderFacets();
         this.#renderStats();
         this.#drawHeat();
         this.#updateSide();
-        await this.#loadMore(gen);
     }
 
+    /** Picks the selection panel shows (to skip redundant updates). */
+    #sideKey = '';
+    get #pickKey(): string { return this.#v.pickAll ? '*' : [...this.#v.picked].join(); }
+
     #updateSide() {
-        const f = this.#facets;
-        const active = this.#active;
+        const f = this.#v.facets;
+        const active = this.#v.active;
         const lists = {
             sites: f?.sites ?? [], devices: f?.devices ?? [],
-            datasets: this.#datasets.filter((d) => d.kind === 'static'),
+            datasets: this.#v.datasets.filter((d) => d.kind === 'static'),
             activeStatic: active?.kind === 'static' ? active.id : null,
         };
         // A copy: later filter edits must not widen a bulk edit that shows this count.
-        if (this.#pickAll) void this.#side.show({ filter: structuredClone(this.#filter) }, f?.total ?? 0, lists);
-        else void this.#side.show(this.#picked.size ? { ids: [...this.#picked] } : {}, this.#picked.size, lists);
-    }
-
-    /**
-     * Next page of the current query. Requests of one generation run one after the other
-     * (a caller joins the one in flight); a request of an older generation does not block
-     * the current one, its rows are dropped.
-     */
-    async #loadMore(gen = this.#gen): Promise<void> {
-        while (this.#page) {
-            if (this.#page.gen === gen) return this.#page.p;
-            await this.#page.p.catch(() => {});
-            if (gen !== this.#gen) return;
-        }
-        if (gen !== this.#gen || (this.#rows.length && !this.#next)) return;
-        const entry = { gen, p: Promise.resolve() };
-        this.#page = entry;
-        entry.p = (async () => {
-            let got = false;
-            try {
-                const page = await catalogApi.list(this.#o.projectRoot, this.#filter, this.#sort, this.#next, PAGE);
-                if (gen !== this.#gen) return;
-                this.#rows.push(...page.rows);
-                this.#next = page.next;
-                got = true;
-            } finally {
-                if (this.#page === entry) this.#page = null;
-            }
-            // After the release: rendering may ask for the next page right away (deep scroll position).
-            if (got) this.#renderRows();
-        })();
-        return entry.p;
+        this.#sideKey = this.#pickKey;
+        void this.#side.show(this.#v.selection, this.#v.pickedCount, lists);
     }
 
     #renderStats() {
-        const f = this.#facets;
+        const f = this.#v.facets;
         if (!f) return;
         const hours = f.seconds ? `${formatDuration(f.seconds)} · ` : '';
         const span = f.firstMs != null && f.lastMs != null
@@ -507,7 +448,7 @@ export class LibraryView {
     }
 
     #renderFacets() {
-        const f = this.#facets;
+        const f = this.#v.facets;
         const host = this.el.querySelector('.lib-facets')!;
         if (!f) { host.innerHTML = ''; return; }
         const max = (vals: Facets['sites']) => Math.max(1, ...vals.map((v) => v.count));
@@ -516,7 +457,7 @@ export class LibraryView {
               title="${this.#tile.show[kind] ? 'Hide' : 'Show'} on the tiles"></button>` : ''}${title}${sel.length ? ` <button class="btn btn--sm btn--ghost" data-act="clear-${kind}">all</button>` : ''}</h4>
           ${vals.map((v) => `<label class="lib-facet${sel.includes(v.id) ? ' is-on' : ''}" style="--pill:${valueColor(kind, v.name)};--share:${(v.count / max(vals)) * 100}%"><input type="checkbox" data-facet="${kind}" value="${v.id}"${sel.includes(v.id) ? ' checked' : ''}>
             <span>${esc(v.name)}</span><span class="num">${v.count.toLocaleString()}</span></label>`).join('')}</section>` : '';
-        const tf = this.#filter;
+        const tf = this.#v.filter;
         const preset = TIME_PRESETS.findIndex((p) => p.from === (tf.hourFrom ?? null) && p.to === (tf.hourTo ?? null));
         host.innerHTML = `
           ${this.#datasetSection()}
@@ -548,24 +489,17 @@ export class LibraryView {
     }
 
     #chipText = '';
-    get #active(): DatasetInfo | null { return this.#datasets.find((d) => d.id === this.#activeDs) ?? null; }
-
-    /** Open dynamic dataset whose filter was changed in the controls (not saved yet). */
-    get #dirty(): boolean {
-        const a = this.#active;
-        return a?.kind === 'filter' && !sameFilter(this.#filter, a.filter ?? {});
-    }
 
     #datasetSection(): string {
-        const a = this.#active;
+        const a = this.#v.active;
         const item = (d: DatasetInfo) => `
-          <button class="lib-ds${d.id === this.#activeDs ? ' is-on' : ''}${d.error ? ' is-bad' : ''}" data-act="ds-open" data-id="${d.id}" style="--pill:${safeColor(d.color) ?? 'var(--color-text-secondary)'}"
+          <button class="lib-ds${d.id === this.#v.activeDs ? ' is-on' : ''}${d.error ? ' is-bad' : ''}" data-act="ds-open" data-id="${d.id}" style="--pill:${safeColor(d.color) ?? 'var(--color-text-secondary)'}"
             title="${esc(d.description ?? '')}${d.description ? '\n' : ''}${d.kind === 'filter' ? 'Dynamic: saved filter, follows the catalog' : 'Static: fixed list'}${d.error ? `\n${esc(d.error)}` : ''}">
             <span class="lib-ds-icon" aria-hidden="true">${d.kind === 'filter' ? '⚲' : '▤'}</span><span class="lib-ds-name">${esc(d.name)}</span>
             <span class="num">${d.error ? '!' : d.recordings.toLocaleString()}</span></button>`;
         const actions = a ? `
           <div class="lib-ds-actions">
-            ${this.#dirty ? `<button class="btn btn--sm" data-act="ds-save-filter" title="Store the current filters in “${esc(a.name)}”">Save filter</button>
+            ${this.#v.dirty ? `<button class="btn btn--sm" data-act="ds-save-filter" title="Store the current filters in “${esc(a.name)}”">Save filter</button>
               <button class="btn btn--sm btn--ghost" data-act="ds-revert" title="Back to the saved filter">Revert</button>` : ''}
             <button class="btn btn--sm btn--ghost" data-act="ds-edit" title="Name, description, colour">Edit…</button>
             <button class="btn btn--sm btn--ghost" data-act="ds-dup" title="${a.kind === 'filter' ? 'Copy with the same filter' : 'Copy with the same members'}">Copy</button>
@@ -574,14 +508,14 @@ export class LibraryView {
           </div>
           <p class="lib-hint">${esc(datasetCountText(a))}${a.description ? ` · ${esc(a.description)}` : ''}</p>` : '';
         return `<section class="lib-ds-section"><h4>Datasets <button class="btn btn--sm btn--ghost" data-act="ds-new" title="Save the current filter as a dataset, or start a fixed list">+ New</button></h4>
-          <button class="lib-ds${this.#activeDs == null && this.#filter.datasetId == null ? ' is-on' : ''}" data-act="ds-all"><span class="lib-ds-icon" aria-hidden="true">◇</span><span class="lib-ds-name">All recordings</span></button>
-          ${this.#datasets.map(item).join('')}
-          ${this.#datasets.length ? '' : '<p class="lib-hint">A dataset is a named selection: a saved filter (dynamic) or a fixed list (static). A recording can be in several.</p>'}
+          <button class="lib-ds${this.#v.activeDs == null && this.#v.filter.datasetId == null ? ' is-on' : ''}" data-act="ds-all"><span class="lib-ds-icon" aria-hidden="true">◇</span><span class="lib-ds-name">All recordings</span></button>
+          ${this.#v.datasets.map(item).join('')}
+          ${this.#v.datasets.length ? '' : '<p class="lib-hint">A dataset is a named selection: a saved filter (dynamic) or a fixed list (static). A recording can be in several.</p>'}
           ${actions}</section>`;
     }
 
     #sunControls(): string {
-        const w = this.#filter.sun ?? null;
+        const w = this.#v.filter.sun ?? null;
         const preset = w ? SUN_PRESETS.findIndex((p) => sameSunWindow(p.w, w)) : -1;
         const ref = (side: 'from' | 'to') => `
           <span class="lib-row lib-sun-ref"><span>${side}</span>
@@ -597,38 +531,38 @@ export class LibraryView {
 
     async #onDatasetAction(act: string, btn: HTMLElement) {
         const root = this.#o.projectRoot;
-        const a = this.#active;
+        const a = this.#v.active;
         if (act !== 'ds-del') this.#confirmDelete = false;
         const fail = (e: unknown) => { this.el.querySelector('.lib-stats')!.textContent = `Dataset: ${e}`; };
         try {
-            if (act === 'ds-all') { this.#activeDs = null; this.#filter = {}; }
+            if (act === 'ds-all') { this.#v.activeDs = null; this.#v.filter = {}; }
             else if (act === 'ds-open') {
-                const d = this.#datasets.find((x) => x.id === Number(btn.dataset.id));
+                const d = this.#v.datasets.find((x) => x.id === Number(btn.dataset.id));
                 if (!d) return;
-                this.#activeDs = d.id;
-                this.#filter = d.kind === 'filter' ? structuredClone(d.filter ?? {}) : { datasetId: d.id };
+                this.#v.activeDs = d.id;
+                this.#v.filter = d.kind === 'filter' ? structuredClone(d.filter ?? {}) : { datasetId: d.id };
             }
             else if (act === 'ds-new') {
-                const static_ = this.#active?.kind === 'static' && isEmptyFilter({ ...this.#filter, datasetId: null });
+                const static_ = this.#v.active?.kind === 'static' && isEmptyFilter({ ...this.#v.filter, datasetId: null });
                 this.#showHost('New dataset', new DatasetDialog({
-                    projectRoot: root, filter: { ...this.#filter }, filterText: this.#chipText, shown: this.#facets?.total ?? 0,
-                    kind: static_ || isEmptyFilter(this.#filter) ? 'static' : 'filter',
+                    projectRoot: root, filter: { ...this.#v.filter }, filterText: this.#chipText, shown: this.#v.facets?.total ?? 0,
+                    kind: static_ || isEmptyFilter(this.#v.filter) ? 'static' : 'filter',
                     onDone: (id) => { this.#hideImport(); void this.#openDataset(id); },
                 }).el);
                 return;
             }
             else if (act === 'ds-edit' && a) {
                 this.#showHost(`Dataset “${a.name}”`, new DatasetDialog({
-                    projectRoot: root, dataset: a, filter: this.#filter, filterText: this.#chipText, shown: this.#facets?.total ?? 0,
-                    onDone: () => { this.#hideImport(); this.#dsStale = true; void this.reload({ keepPicks: true }); },
+                    projectRoot: root, dataset: a, filter: this.#v.filter, filterText: this.#chipText, shown: this.#v.facets?.total ?? 0,
+                    onDone: () => { this.#hideImport(); this.#v.datasetsChanged(); void this.reload({ keepPicks: true }); },
                 }).el);
                 return;
             }
-            else if (act === 'ds-save-filter' && a) await catalogApi.updateDataset(root, a.id, { filter: normalizeFilter(this.#filter) });
-            else if (act === 'ds-revert' && a) this.#filter = structuredClone(a.filter ?? {});
+            else if (act === 'ds-save-filter' && a) await catalogApi.updateDataset(root, a.id, { filter: normalizeFilter(this.#v.filter) });
+            else if (act === 'ds-revert' && a) this.#v.filter = structuredClone(a.filter ?? {});
             else if ((act === 'ds-dup' || act === 'ds-freeze') && a) {
                 const freeze = act === 'ds-freeze';
-                const id = await catalogApi.duplicateDataset(root, a.id, copyName(a.name, this.#datasets.map((d) => d.name), freeze), freeze);
+                const id = await catalogApi.duplicateDataset(root, a.id, copyName(a.name, this.#v.datasets.map((d) => d.name), freeze), freeze);
                 await this.#openDataset(id);
                 return;
             }
@@ -636,34 +570,27 @@ export class LibraryView {
                 if (!this.#confirmDelete) { this.#confirmDelete = true; this.#renderFacets(); return; }
                 this.#confirmDelete = false;
                 await catalogApi.deleteDataset(root, a.id);
-                this.#activeDs = null;
-                this.#filter = {};
+                this.#v.activeDs = null;
+                this.#v.filter = {};
             }
             else return;
         } catch (e) { fail(e); return; }
-        if (act !== 'ds-open' && act !== 'ds-all' && act !== 'ds-revert') this.#dsStale = true;
+        if (act !== 'ds-open' && act !== 'ds-all' && act !== 'ds-revert') this.#v.datasetsChanged();
         await this.reload();
     }
 
-    async #openDataset(id: number) {
-        this.#dsStale = true;
-        this.#datasets = await catalogApi.datasets(this.#o.projectRoot).catch(() => this.#datasets);
-        const d = this.#datasets.find((x) => x.id === id);
-        this.#activeDs = d ? id : null;
-        if (d) this.#filter = d.kind === 'filter' ? structuredClone(d.filter ?? {}) : { datasetId: d.id };
-        await this.reload();
-    }
+    #openDataset(id: number) { return this.#v.openDataset(id); }
 
     /** Active filters as removable chips (above the grid). */
     #renderViewbar() {
-        const tf = this.#filter, f = this.#facets;
+        const tf = this.#v.filter, f = this.#v.facets;
         const named = (ids: number[] | undefined, vals: Facets['sites'] | undefined) =>
             (ids ?? []).map((id) => ({ id, name: vals?.find((v) => v.id === id)?.name ?? `#${id}` }));
         const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
         /** [kind, label, colour, id of the facet value (sites, recorders, tags)] */
         const chips: [string, string, string?, number?][] = [];
         if (tf.datasetId != null) {
-            const d = this.#datasets.find((x) => x.id === tf.datasetId);
+            const d = this.#v.datasets.find((x) => x.id === tf.datasetId);
             chips.push(['dataset', `in ${d?.name ?? `dataset ${tf.datasetId}`}`, safeColor(d?.color) ?? undefined]);
         }
         for (const v of named(tf.siteIds, f?.sites)) chips.push(['site', v.name, valueColor('site', v.name), v.id]);
@@ -689,10 +616,10 @@ export class LibraryView {
     }
 
     #clearChip(k: string, id: number | null) {
-        const tf = this.#filter;
+        const tf = this.#v.filter;
         const drop = (ids: number[] | undefined) => (ids ?? []).filter((x) => x !== id);
-        if (k === 'all') { this.#filter = {}; this.#activeDs = null; }
-        else if (k === 'dataset') { tf.datasetId = null; if (this.#active?.kind === 'static') this.#activeDs = null; }
+        if (k === 'all') { this.#v.filter = {}; this.#v.activeDs = null; }
+        else if (k === 'dataset') { tf.datasetId = null; if (this.#v.active?.kind === 'static') this.#v.activeDs = null; }
         else if (k === 'sun') tf.sun = null;
         else if (k === 'site') tf.siteIds = drop(tf.siteIds);
         else if (k === 'device') tf.deviceIds = drop(tf.deviceIds);
@@ -716,24 +643,24 @@ export class LibraryView {
         const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
         const spacer = this.el.querySelector<HTMLElement>('.lib-grid-spacer')!;
         const host = this.el.querySelector<HTMLElement>('.lib-grid-rows')!;
-        const total = this.#facets?.total ?? this.#rows.length;
+        const total = this.#v.facets?.total ?? this.#v.rows.length;
         spacer.style.height = `${total * ROW_H}px`;
         const first = Math.max(0, Math.floor(grid.scrollTop / ROW_H) - 5);
         const last = Math.min(total, Math.ceil((grid.scrollTop + grid.clientHeight) / ROW_H) + 5);
-        if (last > this.#rows.length && this.#next) void this.#loadMore();
+        if (last > this.#v.rows.length && this.#v.hasMore) void this.#v.loadMore();
         host.style.transform = `translateY(${first * ROW_H}px)`;
         let html = '';
-        for (let i = first; i < Math.min(last, this.#rows.length); i++) {
-            const r = this.#rows[i];
+        for (let i = first; i < Math.min(last, this.#v.rows.length); i++) {
+            const r = this.#v.rows[i];
             const gone = r.status === 'missing';
-            html += `<div class="lib-r${this.#picked.has(r.id) || this.#pickAll ? ' is-sel' : ''}${i === this.#selected ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}" title="${esc(r.path)}${gone ? ' — not found at the last import' : ''}">
+            html += `<div class="lib-r${this.#v.picked.has(r.id) || this.#v.pickAll ? ' is-sel' : ''}${i === this.#v.current ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}" title="${esc(r.path)}${gone ? ' — not found at the last import' : ''}">
               <span class="c-path">${esc(r.path ?? '')}</span><span class="c-time">${esc(localTime(r))}</span>
               <span class="c-site">${esc(r.site ?? '')}</span><span class="c-dev">${esc(r.device ?? '')}</span>
               <span class="c-size">${r.size != null ? formatBytes(r.size) : ''}</span><span class="c-lab">${r.labels || ''}</span></div>`;
         }
         host.innerHTML = html;
         this.el.querySelectorAll<HTMLElement>('.lib-grid-head [data-sort]').forEach((h) =>
-            h.classList.toggle('is-sorted', h.dataset.sort === this.#sort));
+            h.classList.toggle('is-sorted', h.dataset.sort === this.#v.sort));
     }
 
     #drawHeat() {
@@ -746,17 +673,17 @@ export class LibraryView {
         const g = c.getContext('2d')!;
         g.scale(dpr, dpr);
         g.clearRect(0, 0, W, H);
-        const days = continuousDays(this.#heat.map((h) => h.day));
+        const days = continuousDays(this.#v.heat.map((h) => h.day));
         if (!days.length) return;
         const css = getComputedStyle(this.el);
         const accent = css.getPropertyValue('--color-accent').trim() || '#38bdf8';
         const muted = css.getPropertyValue('--color-text-secondary').trim() || '#888';
-        const max = Math.max(...this.#heat.map((h) => h.count));
+        const max = Math.max(...this.#v.heat.map((h) => h.count));
         const cw = (W - LEFT) / days.length;
         const ch = PLOT / 24;
         const idx = new Map(days.map((d, i) => [d, i]));
         g.fillStyle = accent;
-        for (const h of this.#heat) {
+        for (const h of this.#v.heat) {
             g.globalAlpha = 0.15 + 0.85 * (h.count / max);
             g.fillRect(LEFT + idx.get(h.day)! * cw, h.hour * ch, Math.max(1, cw - 0.5), ch - 0.5);
         }
@@ -771,37 +698,28 @@ export class LibraryView {
         for (let i = 0; i < days.length; i += every) g.fillText(days[i].slice(5), LEFT + i * cw, H - 2);
     }
 
-    /** Mark the selected row without re-rendering (a re-render between the clicks would break double-click). */
-    #select(i: number, mods: { ctrl?: boolean; shift?: boolean; keepPicks?: boolean } = {}) {
-        this.#selected = i;
-        const before = [...this.#picked].join();
-        if (mods.keepPicks) {
-            this.#anchor = i;
-        } else {
-            const r = pickRows(this.#rows.map((x) => x.id), this.#picked, this.#anchor, i, mods);
-            this.#picked = r.picked;
-            this.#anchor = r.anchor;
-            this.#pickAll = false;
-        }
+    /** Mark picked and current rows without re-rendering (a re-render between the clicks would break double-click). */
+    #markSelection() {
+        const v = this.#v;
         this.el.querySelectorAll<HTMLElement>('.lib-r').forEach((el) => {
             const k = Number(el.dataset.i);
-            el.classList.toggle('is-sel', this.#picked.has(this.#rows[k]?.id));
-            el.classList.toggle('is-cur', k === i);
+            el.classList.toggle('is-sel', v.isPicked(v.rows[k]?.id));
+            el.classList.toggle('is-cur', k === v.current);
         });
-        if ([...this.#picked].join() !== before) this.#updateSide();
+        if (this.#pickKey !== this.#sideKey) this.#updateSide();
     }
 
     #renderTiles() {
         const grid = this.el.querySelector<HTMLElement>('.lib-grid')!;
         const spacer = this.el.querySelector<HTMLElement>('.lib-grid-spacer')!;
         const host = this.el.querySelector<HTMLElement>('.lib-grid-rows')!;
-        const total = this.#facets?.total ?? this.#rows.length;
+        const total = this.#v.facets?.total ?? this.#v.rows.length;
         const { w, h } = TILE_SIZES[this.#tile.zoom];
         const tw = this.#tileW, th = this.#tileH;
         const win = gridWindow(grid.clientWidth - 2 * TILE_GAP, total, grid.scrollTop, grid.clientHeight, tw, th);
         this.#cols = win.cols;
         spacer.style.height = `${win.height + TILE_GAP}px`;
-        if (win.last > this.#rows.length && this.#next) void this.#loadMore();
+        if (win.last > this.#v.rows.length && this.#v.hasMore) void this.#v.loadMore();
         host.style.transform = `translateY(${(win.first / win.cols) * th}px)`;
         host.style.gridTemplateColumns = `repeat(${win.cols}, minmax(${w}px, 1fr))`;
         host.style.setProperty('--thumb-h', `${h}px`);
@@ -809,18 +727,18 @@ export class LibraryView {
         host.style.gap = `${TILE_GAP}px`;
         let html = '';
         const wanted: number[] = [];
-        for (let i = win.first; i < Math.min(win.last, this.#rows.length); i++) {
-            const r = this.#rows[i];
+        for (let i = win.first; i < Math.min(win.last, this.#v.rows.length); i++) {
+            const r = this.#v.rows[i];
             const gone = r.status === 'missing';
             const thumb = this.#thumbs.get(r.id);
             if (thumb === undefined && !gone) wanted.push(r.id);
             const [date, time] = localTime(r).split(' ');
-            const sel = this.#picked.has(r.id) || this.#pickAll;
+            const sel = this.#v.picked.has(r.id) || this.#v.pickAll;
             const pills = [
                 this.#tile.show.site && r.site ? `<span class="lib-pill" style="--pill:${valueColor('site', r.site)}">${esc(r.site)}</span>` : '',
                 this.#tile.show.device && r.device ? `<span class="lib-pill" style="--pill:${valueColor('device', r.device)}">${esc(r.device)}</span>` : '',
             ].join('') || `<span class="lib-pill lib-pill--file">${esc((r.path ?? '').split('/').pop())}</span>`;
-            html += `<div class="lib-r lib-tile${sel ? ' is-sel' : ''}${i === this.#selected ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}"
+            html += `<div class="lib-r lib-tile${sel ? ' is-sel' : ''}${i === this.#v.current ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}"
                 title="${esc(r.path)}${gone ? ' — not found at the last import' : typeof thumb === 'string' ? ` — no preview: ${esc(thumb)}` : ''}">
               <div class="lib-tile-img">
                 <canvas width="${w}" height="${h}" data-id="${r.id}"></canvas>
@@ -896,9 +814,9 @@ export class LibraryView {
     }
 
     async #open(i: number) {
-        const row = this.#rows[i];
+        const row = this.#v.rows[i];
         if (!row) return;
-        this.#select(i);
+        this.#v.select(i);
         const path = await catalogApi.recordingPath(this.#o.projectRoot, row.id);
         if (!path) {
             this.el.querySelector('.lib-stats')!.textContent = 'This recording\'s source folder is not located on this computer.';
@@ -910,14 +828,14 @@ export class LibraryView {
     #onClick(e: Event) {
         const t = e.target as HTMLElement;
         const sortBy = t.closest<HTMLElement>('[data-sort]')?.dataset.sort as CatalogSort | undefined;
-        if (sortBy && sortBy !== this.#sort) { this.#sort = sortBy; void this.reload(); return; }
+        if (sortBy && sortBy !== this.#v.sort) { void this.#v.setSort(sortBy); return; }
         const row = t.closest<HTMLElement>('.lib-r');
         if (row) {
             const me = e as MouseEvent;
             const i = Number(row.dataset.i);
-            if (this.#view === 'grid' && t.closest('[data-act="tile-check"]')) this.#select(i, { ctrl: !me.shiftKey, shift: me.shiftKey });
-            else if (this.#view === 'grid' && !me.ctrlKey && !me.metaKey && !me.shiftKey) { this.#select(i, { ctrl: false, shift: false, keepPicks: true }); void this.#expand.show(i); }
-            else this.#select(i, { ctrl: me.ctrlKey || me.metaKey, shift: me.shiftKey });
+            if (this.#view === 'grid' && t.closest('[data-act="tile-check"]')) this.#v.select(i, { ctrl: !me.shiftKey, shift: me.shiftKey });
+            else if (this.#view === 'grid' && !me.ctrlKey && !me.metaKey && !me.shiftKey) { this.#v.select(i, { ctrl: false, shift: false, keepPicks: true }); void this.#expand.show(i); }
+            else this.#v.select(i, { ctrl: me.ctrlKey || me.metaKey, shift: me.shiftKey });
             return;
         }
         const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
@@ -936,7 +854,7 @@ export class LibraryView {
         else if (act === 'open-entities') this.#showEntities();
         else if (act === 'open-stats') this.#showStats();
         else if (act === 'open-map') this.#showMap();
-        else if (act === 'clear-area') { this.#filter.bbox = null; void this.reload(); }
+        else if (act === 'clear-area') { this.#v.filter.bbox = null; void this.reload(); }
         else if (act === 'hash-start' || act === 'hash-full') {
             const full = act === 'hash-full';
             this.#hash = {
@@ -954,12 +872,12 @@ export class LibraryView {
         else if (act && ['period-add', 'period-del', 'device-clock-apply', 'shift-apply', 'shifts-apply-all'].includes(act)) {
             void this.#onClockAction(act, t.closest<HTMLElement>('[data-act]')!);
         }
-        else if (act === 'show-missing') { this.#filter = { status: 'missing' }; void this.reload(); }
+        else if (act === 'show-missing') { this.#v.filter = { status: 'missing' }; void this.reload(); }
         else if (act === 'import-close') this.#hideImport();
-        else if (act === 'clear-status') { this.#filter.status = null; void this.reload(); }
-        else if (act === 'clear-site') { this.#filter.siteIds = []; void this.reload(); }
-        else if (act === 'clear-device') { this.#filter.deviceIds = []; void this.reload(); }
-        else if (act === 'clear-tag') { this.#filter.tagIds = []; void this.reload(); }
+        else if (act === 'clear-status') { this.#v.filter.status = null; void this.reload(); }
+        else if (act === 'clear-site') { this.#v.filter.siteIds = []; void this.reload(); }
+        else if (act === 'clear-device') { this.#v.filter.deviceIds = []; void this.reload(); }
+        else if (act === 'clear-tag') { this.#v.filter.tagIds = []; void this.reload(); }
         else if (act?.startsWith('ds-')) void this.#onDatasetAction(act, t.closest<HTMLElement>('[data-act]')!);
     }
 
@@ -967,7 +885,7 @@ export class LibraryView {
         const t = e.target as HTMLInputElement;
         if (t.closest('.lib-import-host')) return;
         if (t.dataset.k === 'tile-zoom') { this.#setTile({ zoom: Number(t.value) }); return; }
-        const f = this.#filter;
+        const f = this.#v.filter;
         if (t.dataset.k === 'unassigned') {
             f.unassigned = t.checked;
         } else if (t.dataset.k === 'pos') {
@@ -1004,7 +922,7 @@ export class LibraryView {
         if (t.dataset.k !== 'path') return;
         if (this.#searchTimer) clearTimeout(this.#searchTimer);
         this.#searchTimer = setTimeout(() => {
-            this.#filter.pathContains = t.value.trim() || null;
+            this.#v.filter.pathContains = t.value.trim() || null;
             void this.reload().then(() => {
                 const inp = this.el.querySelector<HTMLInputElement>('[data-k="path"]');
                 if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
@@ -1018,16 +936,16 @@ export class LibraryView {
         if (e.key === 'Escape') {
             if (!this.el.querySelector<HTMLElement>('.lib-import-host')!.hidden) this.#hideImport(); else this.#o.onClose?.();
         } else if (e.key.startsWith('Arrow')) {
-            const j = moveIndex(this.#selected, e.key, this.#cols, this.#rows.length);
+            const j = moveIndex(this.#v.current, e.key, this.#cols, this.#v.rows.length);
             if (j < 0) return;
             e.preventDefault();
-            this.#selected = j;
+            this.#v.setCurrent(j);
             this.#reveal(j);
-        } else if (e.key === 'Enter' && this.#selected >= 0) {
-            void this.#open(this.#selected);
-        } else if (e.key === ' ' && this.#selected >= 0) {
+        } else if (e.key === 'Enter' && this.#v.current >= 0) {
+            void this.#open(this.#v.current);
+        } else if (e.key === ' ' && this.#v.current >= 0) {
             e.preventDefault();
-            void this.#expand.show(this.#selected);   // large view also from the table
+            void this.#expand.show(this.#v.current);   // large view also from the table
         }
     }
 
@@ -1036,7 +954,7 @@ export class LibraryView {
         this.#importDialog = new ImportDialog({
             projectRoot: this.#o.projectRoot,
             onImported: () => {
-                this.#dsStale = true;
+                this.#v.datasetsChanged();
                 void this.reload();
                 // Headers + fingerprints of new files in the background (renames are recognised on the next import).
                 void catalogApi.hashStart(this.#o.projectRoot).catch(() => {}).finally(() => void this.#loadIntegrity());
@@ -1065,10 +983,10 @@ export class LibraryView {
 
     #showMap() {
         const dlg = new MapDialog({
-            projectRoot: this.#o.projectRoot, filter: { ...this.#filter, bbox: null }, devices: this.#facets?.devices ?? [],
-            onArea: (bbox) => { this.#filter = { ...this.#filter, bbox }; this.#hideImport(); void this.reload(); },
-            onSite: (id) => { this.#filter = { ...this.#filter, siteIds: [id], bbox: null }; this.#hideImport(); void this.reload(); },
-            onWithoutPosition: () => { this.#filter = { ...this.#filter, hasPosition: false, bbox: null }; this.#hideImport(); void this.reload(); },
+            projectRoot: this.#o.projectRoot, filter: { ...this.#v.filter, bbox: null }, devices: this.#v.facets?.devices ?? [],
+            onArea: (bbox) => { this.#v.filter = { ...this.#v.filter, bbox }; this.#hideImport(); void this.reload(); },
+            onSite: (id) => { this.#v.filter = { ...this.#v.filter, siteIds: [id], bbox: null }; this.#hideImport(); void this.reload(); },
+            onWithoutPosition: () => { this.#v.filter = { ...this.#v.filter, hasPosition: false, bbox: null }; this.#hideImport(); void this.reload(); },
             onChanged: () => void this.reload({ keepPicks: true }),
         });
         this.#showHost('Map', dlg.el);   // disposes a map shown before
@@ -1076,15 +994,15 @@ export class LibraryView {
     }
 
     #showStats() {
-        const tf = this.#filter;
+        const tf = this.#v.filter;
         const filtered = Object.values(tf).some((v) => v != null && v !== false && !(Array.isArray(v) && !v.length));
         this.#showHost('Statistics', new StatsDialog({
             projectRoot: this.#o.projectRoot, filter: { ...tf }, filtered,
             onPickWeek: (siteId, week) => {
                 // The same recordings the cell counts: its local Monday–Sunday, and "(no site)" really without one.
                 const sunday = new Date(Date.parse(`${week}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
-                this.#filter = {
-                    ...this.#filter, siteIds: siteId == null ? [] : [siteId], noSite: siteId == null,
+                this.#v.filter = {
+                    ...this.#v.filter, siteIds: siteId == null ? [] : [siteId], noSite: siteId == null,
                     fromMs: null, toMs: null, localDayFrom: week, localDayTo: sunday,
                 };
                 this.#hideImport();
