@@ -8,6 +8,7 @@
 | `viewMode` | string | `'both'` | `'both'`, `'waveform'`, `'spectrogram'` — visible analysis views |
 | `transportStyle` | string | `'default'` | `'default'`, `'hero'` — transport button style |
 | `transportOverlay` | boolean | `false` | Centered play overlay, no toolbar height |
+| `locale` | string | `'en'` | Language of the player's own UI: `'en'`, `'de'` (also `'de-DE'` etc.). Other languages show English. Label names are not translated |
 | `showFileOpen` | boolean | `true` | Show Open button and file input |
 | `showTransport` | boolean | `true` | Show transport controls (play/pause/stop) |
 | `showTime` | boolean | `true` | Show time display |

@@ -21,6 +21,7 @@ export const DEFAULT_OPTIONS = {
     viewMode:           'both', // both | waveform | spectrogram
     transportStyle:     'default', // default | hero
     transportOverlay:   false,  // Overlay mode: centered play button without toolbar height
+    locale:             'en',   // UI language: en | de (other languages show English)
     showWaveformTimeline: true, // Draw bottom timeline row in waveform view
     compactToolbar:     'auto', // auto | on | off
     followGuardLeftRatio: 0.35,       // Follow mode lower guard (0..1)
@@ -288,6 +289,7 @@ export function createPlayerHTML(opts = {}) {
                     <option value="viridis">Viridis</option>
                     <option value="magma">Magma</option>
                     <option value="plasma">Plasma</option>
+                    <option value="jet">Jet</option>
                 </select>
             </div>
             <div class="settings-row">

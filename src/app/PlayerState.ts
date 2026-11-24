@@ -21,6 +21,7 @@ import { InteractionState } from './interactionState.ts';
 import { CoordinateSystem } from '../domain/coordinateSystem.ts';
 
 import { envelopePeakAbs } from '../domain/waveformEnvelope.ts';
+import { parseHostSpectrogramSettings, type HostSpectrogramSettings } from '../domain/dsp/hostSpectrogramSettings.ts';
 import { PresetManager } from '../domain/PresetManager.ts';
 import { SpectrogramController } from './SpectrogramController.ts';
 import { LocalStorageAdapter } from '../infrastructure/storage/LocalStorageAdapter.ts';
@@ -201,21 +202,19 @@ export class PlayerState {
         if (!WaveSurfer && !options.engine) throw new Error('PlayerState: WaveSurfer reference or options.engine required');
 
         this.container = container;
+        this.autoFreqView = options.autoFreqView !== false;
         this.d = this._queryDom(container);
         /** @type {import('../infrastructure/storage/IStorage.ts').IStorage} */
         this._storage = options.storage ?? new LocalStorageAdapter();
+        // Before any listener: invalid settings throw here, with nothing to clean up.
+        const host = parseHostSpectrogramSettings(options.spectrogramSettings);
         this._offChannelSelection = onChannelSelectionChange(() => this._onChannelSelectionChanged());
         this._presets = new PresetManager(this.d, {
             onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._regenerateSpectrogram(opts); },
-            onStage1Rebuild: () => {
-                if (this._spectro.hasData) {
-                    this._spectro.buildGrayscale();
-                    this._spectro.buildBaseImage(this._presets.currentColorScheme);
-                    this._drawSpectrogram();
-                }
-            },
+            onStage1Rebuild: () => this._rebuildStage1(),
             storage: this._storage,
             defaultPreset: options.defaultPreset,
+            hostSettings: host.dsp,
             // Wire DSP-parameter changes into the undo stack if one was injected.
             onDspCommand: options.onDspCommand ?? null,
             // Called during construction, before _engine exists.
@@ -233,6 +232,12 @@ export class PlayerState {
         this._engine = /** @type {AudioEngine} */ (options.engine instanceof AudioEngineBase
             ? options.engine
             : new AudioEngine(WaveSurfer, { container: this.d.audioEngineHost }));
+
+        // A pause lands where the playhead is drawn (the media clock runs ahead of the sound)
+        this._engine.shownPlaybackTime = () => {
+            const c = this._viewport?._playheadClock?._c;
+            return c && this.coords ? this.coords.scrollXToTime(c.pos) : null;
+        };
 
         // ── Map AudioEngine events to PlayerState handlers ──────────────
         this._engine.addEventListener('uiupdate', (e: CustomEvent<any>) => this._scheduleUiUpdate(e.detail));
@@ -281,6 +286,7 @@ export class PlayerState {
 
         // ── Spectrogram pipeline (data + rendering) ──
         this._spectro = new SpectrogramController(this.d);
+        this._spectro.contrastRangeDb = host.contrastRangeDb;
         const cacheMax = this.options.spectrogramCacheMaxBytes;
         if (typeof cacheMax === 'number' && cacheMax >= 0) this._spectro.cacheMaxBytes = cacheMax;
         this._spectro.addEventListener('transportstatechange', (e: CustomEvent<any>) => {
@@ -1035,6 +1041,45 @@ export class PlayerState {
     _spectroGenerationFor: AudioBuffer | null = null;
     _spectroStale = false;
 
+    /**
+     * Spectrogram settings the host app fixes (see HostSpectrogramSettings); replaces the
+     * previous ones. A loaded recording is drawn again when they changed.
+     */
+    setSpectrogramSettings(settings: HostSpectrogramSettings | null, { redraw = true }: { redraw?: boolean } = {}) {
+        const { dsp, contrastRangeDb } = parseHostSpectrogramSettings(settings);
+        const before: Record<string, unknown> = this._presets.getCurrentPresetSettings();
+        const rangeChanged = this._spectro.contrastRangeDb !== contrastRangeDb;
+        this._presets.setHostSettings(dsp);
+        this._spectro.contrastRangeDb = contrastRangeDb;
+        if (!redraw || !this.audioBuffer) return;
+        const after: Record<string, unknown> = this._presets.getCurrentPresetSettings();
+        const changed = Object.keys({ ...before, ...after })
+            .filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+        // Only the spectrogram values need a new run; colours and contrast reuse them.
+        if (changed.some(k => k !== 'colorScheme')) {
+            this._regenerateSpectrogram({ autoAdjust: true });
+            return;
+        }
+        if (!this._spectro.hasData) return;
+        const recontrast = rangeChanged && (this.d.gainModeSelect?.value || 'auto') === 'auto';
+        // As the contrast button does: new sliders, then rebuild the colours.
+        if (recontrast) this._spectro.autoContrast(false);
+        if (changed.length) {
+            this._rebuildStage1();
+        } else if (recontrast) {
+            this._spectro.buildBaseImage(this._presets.currentColorScheme);
+            this._drawSpectrogram();
+        }
+    }
+
+    /** Recolour the computed spectrogram (colour scheme, noise reduction, CLAHE). */
+    _rebuildStage1() {
+        if (!this._spectro.hasData || this._spectro.externalImage) return;
+        this._spectro.buildGrayscale();
+        this._spectro.buildBaseImage(this._presets.currentColorScheme);
+        this._drawSpectrogram();
+    }
+
     /** Recompute after a setting changed; a hidden spectrogram waits until it is shown. */
     _regenerateSpectrogram(opts?: unknown) {
         if (!this._showSpectrogram) { this._spectroStale = true; return; }
@@ -1090,6 +1135,18 @@ export class PlayerState {
     }
 
     /** Zoom the frequency axis to 0 … top of the activity (no-op when it spans the whole range). */
+    /** Whether a new spectrogram zooms the frequency view to its content; off shows the full range. */
+    setAutoFreqView(on: boolean) {
+        this.autoFreqView = on;
+        if (!this.bandProfile) return;
+        if (on) {
+            this.applyAutoFreqView();
+        } else {
+            this._freqZoom.reset();
+            this._freqZoom.refresh();
+        }
+    }
+
     applyAutoFreqView(): boolean {
         const top = this.bandProfile ? autoViewMaxHz(this.bandProfile) : null;
         const bounded = this.coords.boundedMaxFreq;
@@ -1204,7 +1261,12 @@ export class PlayerState {
         const playing  = !!this.wavesurfer?.isPlaying();
         // Playback positions come from a coarse media clock; smooth them so the
         // playhead (and the follow scroll derived from it) moves evenly.
-        const position = this._viewport.smoothPlaybackPosition(this.coords.timeToScrollX(currentTime), playing);
+        // Known rate: recording seconds per real second = the media element's playback rate.
+        const rate = Number(this.wavesurfer?.getPlaybackRate?.()) || 1;
+        // Through the output context the media clock runs ahead of the sound by its latency.
+        const latency = playing && !this._engine._customSegmentPlayback ? (this._engine.outputLatency?.() ?? 0) : 0;
+        const position = this._viewport.smoothPlaybackPosition(this.coords.timeToScrollX(currentTime), playing,
+            this.coords.timeToScrollX(rate) / 1000, this.coords.timeToScrollX(latency * rate));
 
         // Follow-mode scroll — delegated to ViewportManager
         if (fromPlayback && playing && this.followPlayback) {

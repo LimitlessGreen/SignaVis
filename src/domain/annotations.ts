@@ -12,6 +12,7 @@ import { getSpectrogramColor } from './spectrogram.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, SNAP_BOX_DEFAULT_CONF, type SnapBox, type SnapBoxSource, type SnapPatch, type SnapResult } from './snapToCall.ts';
 import { prefs } from '../infrastructure/storage/prefs.ts';
 import { labelChannel } from '../shared/channels.ts';
+import { labelColorForName } from './labelColors.ts';
 import { labelProps } from './labelFields.ts';
 
 /** Height of one strip in the 'lanes' label display, and the gap above it. */
@@ -26,6 +27,21 @@ const _colorCtx = (() => {
         return null;
     }
 })();
+
+/**
+ * Lane label at time t (the column below its strip): of the labels covering t, the most
+ * confident; on a tie the one starting first. null when none covers t.
+ */
+export function pickLaneLabelAt<T extends { start: number; end: number; confidence?: number | null }>(labels: T[], t: number): T | null {
+    let best: T | null = null;
+    for (const l of labels) {
+        if (!(t >= l.start && t < l.end)) continue;
+        const c = Number.isFinite(l.confidence) ? Number(l.confidence) : -1;
+        const bc = best && Number.isFinite(best.confidence) ? Number(best.confidence) : -1;
+        if (!best || c > bc || (c === bc && l.start < best.start)) best = l;
+    }
+    return best;
+}
 
 export function parseColorToRgb(color: unknown): { r: number; g: number; b: number } | null {
     const raw = String(color || '').trim();
@@ -79,20 +95,15 @@ export function getOverlayColorStyle(color: unknown): { fill: string; edge: stri
 }
 
 /**
- * Deterministic color for a label name — same name always produces the same
- * color.  Uses a simple string hash mapped onto a golden-angle hue wheel.
+ * Colour for a label name: the same name keeps its colour, and new names get
+ * palette colours that differ clearly from those in use (domain/labelColors.ts).
  * @param {string} name
  * @returns {string} hex color
  */
 export function colorForName(name: unknown): string {
-    const key = String(name || '').trim().toLowerCase();
+    const key = String(name || '').trim();
     if (!key) return _hslToHex(0, 0, 55); // grey fallback
-    let h = 0;
-    for (let i = 0; i < key.length; i++) {
-        h = ((h << 5) - h + key.charCodeAt(i)) | 0;
-    }
-    const hue = ((h % 360) + 360) % 360;
-    return _hslToHex(hue, 65, 58);
+    return labelColorForName(key);
 }
 
 /**
@@ -887,7 +898,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.dataset.id = region.id;
         el.dataset.start = String(region.start);
         el.dataset.end = String(region.end);
-        const readonlyNote = isBlocked ? ' [gesperrt]' : '';
+        const readonlyNote = isBlocked ? ' [read-only]' : '';
         el.title = `${region.species || 'Annotation'} (${region.start.toFixed(2)}s–${region.end.toFixed(2)}s)${readonlyNote}`;
         el.setAttribute('aria-label', el.title);
         const confidenceStr = region.confidence != null ? `${Math.round(region.confidence * 100)}%` : '';
@@ -1768,17 +1779,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 this.dispatchEvent(new CustomEvent('labelfocus', { detail: { id: label.id, source: 'spectrogram', interaction: 'ctrl-click' } }));
                 return;
             }
-            // Emit labelfocus but explicitly request no automatic seek
-            // (seek is handled by the segment playback; we only want
-            // to highlight/pin without changing viewport).
-            this.dispatchEvent(new CustomEvent('labelfocus', { detail: { id: label.id, source: 'spectrogram', interaction: 'click', seekMode: 'none' } }));
-            this.player?._state?._blockSeekClicks?.(260);
-            // Bandpassed to the label's frequency range unless the user turned that off (Audio tab)
-            if (this.player?.playLabelSegment) {
-                this.player.playLabelSegment(label, { labelId: label.id });
-            } else {
-                this.player?.playBandpassedSegment?.(label.start, label.end, label.freqMin ?? 0, label.freqMax ?? 0, { labelId: label.id });
-            }
+            this._clickLabel(label);
         });
         el.addEventListener('dblclick', (event) => {
             event.preventDefault();
@@ -1854,6 +1855,78 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.classList.toggle('label-tiny', !lane && (geometry.width < 40 || geometry.height < 30));
     }
 
+
+    /** Select and play a label, as a click on it does. */
+    _clickLabel(label: any) {
+        // Emit labelfocus but explicitly request no automatic seek
+        // (seek is handled by the segment playback; we only want
+        // to highlight/pin without changing viewport).
+        this.dispatchEvent(new CustomEvent('labelfocus', { detail: { id: label.id, source: 'spectrogram', interaction: 'click', seekMode: 'none' } }));
+        this.player?._state?._blockSeekClicks?.(260);
+        // Bandpassed to the label's frequency range unless the user turned that off (Audio tab)
+        if (this.player?.playLabelSegment) {
+            this.player.playLabelSegment(label, { labelId: label.id });
+        } else {
+            this.player?.playBandpassedSegment?.(label.start, label.end, label.freqMin ?? 0, label.freqMax ?? 0, { labelId: label.id });
+        }
+    }
+
+    /** Lane label whose column (time span below the strip) the pointer is in, or null. */
+    _laneLabelAt(clientX: number) {
+        if (!this._lanes.size) return null;
+        return pickLaneLabelAt(this._items.filter((l: any) => this._lanes.has(l.id)), this._clientXToTime(clientX));
+    }
+
+    /** Id of the lane label hovered through its column (not the strip itself). */
+    _columnHoverId: string | null = null;
+
+    _setColumnHover(id: string | null) {
+        if (id === this._columnHoverId) return;
+        this._columnHoverId = id;
+        this.dispatchEvent(new CustomEvent('labelfocus', { detail: { id, source: 'spectrogram', interaction: 'hover' } }));
+    }
+
+    /**
+     * Read-only 'lanes' display (BirdNET-Analyzer): the spectrogram below a strip belongs to it.
+     * Hovering there highlights the label, a click (no drag) plays it. With several labels at
+     * that time, the most confident one. Editable players keep click-to-seek and drawing.
+     */
+    _bindLaneColumns(wrapper: HTMLElement) {
+        const active = () => !!(this.player as any)?._readOnly && this._lanes.size > 0;
+        let down: { x: number; y: number } | null = null;
+        const onMove = (e: PointerEvent) => {
+            if (!active() || e.buttons !== 0) return;
+            if (classifyHit(e.target, () => false) !== 'canvas') {
+                // On a strip (its own hover) or the player chrome: the column hover ends quietly
+                if (this._columnHoverId) this._columnHoverId = null;
+                return;
+            }
+            this._setColumnHover(this._laneLabelAt(e.clientX)?.id ?? null);
+        };
+        const onLeave = () => { if (this._columnHoverId) this._setColumnHover(null); };
+        const onDown = (e: PointerEvent) => { down = e.button === 0 ? { x: e.clientX, y: e.clientY } : null; };
+        const onClick = (e: MouseEvent) => {
+            const start = down;
+            down = null;
+            if (!active() || !start || e.ctrlKey || e.metaKey || e.shiftKey) return;
+            if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return;   // a drag (scrub)
+            if (classifyHit(e.target, () => false) !== 'canvas') return;
+            const label = this._laneLabelAt(e.clientX);
+            if (!label) return;
+            this._columnHoverId = label.id;
+            this._clickLabel(label);
+        };
+        wrapper.addEventListener('pointermove', onMove);
+        wrapper.addEventListener('pointerleave', onLeave);
+        wrapper.addEventListener('pointerdown', onDown, true);
+        wrapper.addEventListener('click', onClick);
+        this._domCleanups.push(() => {
+            wrapper.removeEventListener('pointermove', onMove);
+            wrapper.removeEventListener('pointerleave', onLeave);
+            wrapper.removeEventListener('pointerdown', onDown, true);
+            wrapper.removeEventListener('click', onClick);
+        });
+    }
 
     /** Lane of each full-band label in 'lanes' display (empty in other modes). */
     _lanes = new Map<string, number>();
@@ -2369,6 +2442,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         document.addEventListener('pointerlockchange', onLockChange);
         this._domCleanups.push(() => document.removeEventListener('pointerlockchange', onLockChange));
         wrapper.addEventListener('pointerdown', onPointerDown, true);
+        this._bindLaneColumns(wrapper);
         document.addEventListener('pointermove', onPointerMove, true);
         document.addEventListener('pointerup', onPointerUp, true);
         document.addEventListener('pointercancel', onPointerUp, true);

@@ -20,9 +20,11 @@ import { DEFAULT_SAMPLE_RATE } from '../shared/constants.ts';
 import { clamp } from '../shared/utils.ts';
 import { PlayerState } from './PlayerState.ts';
 import { AnnotationLayer, SpectrogramLabelLayer, colorForName, parseColorToRgb } from '../domain/annotations.ts';
+import { assignLabelColors } from '../domain/labelColors.ts';
 import { UndoStack } from '../domain/undoStack.ts';
 import { computeSnapPatch } from './snapPatch.ts';
 import type { SnapPatch } from '../domain/snapToCall.ts';
+import { parseHostSpectrogramSettings, type HostSpectrogramSettings } from '../domain/dsp/hostSpectrogramSettings.ts';
 
 import type { AnnotationEntry, SpectrogramLabelEntry } from '../shared/events.ts';
 import { EventBus } from '../shared/EventBus.ts';
@@ -199,6 +201,15 @@ export class BirdNETPlayer {
      * @param {string[]}    [options.labelTableColumns] - columns the built-in table starts with, e.g.
      *   ['species', 'start', 'end', 'conf'] (default: the labeling app's set).
      *   Both need the full 'signavis' entry; with 'signavis/core' pass features: [labelTable({ columns })].
+     * @param {boolean}     [options.playOnLabelClick] - clicking a label (on the spectrogram, the waveform,
+     *   the overview or in the table) also plays it; selectLabel() from the host does not (default: false)
+     * @param {boolean}     [options.autoFreqView] - zoom the frequency view to where the recording has
+     *   content once its spectrogram is ready; false shows the full range (default: true).
+     *   Change it later with setAutoFreqView().
+     * @param {HostSpectrogramSettings} [options.spectrogramSettings] - spectrogram settings the host app
+     *   fixes, e.g. from its own settings page: { colorScheme, windowSize, overlapLevel, oversamplingLevel,
+     *   scale, contrastRangeDb }. They apply over the start preset and the last-used settings; change
+     *   them later with setSpectrogramSettings().
      * @param {PlayerFeature[]} [options.features] - optional building blocks to install, e.g.
      *   [labelTable()] from 'signavis/label-table' (see playerFeature.ts)
      */
@@ -244,6 +255,7 @@ export class BirdNETPlayer {
     async _init() {
         // 1. Inject player DOM (pass options for section visibility)
         this.container.innerHTML = createPlayerHTML(this.options);
+        this._stopTranslation = this._loadTranslation(this.options.locale);
         this.root = /** @type {HTMLElement} */ (this.container.querySelector('.daw-shell'));
 
         // 2. Resolve WaveSurfer (option → global → CDN import)
@@ -287,6 +299,8 @@ export class BirdNETPlayer {
         this._emit('ready', { phase: 'init' });
         return this;
     }
+
+    _stopTranslation: () => void = () => {};
 
     _emit(event: string, detail: unknown = {}): void {
         this._events.emit(event, detail);
@@ -460,12 +474,14 @@ export class BirdNETPlayer {
      */
     setAnnotations(annotations: Partial<LinkedLabel>[]) {
         const next = new Map<string, LinkedLabel>();
+        const colors = this._planColors(annotations);
         for (const ann of annotations || []) {
             const id = (ann as any)?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
             const existing = this._linkedLabels.get(id);
             next.set(id, this._normalizeLinkedLabel({
                 ...existing,
                 ...(ann as any),
+                ...this._plannedColor(colors, ann),
                 id,
                 label: (ann as any)?.label ?? (ann as any)?.species ?? existing?.label ?? 'Label',
             }));
@@ -473,6 +489,20 @@ export class BirdNETPlayer {
         this._linkedLabels = next;
         this._syncLinkedLabelsToLayers();
     }
+    /** Colours for a whole set of labels without one: rows and simultaneous labels differ. */
+    _planColors(labels: Partial<LinkedLabel>[] | null | undefined): Map<string, string> {
+        return assignLabelColors((labels || []).map((l: any) => ({
+            label: l?.label ?? l?.species, origin: l?.origin, color: l?.color, start: l?.start, end: l?.end,
+        })));
+    }
+
+    /** The planned colour of a label without one; it replaces the colour its id had before. */
+    _plannedColor(plan: Map<string, string>, label: any): { color?: string } {
+        if (label?.color) return {};
+        const color = plan.get(String(label?.label ?? label?.species ?? '').trim().toLowerCase());
+        return color ? { color } : {};
+    }
+
     clearAnnotations() {
         this._linkedLabels.clear();
         this._syncLinkedLabelsToLayers();
@@ -513,12 +543,14 @@ export class BirdNETPlayer {
      */
     setSpectrogramLabels(labels: Partial<LinkedLabel>[]) {
         const next = new Map<string, LinkedLabel>();
+        const colors = this._planColors(labels);
         for (const lbl of labels || []) {
             const id = (lbl as any)?.id || `lbl_${Math.random().toString(36).slice(2, 10)}`;
             const existing = this._linkedLabels.get(id);
             next.set(id, this._normalizeLinkedLabel({
                 ...existing,
                 ...(lbl as any),
+                ...this._plannedColor(colors, lbl),
                 id,
                 species: (lbl as any)?.species ?? (lbl as any)?.label ?? existing?.species ?? '',
                 label: (lbl as any)?.label ?? existing?.label ?? (lbl as any)?.species ?? 'Label',
@@ -780,6 +812,7 @@ export class BirdNETPlayer {
         this.spectrogramLabels.detach();
         this._state?.dispose();
         this._state = null;
+        this._stopTranslation();
         this.container.innerHTML = '';
     }
 
@@ -814,6 +847,7 @@ export class BirdNETPlayer {
             if (interaction === 'click' || interaction === 'ctrl-click') {
                 this._activeLabelId = id;
                 this.setSelectedOverviewSegment(id);
+                this._playClickedLabel(e?.detail);
             } else {
                 // Hover: only update when nothing is sticky-clicked yet, or when clearing.
                 if (!this._activeLabelId || id === null) this._activeLabelId = id;
@@ -1027,6 +1061,37 @@ export class BirdNETPlayer {
      * Channel(s) shown and analysed: 'mix', 'left', 'right' or a 0-based index. Applies to every
      * player on the page. A channel the recording lacks falls back to the mix. Fires 'channelselectionchange'.
      */
+    /**
+     * Sets the spectrogram settings the host app fixes (see options.spectrogramSettings),
+     * replacing the previous ones; null clears them. A loaded recording is drawn again
+     * when they changed, unless `redraw` is false (a new file is about to load). Throws a TypeError on an unknown setting or value.
+     */
+    setSpectrogramSettings(settings: HostSpectrogramSettings | null, { redraw = true }: { redraw?: boolean } = {}) {
+        parseHostSpectrogramSettings(settings);
+        this.options.spectrogramSettings = settings;
+        this._state?.setSpectrogramSettings(settings, { redraw });
+    }
+
+    /** The dictionary loads only for a language other than English. */
+    private _loadTranslation(locale: unknown): () => void {
+        const tag = typeof locale === 'string' ? locale.toLowerCase() : '';
+        if (!tag || tag.startsWith('en')) return () => {};
+        let stop: (() => void) | null = null;
+        let stopped = false;
+        import('../ui/playerI18n.ts')
+            .then(({ installPlayerTranslation }) => {
+                if (!stopped) stop = installPlayerTranslation(this.container, locale);
+            })
+            .catch((err) => console.error('SignaVis: translation failed to load', err));
+        return () => { stopped = true; stop?.(); };
+    }
+
+    /** See options.autoFreqView; applies to the loaded recording at once. */
+    setAutoFreqView(on: boolean) {
+        this.options.autoFreqView = !!on;
+        this._state?.setAutoFreqView(!!on);
+    }
+
     setChannel(channel: ChannelOption) {
         const sel = toChannelSelection(channel);
         if (!sel) throw new Error(`setChannel: expected 'mix', 'left', 'right' or a channel index, got ${JSON.stringify(channel)}`);
@@ -1224,6 +1289,15 @@ export class BirdNETPlayer {
 
     /** Emit a player event (for features), e.g. emit('labelfocus', { id, source, interaction }). */
     emit(event: PlayerEventName | string, detail: unknown = {}): void { this._emit(event, detail); }
+
+    /** With options.playOnLabelClick: plays a label the user clicked (not ctrl-click, not selectLabel()). */
+    _playClickedLabel(detail: any) {
+        if (!this.options.playOnLabelClick || detail?.interaction !== 'click' || detail?.source === 'api') return;
+        const id = String(detail?.id || '').trim();
+        const l = id ? this._linkedLabels.get(id) : null;
+        // After the click's own handlers: a seek there (the table moves the playhead) stops segments.
+        if (l) queueMicrotask(() => this.playLabelSegment(l));
+    }
 
     /** Select a label as if it was clicked: highlights it everywhere and scrolls it into view. */
     selectLabel(id: string | null) {
