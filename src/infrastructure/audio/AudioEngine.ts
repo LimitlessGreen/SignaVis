@@ -878,6 +878,7 @@ export class AudioEngine extends AudioEngineBase {
       };
       el.addEventListener('play', resume);
       el.addEventListener('pause', pause);
+      if (el.paused) pause();
       const dispose = () => {
         if (idle) clearTimeout(idle);
         el.removeEventListener('play', resume);
@@ -1082,7 +1083,9 @@ export class AudioEngine extends AudioEngineBase {
       if (wasPlaying && lat > 0 && !(segmentEnd != null && t >= segmentEnd - 0.01)) {
         // Exactly where the playhead is drawn, if the display tells (it trails a little)
         const shown = Number(this.shownPlaybackTime?.());
-        const at = Number.isFinite(shown) && shown <= t && shown >= t - lat - 0.3 ? shown : t - lat;
+        // Latency is output time; at a slowed-down rate it covers less of the recording.
+        const latRec = lat / Math.max(1, this.timeExpansion || 1);
+        const at = Number.isFinite(shown) && shown <= t && shown >= t - latRec - 0.3 ? shown : t - latRec;
         ws.setTime(Math.max(0, at));
       }
       return out;
