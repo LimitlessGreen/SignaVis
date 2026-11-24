@@ -143,6 +143,8 @@ export class AudioEngine extends AudioEngineBase {
   muted: boolean;
   normalize: boolean;
   normGain: number;
+  /** Set by the display: the playback time the playhead shows right now (null if none). */
+  shownPlaybackTime: (() => number | null) | null = null;
   _mediaGraph: { el: HTMLMediaElement; ctx: AudioContext; gain: GainNode; dispose: () => void } | null;
   preMuteVolume: number;
   _segmentMode: boolean;
@@ -1066,6 +1068,25 @@ export class AudioEngine extends AudioEngineBase {
       this._emit('uiupdate', { time: t, fromPlayback: true });
       this._emitPlaybackTimeupdate(t);
     });
+
+    // Pause where the playhead shows, i.e. at what was audible: through the output context the
+    // media clock is ahead by its latency, so the playhead would leap forward on pause.
+    // Synchronous, so a seek right after the pause (stop, playing a label) still wins.
+    const pauseMedia = ws.pause.bind(ws);
+    ws.pause = (...args: any[]) => {
+      const wasPlaying = ws.isPlaying();
+      const t = ws.getCurrentTime();
+      const lat = this.outputLatency();
+      const out = pauseMedia(...args);
+      const segmentEnd = this._activeSegmentEnd;
+      if (wasPlaying && lat > 0 && !(segmentEnd != null && t >= segmentEnd - 0.01)) {
+        // Exactly where the playhead is drawn, if the display tells (it trails a little)
+        const shown = Number(this.shownPlaybackTime?.());
+        const at = Number.isFinite(shown) && shown <= t && shown >= t - lat - 0.3 ? shown : t - lat;
+        ws.setTime(Math.max(0, at));
+      }
+      return out;
+    };
 
     ws.on('play', () => {
       this._emit('play', {});

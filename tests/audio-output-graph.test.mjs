@@ -66,3 +66,49 @@ test('idle after a pause: the context is suspended, play resumes it', async (t) 
     assert.equal((el.listeners.play || []).length, 0);
     assert.equal((el.listeners.pause || []).length, 0);
 });
+
+function wsSetup() {
+    const env = fakeEnv();
+    let playing = true, time = 2.5, segEnd = null;
+    const events = {};
+    const ws = {
+        getMediaElement: () => env.el, setVolume() {}, isPlaying: () => playing, getCurrentTime: () => time,
+        setTime: (t) => { time = t; }, pause: () => { playing = false; },
+        on: (t, f) => { events[t] = f; }, load() {}, loadBlob() {}, zoom() {}, destroy() {},
+    };
+    env.engine.wavesurfer = null;
+    env.engine._WaveSurferCtor = { create: () => ws };
+    env.engine._setupWaveSurfer(null, 'x');
+    env.engine.setVolume(0.8);
+    env.el.fire('play');
+    return { ...env, ws, time: () => time, setSegEnd: (v) => { env.engine._activeSegmentEnd = v; } };
+}
+
+test('pause lands on the audible position (clock minus output latency), not ahead of the playhead', () => {
+    const { ws, time } = wsSetup();
+    ws.pause();
+    assert.ok(Math.abs(time() - (2.5 - 0.048)) < 1e-9, `${time()}`);
+    ws.pause();                       // already paused: no further step back
+    assert.ok(Math.abs(time() - (2.5 - 0.048)) < 1e-9);
+});
+
+test('pause at the end of a played segment stays at the end', () => {
+    const { ws, time, setSegEnd } = wsSetup();
+    setSegEnd(2.5);
+    ws.pause();
+    assert.equal(time(), 2.5);
+});
+
+test('pause uses the position the display shows, when it is plausible', () => {
+    const { engine, ws, time } = wsSetup();
+    engine.shownPlaybackTime = () => 2.42;   // playhead trails the audible 2.452 a little
+    ws.pause();
+    assert.equal(time(), 2.42);
+});
+
+test('an implausible shown position (seek, stale) falls back to clock minus latency', () => {
+    const { engine, ws, time } = wsSetup();
+    engine.shownPlaybackTime = () => 1.0;
+    ws.pause();
+    assert.ok(Math.abs(time() - 2.452) < 1e-9, `${time()}`);
+});

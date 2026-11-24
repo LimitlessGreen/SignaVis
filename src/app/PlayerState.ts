@@ -229,6 +229,12 @@ export class PlayerState {
             ? options.engine
             : new AudioEngine(WaveSurfer, { container: this.d.audioEngineHost }));
 
+        // A pause lands where the playhead is drawn (the media clock runs ahead of the sound)
+        this._engine.shownPlaybackTime = () => {
+            const c = this._viewport?._playheadClock?._c;
+            return c && this.coords ? this.coords.scrollXToTime(c.pos) : null;
+        };
+
         // ── Map AudioEngine events to PlayerState handlers ──────────────
         this._engine.addEventListener('uiupdate', (e: CustomEvent<any>) => this._scheduleUiUpdate(e.detail));
         this._engine.addEventListener('transportstatechange', (e: CustomEvent<any>) => {
