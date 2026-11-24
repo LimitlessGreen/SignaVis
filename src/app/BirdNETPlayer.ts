@@ -1156,7 +1156,8 @@ export class BirdNETPlayer {
 
     /**
      * Amplitude view: `scale` 'linear' | 'db', `reference` 'peak' (fit to the loudest sample)
-     * | 'full' (±1 / 0 dBFS), `dbRange` (dB from edge to centre), `rms` (RMS body). Fields left
+     * | 'full' (±1 / 0 dBFS), `dbRange` (dB from edge to centre), `rms` (RMS body), `band` 'full'
+     * | 'visible' (filtered to the spectrogram's frequency range). Fields left
      * out keep their value; the choice is saved like the Settings → Waveform controls.
      */
     setWaveformDisplay(display: Partial<WaveformDisplay>) { this._state?._setWaveformDisplay(display); }

@@ -99,7 +99,7 @@ test('clipping at the full-scale edge, either polarity', () => {
 
 test('normalizeWaveformDisplay keeps valid fields and falls back for the rest', () => {
     assert.deepEqual(normalizeWaveformDisplay({ scale: 'db', reference: 'x', dbRange: '48', rms: false }),
-        { scale: 'db', reference: 'peak', dbRange: 48, rms: false });
+        { scale: 'db', reference: 'peak', dbRange: 48, rms: false, band: 'full' });
     assert.deepEqual(normalizeWaveformDisplay(null), DEFAULT_WAVEFORM_DISPLAY);
     assert.equal(normalizeWaveformDisplay({ dbRange: 5 }).dbRange, 60);
 });

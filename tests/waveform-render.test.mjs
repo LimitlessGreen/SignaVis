@@ -25,12 +25,12 @@ function buffer(samples, sampleRate = 1000) {
     return { duration: data.length / sampleRate, sampleRate, length: data.length, numberOfChannels: 1, getChannelData: () => data };
 }
 
-async function draw(samples, display, { sampleRate = 1000, pixelsPerSecond = 100 } = {}) {
+async function draw(samples, display, { sampleRate = 1000, pixelsPerSecond = 100, band = null } = {}) {
     const { renderMainWaveform } = await import('../src/ui/components/waveform/waveform.ts');
     const amp = fakeCanvas(), tl = fakeCanvas();
     renderMainWaveform({
         audioBuffer: buffer(samples, sampleRate), amplitudeCanvas: amp, waveformTimelineCanvas: tl, waveformContent: { style: {} },
-        pixelsPerSecond, waveformHeight: 100, amplitudePeakAbs: samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0), showTimeline: false, display,
+        pixelsPerSecond, waveformHeight: 100, amplitudePeakAbs: samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0), showTimeline: false, display, band,
     });
     return amp;
 }
@@ -91,3 +91,28 @@ for (const [level, sampleRate, pixelsPerSecond] of [['fine', 12_800, 98], ['coar
         assert.ok(cols.has(w - 0.5), 'last column (partial block) drawn');
     });
 }
+
+test('band on: the filtered signal is drawn, clipping is still judged on the raw samples', async () => {
+    const { BandFilter, filterRange, peaksAbsMax } = await import('../src/domain/bandFilter.ts');
+    const { channelPeaks } = await import('../src/domain/waveformEnvelope.ts');
+    const sr = 48_000, n = sr;                      // 1 s, 100 columns → 480 samples per column (fine level)
+    // Loud rumble (50 Hz, clipping in 0.40–0.42 s) plus a quiet 4 kHz call in the second half.
+    const raw = Array.from({ length: n }, (_, i) => {
+        const rumble = Math.max(-1, Math.min(1, (i > 0.4 * sr && i < 0.42 * sr ? 1.5 : 0.9) * Math.sin(2 * Math.PI * 50 * i / sr)));
+        return rumble + (i > n / 2 ? 0.02 * Math.sin(2 * Math.PI * 4000 * i / sr) : 0);
+    });
+    const band = { lo: 2000, hi: 8000 };
+    const filtered = new Float32Array(n);
+    new BandFilter(band, sr).process(Float32Array.from(raw), filtered);
+    const peaks = channelPeaks(filtered);
+    const source = { peaks, peakAbs: peaksAbsMax(peaks), filterRange: (a, b) => filterRange(Float32Array.from(raw), sr, band, a, b), label: '2.0–8.0 kHz' };
+    const amp = await draw(raw, { scale: 'linear', reference: 'peak', dbRange: 60, rms: false, band: 'visible' }, { sampleRate: sr, band: source });
+    const mid = amp.height / 2;
+    const outline = amp.strokes.find((st) => st.color === '#0284c7' && st.seg.length > 50);
+    const height = (x0, x1) => { let h = 0; for (const [, x, y] of outline.seg) if (x >= x0 && x < x1) h = Math.max(h, Math.abs(y - mid)); return h; };
+    // Fit to the filtered peak: the call fills the view, the (filtered-out) rumble half stays flat.
+    assert.ok(height(60, 100) > 0.8 * mid, `call half ${height(60, 100)}`);
+    assert.ok(height(5, 40) < 0.2 * mid, `rumble half ${height(5, 40)}`);
+    const red = amp.strokes.filter((st) => st.color === '#dc2626').flatMap((st) => st.seg).map((sg) => Math.floor(sg[1]));
+    assert.ok(red.length && red.every((x) => x >= 39 && x <= 42), `clip marks from the raw signal: ${[...new Set(red)]}`);
+});

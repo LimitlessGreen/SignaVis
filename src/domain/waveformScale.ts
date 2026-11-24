@@ -12,6 +12,8 @@
 
 export type WaveformScale = 'linear' | 'db';
 export type WaveformReference = 'peak' | 'full';
+/** 'full': the whole signal. 'visible': filtered to the frequency range the spectrogram shows. */
+export type WaveformBand = 'full' | 'visible';
 
 export interface WaveformDisplay {
     scale: WaveformScale;
@@ -20,9 +22,10 @@ export interface WaveformDisplay {
     dbRange: number;
     /** Draw the RMS body inside the min/max envelope. */
     rms: boolean;
+    band: WaveformBand;
 }
 
-export const DEFAULT_WAVEFORM_DISPLAY: WaveformDisplay = { scale: 'linear', reference: 'peak', dbRange: 60, rms: true };
+export const DEFAULT_WAVEFORM_DISPLAY: WaveformDisplay = { scale: 'linear', reference: 'peak', dbRange: 60, rms: true, band: 'full' };
 export const WAVEFORM_DB_RANGES = [36, 48, 60, 72, 96] as const;
 
 /** |sample| at or above this counts as clipped (16-bit full scale decodes to 0.99997). */
@@ -36,6 +39,7 @@ export function normalizeWaveformDisplay(v: Partial<Record<keyof WaveformDisplay
         reference: o.reference === 'full' || o.reference === 'peak' ? o.reference : base.reference,
         dbRange: Number.isFinite(range) && range >= 12 && range <= 144 ? Math.round(range) : base.dbRange,
         rms: typeof o.rms === 'boolean' ? o.rms : base.rms,
+        band: o.band === 'visible' || o.band === 'full' ? o.band : base.band,
     };
 }
 
@@ -165,4 +169,16 @@ export function isClipped(lo: number, hi: number): boolean {
 /** Badge text for the top corner of the view, e.g. "Peak −38.4 dBFS". */
 export function peakBadge(peakAbs: number): string {
     return `Peak ${formatDb(toDbfs(peakAbs), 1)} dBFS`;
+}
+
+export function sameWaveformDisplay(a: WaveformDisplay, b: WaveformDisplay): boolean {
+    return a.scale === b.scale && a.reference === b.reference && a.dbRange === b.dbRange && a.rms === b.rms && a.band === b.band;
+}
+
+/** "2.0–8.0 kHz", "> 1.5 kHz", "< 10 kHz". */
+export function formatBand(lo: number, hi: number): string {
+    const k = (hz: number) => (hz >= 10_000 ? (hz / 1000).toFixed(0) : (hz / 1000).toFixed(1));
+    if (lo && hi) return `${k(lo)}\u2013${k(hi)} kHz`;
+    if (lo) return `> ${k(lo)} kHz`;
+    return `< ${k(hi)} kHz`;
 }

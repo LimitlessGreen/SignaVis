@@ -70,6 +70,39 @@ function drawWaveformTimeline({ ctx, width, height, duration, pixelsPerSecond, s
     for (const [t, x] of labels) ctx.fillText(formatGridTime(t, majorStep), x + 3, height / 2);
 }
 
+// ─── Band-filtered source (Settings → Waveform → Band) ──────────────
+
+/** What the renderer draws instead of the raw samples when a band is on (see bandFilter.ts). */
+export interface WaveformBandSource {
+    /** Pyramid of the filtered signal. */
+    peaks: ChannelPeaks;
+    /** Largest |filtered sample| ("fit to peak" uses it). */
+    peakAbs: number;
+    /** Filtered samples [start, end) for zoomed-in views. */
+    filterRange(start: number, end: number): Float32Array;
+    /** Shown in the badge, e.g. "2.0–8.0 kHz". */
+    label: string;
+    /** A newer band is being computed; this one is shown meanwhile. */
+    pending?: boolean;
+}
+
+/** [min, max] of a pyramid over [start, end): coarse blocks inside, fine blocks at the edges. */
+function pyramidMinMax(p: ChannelPeaks, start: number, end: number): [number, number] {
+    let lo = Infinity, hi = -Infinity;
+    const take = (l: { min: Float32Array; max: Float32Array }, a: number, b: number) => {
+        for (let i = Math.max(0, a); i < Math.min(l.min.length, b); i++) {
+            if (l.min[i] < lo) lo = l.min[i];
+            if (l.max[i] > hi) hi = l.max[i];
+        }
+    };
+    const f0 = Math.floor(start / PEAK_BLOCK_FINE), f1 = Math.ceil(end / PEAK_BLOCK_FINE);
+    const r = PEAK_BLOCK / PEAK_BLOCK_FINE;
+    const c0 = Math.ceil(f0 / r), c1 = Math.floor(f1 / r);
+    if (c1 > c0) { take(p.fine, f0, c0 * r); take(p.coarse, c0, c1); take(p.fine, c1 * r, f1); }
+    else take(p.fine, f0, f1);
+    return [lo, hi];
+}
+
 // ─── Peak cache ─────────────────────────────────────────────────────
 
 function getPeaks(audioBuffer: AudioBuffer): ChannelPeaks {
@@ -88,10 +121,11 @@ function setStyle(el: HTMLElement, prop: 'width' | 'display', value: string) {
 // ─── Peak badge ─────────────────────────────────────────────────────
 
 // Loudest sample of the file in dBFS, top right; red when the file clips.
-function drawPeakBadge(ctx: CanvasRenderingContext2D, width: number, peakAbs: number, css: CSSStyleDeclaration, danger: string) {
+function drawPeakBadge(ctx: CanvasRenderingContext2D, width: number, peakAbs: number, css: CSSStyleDeclaration, danger: string, bandLabel = '') {
     if (!(peakAbs > 0) || width < 160) return;
     const clipped = peakAbs >= CLIP_LEVEL;
-    const text = clipped ? `${peakBadge(peakAbs)} \u00b7 clipped` : peakBadge(peakAbs);
+    const peak = clipped ? `${peakBadge(peakAbs)} \u00b7 clipped` : peakBadge(peakAbs);
+    const text = bandLabel ? `${bandLabel} \u00b7 ${peak}` : peak;
     ctx.font = '10px system-ui, sans-serif';
     ctx.textBaseline = 'top';
     ctx.textAlign = 'right';
@@ -119,6 +153,8 @@ export function renderMainWaveform({
     scrollLeft = 0,
     viewportWidth = 0,
     display = DEFAULT_WAVEFORM_DISPLAY,
+    band = null,
+    bandPendingLabel = '',
 }: {
     audioBuffer: AudioBuffer;
     amplitudeCanvas: HTMLCanvasElement;
@@ -131,6 +167,10 @@ export function renderMainWaveform({
     scrollLeft?: number;
     viewportWidth?: number;
     display?: WaveformDisplay;
+    /** Draw this band-filtered signal instead of the raw samples. */
+    band?: WaveformBandSource | null;
+    /** No band ready yet: the raw signal is drawn and the badge names the band being computed. */
+    bandPendingLabel?: string;
 }) {
     if (!audioBuffer) return;
 
@@ -139,7 +179,7 @@ export function renderMainWaveform({
     if (!ampCtx || !timelineCtx) return;
 
     try {
-        (amplitudeCanvas as any)._aw_lastRender = { audioBuffer, amplitudeCanvas, waveformTimelineCanvas, waveformContent, pixelsPerSecond, waveformHeight, amplitudePeakAbs, showTimeline, scrollLeft, viewportWidth, display };
+        (amplitudeCanvas as any)._aw_lastRender = { audioBuffer, amplitudeCanvas, waveformTimelineCanvas, waveformContent, pixelsPerSecond, waveformHeight, amplitudePeakAbs, showTimeline, scrollLeft, viewportWidth, display, band, bandPendingLabel };
     } catch (e) {}
 
     const totalWidth = Math.max(1, Math.floor(audioBuffer.duration * pixelsPerSecond));
@@ -185,7 +225,8 @@ export function renderMainWaveform({
     ampCtx.strokeStyle = colorWithAlpha(gridColor, 0.22);
     ampCtx.stroke(majorGrid);
     // Level grid at the axis ticks, centre line stronger.
-    const map = amplitudeMap(display, amplitudePeakAbs);
+    // Band on: heights follow the filtered signal; the badge and clipping stay with the raw file.
+    const map = amplitudeMap(display, band ? band.peakAbs : amplitudePeakAbs);
     const levelGrid = new Path2D();
     for (const t of amplitudeTicks(map, ampHeight)) {
         if (t.frac <= 0.001 || t.frac >= 0.999 || t.frac === 0.5) continue;
@@ -206,9 +247,16 @@ export function renderMainWaveform({
     const samplesPerPx = totalSamples / totalWidth;
     // A level only when a column spans several of its blocks (edge blocks may
     // reach slightly past the column).
-    const peaks = samplesPerPx >= 4 * PEAK_BLOCK ? getPeaks(audioBuffer).coarse
-        : samplesPerPx >= 4 * PEAK_BLOCK_FINE ? getPeaks(audioBuffer).fine
+    const pyramid = band ? band.peaks : null;
+    const peaks = samplesPerPx >= 4 * PEAK_BLOCK ? (pyramid ?? getPeaks(audioBuffer)).coarse
+        : samplesPerPx >= 4 * PEAK_BLOCK_FINE ? (pyramid ?? getPeaks(audioBuffer)).fine
         : null;
+    // Zoomed in with a band: filter just the visible samples (with settling lead-in).
+    const s0 = Math.floor(sl * samplesPerPx);
+    const src = !peaks && band ? band.filterRange(s0, Math.min(totalSamples, Math.ceil((sl + width) * samplesPerPx) + 1)) : channelData;
+    const off = src === channelData ? 0 : s0;
+    // A filtered column can not show clipping: look at the raw samples, and only if the file clips at all.
+    const rawClipCheck = !!band && amplitudePeakAbs >= CLIP_LEVEL;
     // One path per layer: min/max envelope, RMS body, clipped columns.
     const peakPath = new Path2D();
     const rmsPath = new Path2D();
@@ -232,8 +280,8 @@ export function renderMainWaveform({
             }
             acc /= Math.max(1, Math.min(totalSamples, b1 * peaks.block) - b0 * peaks.block);
         } else {
-            for (let i = start; i < end; i++) {
-                const v = channelData[i];
+            for (let i = start - off; i < end - off; i++) {
+                const v = src[i];
                 if (v < lo) lo = v;
                 if (v > hi) hi = v;
                 if (v === v) acc += v * v;
@@ -242,6 +290,9 @@ export function renderMainWaveform({
         }
         if (lo > hi) continue;
         const px = x + 0.5;
+        let clipped: boolean;
+        if (rawClipCheck) { const [rlo, rhi] = envelopeMinMax(channelData, start, end); clipped = isClipped(rlo, rhi); }
+        else clipped = !band && isClipped(lo, hi);
         // dB: a loudness envelope, mirrored (sign has no meaning on a log scale, and
         // one-sided columns of low rumble would leave gaps at the centre line).
         if (symmetric) { const a = Math.max(-lo, hi); lo = -a; hi = a; }
@@ -257,7 +308,7 @@ export function renderMainWaveform({
             const rb = Math.min(bottom, y(map.map(-Math.min(r, Math.max(-lo, 0)))));
             if (rb > rt) { rmsPath.moveTo(px, rt); rmsPath.lineTo(px, rb); }
         }
-        if (isClipped(lo, hi)) { clipPath.moveTo(px, 0); clipPath.lineTo(px, ampHeight); }
+        if (clipped) { clipPath.moveTo(px, 0); clipPath.lineTo(px, ampHeight); }
     }
     ampCtx.lineWidth = 1;
     ampCtx.strokeStyle = display.rms ? colorWithAlpha(accent, 0.4) : accent;
@@ -280,7 +331,8 @@ export function renderMainWaveform({
     ampCtx.stroke(clipPath);
     ampCtx.restore();
 
-    drawPeakBadge(ampCtx, width, amplitudePeakAbs, css, danger);
+    const bandLabel = band ? `${band.label}${band.pending ? ' \u2026' : ''}` : bandPendingLabel ? `${bandPendingLabel} \u2026` : '';
+    drawPeakBadge(ampCtx, width, amplitudePeakAbs, css, danger, bandLabel);
 
     if (showTimeline && timelineHeight > 0) {
         drawWaveformTimeline({
@@ -309,6 +361,7 @@ export function renderOverviewWaveform({
     startNorm = 0,
     endNorm = 1,
     display = DEFAULT_WAVEFORM_DISPLAY,
+    band = null,
 }: {
     audioBuffer: AudioBuffer;
     overviewCanvas: HTMLCanvasElement;
@@ -316,6 +369,8 @@ export function renderOverviewWaveform({
     amplitudePeakAbs: number;
     /** Same scale as the main view; the strip draws no RMS body (too small to read). */
     display?: WaveformDisplay;
+    /** Same band as the main view. */
+    band?: WaveformBandSource | null;
     /** Part of the file to show (normalized); the detail strip shows a slice. */
     startNorm?: number;
     endNorm?: number;
@@ -326,7 +381,7 @@ export function renderOverviewWaveform({
     if (!ctx) return;
 
     try {
-        (overviewCanvas as any)._aw_lastRender = { audioBuffer, overviewCanvas, overviewContainer, amplitudePeakAbs, startNorm, endNorm, display };
+        (overviewCanvas as any)._aw_lastRender = { audioBuffer, overviewCanvas, overviewContainer, amplitudePeakAbs, startNorm, endNorm, display, band };
     } catch (e) {}
 
     // Device pixels, so the strip stays crisp on HiDPI screens.
@@ -347,7 +402,11 @@ export function renderOverviewWaveform({
     const s1 = Math.max(s0 + 1, Math.ceil(clamp(endNorm, 0, 1) * totalSamples));
     const span = s1 - s0;
     const mid = H / 2;
-    const map = amplitudeMap(display, amplitudePeakAbs);
+    const map = amplitudeMap(display, band ? band.peakAbs : amplitudePeakAbs);
+    // Band: block levels for wide columns, the filtered samples themselves for narrow ones.
+    const narrow = !!band && span / W < 2 * PEAK_BLOCK_FINE;
+    const filtered = narrow ? band!.filterRange(s0, s1) : null;
+    const rawClipCheck = !!band && amplitudePeakAbs >= CLIP_LEVEL;
     // Keep a little headroom so peaks do not touch the strip edges.
     const amp = mid * 0.9;
     const accent = getCssVar('--color-accent', '#60a5fa');
@@ -359,13 +418,15 @@ export function renderOverviewWaveform({
     for (let x = 0; x < W; x++) {
         const start = s0 + Math.floor(x * span / W);
         const end = Math.min(s1, Math.max(start + 1, s0 + Math.floor((x + 1) * span / W)));
-        const [lo, hi] = envelopeMinMax(channelData, start, end);
+        const [lo, hi] = filtered ? envelopeMinMax(filtered, start - s0, end - s0)
+            : band ? pyramidMinMax(band.peaks, start, end)
+            : envelopeMinMax(channelData, start, end);
         if (!(lo <= hi)) continue;
         const a = Math.max(-lo, hi);
         const y0 = mid - map.map(symmetric ? a : hi) * amp;
         const y1 = mid - map.map(symmetric ? -a : lo) * amp;
         ctx.fillRect(x, y0, 1, Math.max(dpr, y1 - y0));
-        if (isClipped(lo, hi)) clipped.push(x);
+        if (band ? rawClipCheck && isClipped(...envelopeMinMax(channelData, start, end)) : isClipped(lo, hi)) clipped.push(x);
     }
     // Clipped spots as red ticks at both edges: findable in hours of audio.
     if (clipped.length) {
