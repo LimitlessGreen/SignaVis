@@ -53,7 +53,8 @@ function finePeaks(data: Float32Array, b0: number, b1: number, out: Peaks): void
     if (s1 > s0) reduceFineInto(data.subarray(s0, s1), out.min, out.max, out.sq, b0);
 }
 
-function coarseFrom(fine: Peaks): Peaks {
+/** Coarse level (PEAK_BLOCK) from a fine one. */
+export function coarseFrom(fine: Peaks): Peaks {
     const factor = PEAK_BLOCK / PEAK_BLOCK_FINE;
     const n = Math.ceil(fine.min.length / factor);
     const out = { block: PEAK_BLOCK, min: new Float32Array(n), max: new Float32Array(n), sq: new Float32Array(n) };

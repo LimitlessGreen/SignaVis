@@ -11,6 +11,11 @@ All notable changes to this project will be documented in this file.
   Player API: `waveformDisplay` option, `setWaveformDisplay()`,
   `waveformDisplay` and the `waveformdisplaychange` event.
 - **RMS** body inside the min/max outline of the waveform (can be turned off).
+- **Waveform band** (Settings → Waveform → Band → Visible band): the waveform
+  and the overview strip are filtered (4th-order Butterworth) to the frequency
+  range the spectrogram shows, so calls stand out from wind and traffic
+  rumble; zoom the frequency axis to pick the band. Clipping is still judged
+  on the unfiltered signal. The filter is loaded only when the band is on.
 - **Clipping** marked red in the waveform and the overview strip; a badge
   shows the file's peak in dBFS.
 - **Channel selection**: also under Settings → Display. Player API: `channel`

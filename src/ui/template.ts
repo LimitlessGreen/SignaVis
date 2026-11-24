@@ -342,6 +342,13 @@ export function createPlayerHTML(opts = {}) {
                     <option value="full">Full scale</option>
                 </select>
             </div>
+            <div class="settings-row">
+                <label class="settings-label" title="Visible band: the waveform is filtered to the frequency range the spectrogram shows (zoom the frequency axis to pick it), so calls stand out from wind and traffic rumble. Clipping is still judged on the unfiltered signal.">Band</label>
+                <select data-aw="waveformBandSelect" class="settings-select" aria-label="Waveform band">
+                    <option value="full" selected>Full signal</option>
+                    <option value="visible">Visible band</option>
+                </select>
+            </div>
             <div class="settings-row" data-aw="waveformDbRangeRow" hidden>
                 <label class="settings-label" title="dB shown from the top edge to the centre line; quieter samples sit on the centre line">dB range</label>
                 <select data-aw="waveformDbRangeSelect" class="settings-select" aria-label="dB range">
