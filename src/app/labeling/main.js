@@ -1343,6 +1343,13 @@ function saveSessionSets(st) {
   else saveSessionSetsLegacy(st);   // no OPFS: old prefs sets
 }
 
+/** Copy Xeno-canto downloads into the project folder (on: also the ones already loaded). */
+function setXcToFolder(on) {
+  lsSet(XC_TO_FOLDER_KEY, on ? '1' : '0');
+  renderProjectLocation();
+  if (on) copyAllXcToFolder();
+}
+
 function renderProjectLocation() {
   projectLocationPanel?.render({
     kind: projectKind,
@@ -1421,11 +1428,7 @@ async function openProject() {
       lsSet(PROJECT_LOCATION_KEY, 'browser');
       window.location.reload();
     },
-    onToggleXcToFolder: (on) => {
-      lsSet(XC_TO_FOLDER_KEY, on ? '1' : '0');
-      renderProjectLocation();
-      if (on) copyAllXcToFolder();
-    },
+    onToggleXcToFolder: (on) => setXcToFolder(on),
     onAddFiles: (paths) => addFolderFiles(paths),
     onRescan: () => scanProjectFolder(),
   });
@@ -4775,10 +4778,14 @@ async function copyLabelsJson() {
 // One export menu, each entry named by format and showing its scope
 exportMenuBtn.addEventListener('click', () => {
   const r = exportMenuBtn.getBoundingClientRect();
+  showExportMenu(r.left, r.bottom + 2);
+});
+/** Export formats with their scope (Labels tab "Export ▾", Lite Project menu). */
+function showExportMenu(x, y) {
   const setLabels = OWN_SOURCE_ID ? collectSetLabels().length : 0;
   const n = state.labels.length;
   showContextMenu({
-    x: r.left, y: r.bottom + 2,
+    x, y,
     items: [
       { label: `Annota-JSON (XC) — upload selection, ${setLabels} labels…`, action: () => sidebar.setActive('upload') },
       { label: `Labels JSON — this recording, ${n} labels`, action: downloadLabelsJson },
@@ -4790,7 +4797,7 @@ exportMenuBtn.addEventListener('click', () => {
       { label: 'Copy labels JSON to clipboard', action: copyLabelsJson },
     ],
   });
-});
+}
 
 // ── Import an Annota-JSON set file (XC "Download set" or own export) ──
 installAnnotaImport(appCtx, {
@@ -5561,7 +5568,92 @@ async function installLiteSpaces() {
   }
   for (const [id, text] of pendingBadges) shell.setBadge(id, text);
   pendingBadges.clear();
+  installTopMenus(shell).catch((e) => console.warn('[spaces] top-bar menus', e));
   return shell;
+}
+
+// ── Lite: "Project ▾" and "⚙" in the top bar (Annotate v2, mockup B3) ──
+async function installTopMenus(shell) {
+  const { projectMenu, settingsMenu } = await import('../lite/top-menus.ts');
+  const tabs = document.querySelector('.spaces-tabs');
+  if (!tabs) return;
+  const projectBtn = document.createElement('button');
+  projectBtn.type = 'button';
+  projectBtn.className = 'tb-btn top-project-btn';
+  projectBtn.setAttribute('aria-haspopup', 'menu');
+  projectBtn.title = 'Project: add recordings, folder, labels';
+  const renderProjectBtn = () => {
+    projectBtn.innerHTML = '<span class="top-project-caption">Project</span><strong></strong><span aria-hidden="true">▾</span>';
+    projectBtn.querySelector('strong').textContent = projectKind === 'folder' ? (projectStore?.label || 'Folder') : 'Default project';
+  };
+  renderProjectBtn();
+  tabs.before(projectBtn);
+  const settingsBtn = document.createElement('button');
+  settingsBtn.type = 'button';
+  settingsBtn.className = 'tb-btn top-settings-btn';
+  settingsBtn.setAttribute('aria-haspopup', 'menu');
+  settingsBtn.title = 'Settings';
+  settingsBtn.setAttribute('aria-label', 'Settings');
+  settingsBtn.innerHTML = document.querySelector('.topbar-settings-btn svg')?.outerHTML || '⚙';
+  document.getElementById('helpMenuBtn')?.before(settingsBtn);
+  document.body.classList.add('lite-top-menus');   // hides language, key and theme inline in the top bar
+
+  const below = (btn) => { const r = btn.getBoundingClientRect(); return { x: r.left, y: r.bottom + 2 }; };
+  // A further menu ("Open recent ▸", "Export labels ▸") opens where its row was clicked.
+  let lastPointer = null;
+  document.addEventListener('pointerdown', (e) => { lastPointer = { x: e.clientX + 12, y: e.clientY - 8 }; }, true);
+  const show = (at, entries, act) => {
+    lastPointer = null;
+    showContextMenu({ ...at,
+      items: entries.map((e) => (e.id ? { ...e, action: () => act(e.id, e.more && lastPointer ? lastPointer : at) } : e)) });
+  };
+  /** Click a panel's button that lives in a library panel (built when the panel is first shown). */
+  const libraryAction = (act) => void shell.reveal('lib-recordings').then(() => requestAnimationFrame(() =>
+    libraryHosts.recordings.querySelector(`[data-act="${act}"]`)?.click()));
+
+  const projectActions = {
+    'add-file': () => openFile(),
+    record: () => document.getElementById('recordBtn')?.click(),
+    'add-xc': () => void shell.reveal('files').then(() => document.getElementById('xcIdInput')?.focus()),
+    'catalog-import': () => libraryAction('open-import'),
+    'open-folder': () => chooseProjectFolder(),
+    'open-recent': (at) => show(at, loadRecent(_lsLite).map((it, i) => ({ id: String(i), label: it.name || it.path || 'Recording', hint: it.kind })),
+      (i) => void openLiteRecent(Number(i))),
+    sites: () => libraryAction('open-entities'),
+    'xc-to-folder': () => setXcToFolder(!xcToFolder()),
+    rescan: () => scanProjectFolder(),
+    'import-labels': () => document.getElementById('importSetBtn')?.click(),
+    'export-labels': (at) => showExportMenu(at.x, at.y),
+    upload: () => sidebar.setActive('upload'),
+    'new-session': () => document.getElementById('newSessionBtn')?.click(),
+  };
+  projectBtn.addEventListener('click', () => {
+    const recordBtn = document.getElementById('recordBtn');
+    show(below(projectBtn), projectMenu({
+      kind: projectKind, hasCatalog: !!catalogView, canRecord: !!recordBtn && !recordBtn.hidden,
+      xcToFolder: xcToFolder(), recentCount: loadRecent(_lsLite).length,
+    }), (id, at) => projectActions[id]?.(at));
+  });
+
+  const settingsActions = {
+    language: (at) => show(at, [...taxonomyLangSelect.options].map((o) => ({ id: o.value, label: o.textContent || o.value, hint: o.value === taxonomyLangSelect.value ? '✓' : '' })),
+      (lang) => { taxonomyLangSelect.value = lang; taxonomyLangSelect.dispatchEvent(new Event('change')); }),
+    'xc-key': () => xcKeyIndicator.click(),
+    theme: () => themeToggleBtn.click(),
+    'reset-layout': async () => {
+      if (!await appConfirm('Put every panel of this project back where it started? Filters and labels stay.',
+        { title: 'Reset panel layout', okLabel: 'Reset layout' })) return;
+      await shell.resetLayouts();
+      window.location.reload();
+    },
+  };
+  settingsBtn.addEventListener('click', () => {
+    show(below(settingsBtn), settingsMenu({
+      language: taxonomyLangSelect.value || state.taxonomyLang || '',
+      hasXcKey: xcKeyIndicator.classList.contains('has-key'),
+      dark: (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark',
+    }), (id, at) => settingsActions[id]?.(at));
+  });
 }
 // ── Lite: editor head (recording, state, place in the view) and label bar (template, tools, Mark done) ──
 let editorHead = null;

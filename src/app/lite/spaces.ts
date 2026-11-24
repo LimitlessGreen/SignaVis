@@ -209,6 +209,15 @@ export class SpacesShell {
         for (const sp of this.#spaces.values()) sp.api?.getPanel(panelId)?.api.setTitle(title);
     }
 
+    /** Forget every stored layout and fold (spaces start with their standard layout after a reload). */
+    async resetLayouts() {
+        for (const st of Object.values(this.#state.spaces)) { st.layout = null; delete st.collapsed; }
+        if (this.#saveTimer) { clearTimeout(this.#saveTimer); this.#saveTimer = null; }
+        this.#resetting = true;   // the dock layouts still fire changes until the page goes
+        await this.#save();
+    }
+    #resetting = false;
+
     /** Write pending changes now (window closes). */
     async flush() {
         if (!this.#saveTimer) return;
@@ -387,6 +396,7 @@ export class SpacesShell {
     }
 
     #scheduleSave() {
+        if (this.#resetting) return;
         if (this.#saveTimer) clearTimeout(this.#saveTimer);
         this.#saveTimer = setTimeout(() => { this.#saveTimer = null; void this.#save(); }, SAVE_DELAY_MS);
     }

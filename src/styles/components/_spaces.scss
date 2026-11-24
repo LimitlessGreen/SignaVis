@@ -217,3 +217,16 @@ body.lite-editor-chrome .topbar .file-label { display: none; }   // the head sho
   }
 }
 .dockview-theme-signavis .dv-tab { cursor: pointer; }
+
+// ── Top bar menus (mockup B3): "Project ▾" left of the spaces, "⚙" instead of the inline settings ──
+body.lite-top-menus .topbar-settings,
+body.lite-top-menus #themeToggleBtn,
+body.lite-top-menus .topbar-right > .tb-sep { display: none; }
+.top-project-btn {
+  display: inline-flex; align-items: center; gap: 6px; align-self: center;
+  max-width: 280px; height: 28px; padding: 0 10px; margin-left: 6px;
+  font-size: 13px; white-space: nowrap;
+  .top-project-caption { color: var(--color-text-secondary); }
+  strong { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+}
+.top-settings-btn svg { width: 15px; height: 15px; }
