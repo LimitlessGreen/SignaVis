@@ -92,7 +92,10 @@ export interface FacetValue { id: number; name: string; count: number }
 export interface Facets {
     total: number; bytes: number; seconds: number | null; firstMs: number | null; lastMs: number | null;
     noStart: number; sites: FacetValue[]; devices: FacetValue[]; tags?: FacetValue[];
+    /** Recordings per local day / per local hour (0–23), each without its own part of the filter. */
+    days?: DayCount[]; hours?: number[];
 }
+export interface DayCount { day: string; count: number }
 export interface HeatCell { day: string; hour: number; count: number }
 export interface DuplicateGroup { hash: string; size: number; paths: string[]; verified: boolean }
 export interface Integrity {

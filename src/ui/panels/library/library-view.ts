@@ -20,6 +20,7 @@ import {
 } from '../../../domain/catalog/thumb-grid.ts';
 import { CatalogView, type ViewChange } from '../../../domain/catalog/catalog-view.ts';
 import { chipsText, viewChips, type ChipKind } from '../../../domain/catalog/view-chips.ts';
+import { brushDays, brushHours, dayBars, filterDays, hourBars, isOnlyBar, setPeriod } from '../../../domain/catalog/histogram.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 import { prefs } from '../../../infrastructure/storage/prefs.ts';
 import { ImportDialog, timeZones } from './import-dialog.ts';
@@ -236,6 +237,10 @@ export class LibraryView {
             r.addEventListener('change', (e) => this.#onChange(e));
             r.addEventListener('input', (e) => this.#onSearch(e));
             r.addEventListener('keydown', (e) => this.#onKey(e));
+        }
+        const facets = this.#q('.lib-facets')!;
+        for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'] as const) {
+            facets.addEventListener(type, (e) => this.#onBrush(e as PointerEvent));
         }
         this.#q('.lib-grid')!.addEventListener('scroll', () => this.#renderRows(), { passive: true });
         this.#q('.lib-grid')!.addEventListener('dblclick', (e) => {
@@ -526,13 +531,8 @@ export class LibraryView {
           ${this.#datasetSection()}
           ${tf.status ? `<section><h4>Status: ${esc(tf.status)} <button class="btn btn--sm btn--ghost" data-act="clear-status">all</button></h4></section>` : ''}
           <section><h4>Search</h4><input class="input" data-k="path" placeholder="Path contains…" value="${esc(tf.pathContains ?? '')}"></section>
-          <section><h4>Time of day (local)</h4>
-            <select class="field-select" data-k="tod">${TIME_PRESETS.map((p, i) => `<option value="${i}"${i === preset ? ' selected' : ''}>${p.label}</option>`).join('')}
-              ${preset < 0 ? `<option selected>${tf.hourFrom}–${tf.hourTo}</option>` : ''}</select>
-            ${this.#sunControls()}</section>
-          <section><h4>Period</h4>
-            <label class="lib-row"><span>from</span><input class="input" type="date" data-k="from" value="${tf.fromMs != null ? new Date(tf.fromMs).toISOString().slice(0, 10) : ''}"></label>
-            <label class="lib-row"><span>to</span><input class="input" type="date" data-k="to" value="${tf.toMs != null ? new Date(tf.toMs - 86_400_000).toISOString().slice(0, 10) : ''}"></label></section>
+          ${this.#dateHist()}
+          ${this.#hourHist(preset)}
           <section><h4>Labels</h4><select class="field-select" data-k="labels">
             <option value=""${tf.hasLabels == null ? ' selected' : ''}>any</option>
             <option value="1"${tf.hasLabels === true ? ' selected' : ''}>with labels</option>
@@ -552,6 +552,84 @@ export class LibraryView {
     }
 
     #chipText = '';
+
+    /** Bars as SVG (one unit wide each, scaled to the panel); `data-i` per bar for the brush. */
+    #bars(kind: 'day' | 'hour', bars: { count: number; on: boolean; tip: string }[]): string {
+        const max = Math.max(1, ...bars.map((b) => b.count));
+        return `<svg class="lib-hist" data-hist="${kind}" viewBox="0 0 ${bars.length} 1" preserveAspectRatio="none" role="img"
+            aria-label="${kind === 'day' ? 'Recordings per day' : 'Recordings per hour'} — drag to filter">
+          ${bars.map((b, i) => {
+              const h = b.count ? Math.max(0.04, b.count / max) : 0;
+              return `<rect data-i="${i}" x="${i + 0.1}" width="0.8" y="${1 - h}" height="${h}" class="${b.on ? 'is-on' : ''}"><title>${esc(b.tip)}</title></rect>`;
+          }).join('')}</svg>`;
+    }
+
+    #dateHist(): string {
+        const tf = this.#v.filter;
+        const bars = dayBars(this.#v.facets?.days ?? [], tf);
+        const { from, to } = filterDays(tf);
+        const short = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { day: '2-digit', month: 'short', timeZone: 'UTC' });
+        const tip = (b: { from: string; to: string; count: number }) => `${b.from}${b.to !== b.from ? ` – ${b.to}` : ''}: ${b.count.toLocaleString()}`;
+        return `<section class="lib-hist-sec"><h4>Date${from || to ? ' <button class="btn btn--sm btn--ghost" data-act="clear-period">all</button>' : ''}</h4>
+          ${bars.length ? `${this.#bars('day', bars.map((b) => ({ ...b, tip: tip(b) })))}
+          <div class="lib-hist-axis"><span>${short(bars[0].from)}</span><span>${short(bars[bars.length - 1].to)}</span></div>` : ''}
+          <div class="lib-row lib-period"><input class="input" data-k="from" placeholder="YYYY-MM-DD" aria-label="From (local day, YYYY-MM-DD)" spellcheck="false" value="${from ?? ''}">
+            <span>–</span><input class="input" data-k="to" placeholder="YYYY-MM-DD" aria-label="To (local day, YYYY-MM-DD)" spellcheck="false" value="${to ?? ''}"></div></section>`;
+    }
+
+    #hourHist(preset: number): string {
+        const tf = this.#v.filter;
+        const hh = (h: number) => String(h).padStart(2, '0');
+        const bars = hourBars(this.#v.facets?.hours, tf).map((b) => ({ ...b, tip: `${hh(b.hour)}–${hh(b.hour + 1)} h: ${b.count.toLocaleString()}` }));
+        return `<section class="lib-hist-sec"><h4>Time of day <span class="lib-h4-note">local</span>${tf.hourFrom != null ? ' <button class="btn btn--sm btn--ghost" data-act="clear-tod">all</button>' : ''}</h4>
+          ${this.#bars('hour', bars)}
+          <div class="lib-hist-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+          <select class="field-select" data-k="tod">${TIME_PRESETS.map((p, i) => `<option value="${i}"${i === preset ? ' selected' : ''}>${p.label}</option>`).join('')}
+            ${preset < 0 ? `<option selected>${hh(tf.hourFrom!)}–${hh(tf.hourTo!)}</option>` : ''}</select>
+          ${this.#sunControls()}</section>`;
+    }
+
+    /** Drag over a histogram: bars in range light up, release sets the filter (a click on the only kept bar clears it). */
+    #brush: { svg: SVGSVGElement; kind: 'day' | 'hour'; start: number; cur: number } | null = null;
+
+    #brushIndex(svg: SVGSVGElement, x: number): number {
+        const r = svg.getBoundingClientRect();
+        const n = svg.viewBox.baseVal.width;
+        return Math.max(0, Math.min(n - 1, Math.floor(((x - r.left) / Math.max(1, r.width)) * n)));
+    }
+
+    #onBrush(e: PointerEvent) {
+        if (e.type === 'pointerdown') {
+            const svg = (e.target as Element).closest<SVGSVGElement>('svg[data-hist]');
+            if (!svg || e.button !== 0) return;
+            e.preventDefault();
+            svg.setPointerCapture(e.pointerId);
+            const i = this.#brushIndex(svg, e.clientX);
+            this.#brush = { svg, kind: svg.dataset.hist as 'day' | 'hour', start: i, cur: i };
+        } else if (!this.#brush) return;
+        const b = this.#brush;
+        if (e.type === 'pointermove') b.cur = this.#brushIndex(b.svg, e.clientX);
+        const [lo, hi] = b.start <= b.cur ? [b.start, b.cur] : [b.cur, b.start];
+        b.svg.classList.add('is-brushing');
+        b.svg.querySelectorAll<SVGRectElement>('rect[data-i]').forEach((r) => {
+            const i = Number(r.dataset.i);
+            r.classList.toggle('is-brush', i >= lo && i <= hi);
+        });
+        if (e.type === 'pointerdown' || e.type === 'pointermove') return;
+        this.#brush = null;
+        b.svg.classList.remove('is-brushing');
+        if (e.type === 'pointercancel') { this.#renderFacets(); return; }
+        const f = this.#v.filter;
+        if (b.kind === 'day') {
+            const bars = dayBars(this.#v.facets?.days ?? [], f);
+            if (!bars.length) return;
+            Object.assign(f, lo === hi && isOnlyBar(bars, lo) ? { localDayFrom: null, localDayTo: null, fromMs: null, toMs: null } : brushDays(bars, lo, hi));
+        } else {
+            const bars = hourBars(this.#v.facets?.hours, f);
+            Object.assign(f, lo === hi && isOnlyBar(bars, lo) ? { hourFrom: null, hourTo: null } : brushHours(lo, hi));
+        }
+        void this.reload();
+    }
 
     #datasetSection(): string {
         const a = this.#v.active;
@@ -901,6 +979,8 @@ export class LibraryView {
         else if (act === 'clear-site') { this.#v.filter.siteIds = []; void this.reload(); }
         else if (act === 'clear-device') { this.#v.filter.deviceIds = []; void this.reload(); }
         else if (act === 'clear-tag') { this.#v.filter.tagIds = []; void this.reload(); }
+        else if (act === 'clear-period') { Object.assign(this.#v.filter, { localDayFrom: null, localDayTo: null, fromMs: null, toMs: null }); void this.reload(); }
+        else if (act === 'clear-tod') { Object.assign(this.#v.filter, { hourFrom: null, hourTo: null }); void this.reload(); }
         else if (act?.startsWith('ds-')) void this.#onDatasetAction(act, t.closest<HTMLElement>('[data-act]')!);
     }
 
@@ -923,10 +1003,10 @@ export class LibraryView {
             if (!p) return;
             f.hourFrom = p.from;
             f.hourTo = p.to;
-        } else if (t.dataset.k === 'from') {
-            f.fromMs = t.value ? Date.parse(`${t.value}T00:00:00Z`) : null;
-        } else if (t.dataset.k === 'to') {
-            f.toMs = t.value ? Date.parse(`${t.value}T00:00:00Z`) + 86_400_000 : null;
+        } else if (t.dataset.k === 'from' || t.dataset.k === 'to') {
+            // Text, not type=date: WebKitGTK shows today in an empty date field.
+            if (!setPeriod(f, t.dataset.k, t.value)) { t.setCustomValidity('Day as YYYY-MM-DD'); t.reportValidity(); return; }
+            t.setCustomValidity('');
         } else if (t.dataset.k === 'sun') {
             f.sun = t.value === '' ? null : t.value === 'custom' ? (f.sun ?? SUN_PRESETS[0].w) : SUN_PRESETS[Number(t.value)]?.w ?? null;
             if (f.sun) f.sun = structuredClone(f.sun);

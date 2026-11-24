@@ -34,3 +34,10 @@ test('withoutChip: removes one value, leaves the input alone, closes a static da
     assert.equal(withoutChip({ hourFrom: 18, hourTo: 6 }, 5, datasets[1], 'tod').activeDs, 5);
     assert.deepEqual(withoutChip(f, 3, datasets[0], 'all'), { filter: {}, activeDs: null });
 });
+
+test('viewChips: local days read as Date, one day without a range', () => {
+    const one = viewChips({ localDayFrom: '2023-03-20', localDayTo: '2023-03-20' }, facets, datasets, () => '');
+    assert.deepEqual(one.map((c) => [c.field, c.label]), [['Date', '2023-03-20']]);
+    const open = viewChips({ localDayFrom: '2023-03-20' }, facets, datasets, () => '');
+    assert.equal(open[0].label, '2023-03-20 – …');
+});

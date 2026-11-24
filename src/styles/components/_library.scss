@@ -366,3 +366,20 @@ $lib-cols: minmax(240px, 3fr) 150px minmax(90px, 1fr) minmax(90px, 1fr) 70px 54p
 .lib-x-range { display: inline-flex; align-items: center; border-radius: 6px; background: var(--color-accent-faint); font-variant-numeric: tabular-nums; }
 .lib-link { border: 0; background: none; color: var(--color-text-primary); font: inherit; padding: 1px 4px; cursor: pointer; &:hover { text-decoration: underline; } }
 .lib-x-del { border: 0; background: none; color: var(--color-text-secondary); cursor: pointer; padding: 0 4px; &:hover { color: var(--color-detection); } }
+
+// Mini histograms in the field sidebar (date, time of day): bars kept by the filter in accent, the rest dimmed;
+// drag over them to set the range.
+.lib-hist {
+    display: block; width: 100%; height: 40px; cursor: crosshair; touch-action: none; user-select: none;
+    rect[data-i] { fill: color-mix(in srgb, var(--color-text-secondary) 35%, transparent); }
+    rect.is-on { fill: var(--color-accent); }
+    &:hover rect[data-i]:hover { fill: color-mix(in srgb, var(--color-accent) 70%, var(--color-text-primary)); }
+    &.is-brushing rect[data-i] { fill: color-mix(in srgb, var(--color-text-secondary) 30%, transparent); }
+    &.is-brushing rect.is-brush { fill: var(--color-accent); }
+}
+.lib-hist-axis {
+    display: flex; justify-content: space-between; margin: 2px 0 6px;
+    font-size: 10px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums;
+}
+.lib-h4-note { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.lib-period { margin-bottom: 2px; .input { font-size: 11px; padding-inline: 4px; } }

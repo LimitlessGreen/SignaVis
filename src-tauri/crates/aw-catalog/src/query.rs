@@ -60,7 +60,8 @@ const POS_LON: &str = "COALESCE(r.lon, (SELECT lon FROM site WHERE id = r.site_i
 pub(crate) const LOCAL_DAY: &str = "date(((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) - (((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) % 1000) + 1000) % 1000) / 1000, 'unixepoch')";
 
 #[derive(Clone, Copy, PartialEq)]
-pub(crate) enum Skip { None, Site, Device, Tag, Dataset }
+/// Filter part to leave out: a facet counts under the rest, so its own other values stay visible.
+pub(crate) enum Skip { None, Site, Device, Tag, Dataset, Period, Hour }
 
 pub(crate) fn where_clause(cat: &Catalog, f: &Filter, skip: Skip) -> Result<(String, Vec<Box<dyn ToSql>>)> {
     where_depth(cat, f, skip, 0)
@@ -108,11 +109,13 @@ fn where_depth(cat: &Catalog, f: &Filter, skip: Skip, depth: usize) -> Result<(S
     }
     if f.unassigned { push("(r.site_id IS NULL OR r.device_id IS NULL)".into(), vec![], &mut p); }
     if f.no_site { push("r.site_id IS NULL".into(), vec![], &mut p); }
-    if let Some(d) = &f.local_day_from { push(format!("{LOCAL_DAY} >= ?"), vec![Box::new(d.clone())], &mut p); }
-    if let Some(d) = &f.local_day_to { push(format!("{LOCAL_DAY} <= ?"), vec![Box::new(d.clone())], &mut p); }
-    if let Some(v) = f.from_ms { push("r.start_ms >= ?".into(), vec![Box::new(v)], &mut p); }
-    if let Some(v) = f.to_ms { push("r.start_ms < ?".into(), vec![Box::new(v)], &mut p); }
-    if let (Some(a), Some(b)) = (f.hour_from, f.hour_to) {
+    if skip != Skip::Period {
+        if let Some(d) = &f.local_day_from { push(format!("{LOCAL_DAY} >= ?"), vec![Box::new(d.clone())], &mut p); }
+        if let Some(d) = &f.local_day_to { push(format!("{LOCAL_DAY} <= ?"), vec![Box::new(d.clone())], &mut p); }
+        if let Some(v) = f.from_ms { push("r.start_ms >= ?".into(), vec![Box::new(v)], &mut p); }
+        if let Some(v) = f.to_ms { push("r.start_ms < ?".into(), vec![Box::new(v)], &mut p); }
+    }
+    if let (Some(a), Some(b), true) = (f.hour_from, f.hour_to, skip != Skip::Hour) {
         let (a, b) = (a as i64, b as i64);
         let op = if a <= b { "AND" } else { "OR" };
         push(format!("({LOCAL_HOUR} >= ? {op} {LOCAL_HOUR} < ?)"), vec![Box::new(a), Box::new(b)], &mut p);
@@ -252,7 +255,15 @@ pub struct Facets {
     pub sites: Vec<FacetValue>,
     pub devices: Vec<FacetValue>,
     pub tags: Vec<FacetValue>,
+    /// Recordings per local day, under the filter without its own period (for the date histogram).
+    pub days: Vec<DayCount>,
+    /// Recordings per local hour 0–23, under the filter without its own time of day.
+    pub hours: Vec<i64>,
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayCount { pub day: String, pub count: i64 }
 
 fn facet(cat: &Catalog, f: &Filter, skip: Skip, table: &str, col: &str) -> Result<Vec<FacetValue>> {
     let (w, p) = where_clause(cat, f, skip)?;
@@ -283,7 +294,24 @@ pub fn facets(cat: &Catalog, f: &Filter) -> Result<Facets> {
     sites.sort_by(nat);
     devices.sort_by(nat);
     tags.sort_by(nat);
-    Ok(Facets { total, bytes, seconds, first_ms, last_ms, no_start, sites, devices, tags })
+    let days = {
+        let (w, p) = where_clause(cat, f, Skip::Period)?;
+        let sql = format!("SELECT {LOCAL_DAY}, COUNT(*) {FROM} WHERE {w} AND r.start_ms IS NOT NULL GROUP BY 1 ORDER BY 1");
+        let mut st = cat.conn.prepare(&sql)?;
+        st.query_map(params_from_iter(p.iter()), |r| Ok(DayCount { day: r.get(0)?, count: r.get(1)? }))?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    let mut hours = vec![0i64; 24];
+    {
+        let (w, p) = where_clause(cat, f, Skip::Hour)?;
+        let sql = format!("SELECT {LOCAL_HOUR}, COUNT(*) {FROM} WHERE {w} AND r.start_ms IS NOT NULL GROUP BY 1");
+        let mut st = cat.conn.prepare(&sql)?;
+        for row in st.query_map(params_from_iter(p.iter()), |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
+            let (h, n) = row?;
+            if (0..24).contains(&h) { hours[h as usize] = n; }
+        }
+    }
+    Ok(Facets { total, bytes, seconds, first_ms, last_ms, no_start, sites, devices, tags, days, hours })
 }
 
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
@@ -420,6 +448,27 @@ mod tests {
         assert_eq!(one.total, 24);
         assert_eq!(one.sites.len(), 2, "own facet ignores its selection");
         assert_eq!(one.devices.len(), 1);
+    }
+
+    #[test]
+    fn day_and_hour_histograms_ignore_their_own_filter() {
+        let cat = fixture();
+        let all = facets(&cat, &Filter::default()).unwrap();
+        let with_start = all.total - all.no_start;
+        assert_eq!(all.days.iter().map(|d| d.count).sum::<i64>(), with_start);
+        assert_eq!(all.hours.len(), 24);
+        assert_eq!(all.hours.iter().sum::<i64>(), with_start);
+        let d0 = all.days[0].day.clone();
+        let busy = all.hours.iter().position(|&n| n > 0).unwrap() as u8;
+        let f = Filter { local_day_from: Some(d0.clone()), local_day_to: Some(d0.clone()),
+            hour_from: Some(busy), hour_to: Some(busy + 1), ..Default::default() };
+        let one = facets(&cat, &f).unwrap();
+        // Days still show every day (the period is their own filter), but only the chosen hour.
+        assert_eq!(one.days.len(), all.days.len());
+        assert!(one.days.iter().map(|d| d.count).sum::<i64>() <= all.hours[busy as usize]);
+        // Hours still show every hour, but only of the chosen day.
+        assert_eq!(one.hours.iter().sum::<i64>(), all.days[0].count);
+        assert_eq!(one.total, one.hours[busy as usize]);
     }
 
     #[test]
