@@ -20,8 +20,8 @@ The component's value is a plain dict (see :func:`player_value`):
 ``detections``   list of ``{start, end, label, confidence?, freqMin?, freqMax?,
                  scientificName?, commonName?, color?, id?}``
 ``showConfidence`` show the confidence next to the detection names
-``select``       ``{start, end, play, id?}`` — plays the span, or without ``play``
-                 selects the detection ``id`` and scrolls it into view;
+``select``       ``{start, end, play, id?}`` — selects the detection ``id`` and
+                 scrolls it into view, and with ``play`` plays the span;
                  a new dict each time re-triggers it
 """
 
@@ -75,8 +75,8 @@ def player_value(
 ) -> dict:
     """Build a value for :class:`SignaVisPlayer`.
 
-    ``select`` is ``(start_s, end_s)``; with ``play`` the span is played,
-    otherwise the detection ``select_id`` is selected and scrolled into view.
+    ``select`` is ``(start_s, end_s)``; the detection ``select_id`` is selected
+    and scrolled into view, and with ``play`` the span is played as well.
     Without ``detections`` the player keeps the labels it shows, so a value
     that only selects a detection need not resend all of them.
     ``show_confidence`` switches the confidence next to the detection names on
@@ -196,8 +196,9 @@ async function sync() {
   const sel = v.select;
   if (sel && sel.n !== state.select) {
     state.select = sel.n;
+    // Select first: selecting seeks, which would stop a segment already playing.
+    if (sel.id != null) player.selectLabel(sel.id);
     if (sel.play) player.playSegment(sel.start, sel.end);
-    else if (sel.id != null) player.selectLabel(sel.id);
   }
 }
 
