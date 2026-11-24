@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.2] - Unreleased
+## [1.4.2] - 2026-11-24
 
 ### Added
 - **Waveform scale** (Settings → Waveform): linear or dB (a mirrored loudness
