@@ -1191,8 +1191,10 @@ export class PlayerState {
         // playhead (and the follow scroll derived from it) moves evenly.
         // Known rate: recording seconds per real second = the media element's playback rate.
         const rate = Number(this.wavesurfer?.getPlaybackRate?.()) || 1;
+        // Through the output context the media clock runs ahead of the sound by its latency.
+        const latency = playing && !this._engine._customSegmentPlayback ? (this._engine.outputLatency?.() ?? 0) : 0;
         const position = this._viewport.smoothPlaybackPosition(this.coords.timeToScrollX(currentTime), playing,
-            this.coords.timeToScrollX(rate) / 1000);
+            this.coords.timeToScrollX(rate) / 1000, this.coords.timeToScrollX(latency * rate));
 
         // Follow-mode scroll — delegated to ViewportManager
         if (fromPlayback && playing && this.followPlayback) {

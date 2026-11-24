@@ -80,3 +80,27 @@ test('a seek backwards and a pause snap to the raw position', () => {
     assert.equal(c.update(10, true, 516, VEL, 120), 10);
     assert.equal(c.update(33, false, 532, VEL, 120), 33);
 });
+
+/** Routed through a running AudioContext (QtWebEngine, 24.11.2026, outputLatency 0.048 s): the clock
+ *  runs evenly from the first frame, in 10.7 ms quanta. */
+const QT_ROUTED = [[1.4,0],[16,0.0213],[32.7,0.032],[49.3,0.0533],[66,0.0723],[82.6,0.0853],[99.3,0.1059],[116.1,0.1173],
+    [132.7,0.1387],[149.3,0.1493],[166,0.1707],[182.7,0.1899],[199.3,0.2027],[216,0.2233],[232.7,0.234],[249.3,0.2553],
+    [266,0.2667],[282.7,0.288],[299.3,0.2987],[316,0.32],[332.7,0.3307],[349.3,0.352],[366,0.3627],[382.7,0.384],[399.3,0.3947]];
+
+test('routed: holds only for the output latency, then follows the sound evenly', () => {
+    const clock = new PlayheadClock();
+    const LAT = 0.048;
+    const out = QT_ROUTED.map(([ms, t]) => [ms, clock.update(t * PPS, true, 1000 + ms, VEL, 120, LAT * PPS)]);
+    // Still while the sound has not started; moving as soon as it has
+    for (const [ms, x] of out) if (ms < LAT * 1000) assert.equal(x, 0, `ms ${ms}`);
+    const firstMove = out.find(([, x]) => x > 0)[0];
+    assert.ok(firstMove <= LAT * 1000 + 20, `starts at ${firstMove} ms`);
+    // Once moving, within 1.5 px (15 ms) of the sound
+    for (const [ms, x] of out) if (ms > firstMove) assert.ok(Math.abs(x - (ms / 1000 - LAT) * PPS) < 1.5, `lags at ${ms}: ${x}`);
+    // Never ahead of what is audible (+ one frame of slack), and close to it at the end
+    for (const [ms, x] of out) assert.ok(x <= (ms / 1000 - LAT) * PPS + FRAME + 1e-9 || x === 0, `ahead at ${ms}: ${x}`);
+    const [ms, x] = out[out.length - 1];
+    assert.ok(Math.abs(x - (ms / 1000 - LAT) * PPS) < 1.5, `ends near the sound: ${x} at ${ms}`);
+    // No leap after it started
+    for (let i = 1; i < out.length; i++) assert.ok(out[i][1] - out[i - 1][1] <= FRAME * 1.5 + 1e-9, `leap at ${out[i][0]}`);
+});

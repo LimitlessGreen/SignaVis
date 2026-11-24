@@ -239,9 +239,10 @@ export class ViewportManager extends EventTarget {
      * @param {number}  position    - raw playhead x in pixels
      * @param {boolean} playing     - true while the media element plays
      * @param {number}  [expectedVel] - pixels per millisecond at the current zoom and rate
+     * @param {number}  [latency]     - pixels the position is ahead of the sound
      */
-    smoothPlaybackPosition(position: number, playing: boolean, expectedVel?: number) {
-        return this._playheadClock.update(position, playing, performance.now(), expectedVel, this._getViewportWidth() * 0.1);
+    smoothPlaybackPosition(position: number, playing: boolean, expectedVel?: number, latency = 0) {
+        return this._playheadClock.update(position, playing, performance.now(), expectedVel, this._getViewportWidth() * 0.1, latency);
     }
 
     /**

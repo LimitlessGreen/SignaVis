@@ -8,6 +8,10 @@
  * bursts made the playhead start, stop, then leap ahead. So the playhead holds still until
  * the clock is "locked" (a few consecutive raw steps at roughly the expected rate).
  *
+ * Played through a running AudioContext (latency > 0) the clock runs evenly from the first
+ * step but is ahead of the sound by the output latency: the playhead locks at once and shows
+ * the raw position minus that latency, so it holds until the sound starts, then moves with it.
+ *
  * Locked, it moves at the known rate (pixels per second × playback rate), sped up or slowed
  * down by at most half to follow the raw position (aged by the time since that value
  * arrived, at most STALL_MS): it never leaps and never steps backwards; on a stall it
@@ -40,6 +44,7 @@ interface ClockState {
     run: number;          // raw steps in a row at the expected rate
     locked: boolean;
     movedAt: number;      // when the raw clock first moved (ms), 0 = not yet
+    waiting: boolean;     // locked, but held: the sound had not reached the playhead
 }
 
 export class PlayheadClock {
@@ -53,14 +58,15 @@ export class PlayheadClock {
      * @param now         performance.now()
      * @param expectedVel pixels per millisecond at the current zoom and playback rate
      * @param maxJump     a raw jump larger than this (px) is a seek: restart
+     * @param latency     px the raw clock is ahead of the sound (output latency), 0 = none
      */
-    update(position: number, playing: boolean, now: number, expectedVel?: number, maxJump = Infinity): number {
+    update(position: number, playing: boolean, now: number, expectedVel?: number, maxJump = Infinity, latency = 0): number {
         const c = this._c;
         if (!playing) { this._c = null; return position; }
         const known = Number.isFinite(expectedVel) && (expectedVel as number) > 0;
         // A raw step backwards is a seek or a loop, never jitter: restart there too
         if (!c || now - c.at > GAP_MS || Math.abs(position - c.raw) > maxJump || position < c.raw - 0.5) {
-            this._c = { pos: position, at: now, raw: position, rawAt: now, vel: known ? (expectedVel as number) : 0, run: 0, locked: false, movedAt: 0 };
+            this._c = { pos: position, at: now, raw: position, rawAt: now, vel: known ? (expectedVel as number) : 0, run: 0, locked: false, movedAt: 0, waiting: false };
             return position;
         }
         if (known) c.vel = expectedVel as number;
@@ -77,22 +83,29 @@ export class PlayheadClock {
             c.raw = position;
             c.rawAt = now;
         }
-        if (!c.locked && (c.run >= LOCK_STEPS || (c.movedAt && now - c.movedAt > LOCK_TIMEOUT_MS))) c.locked = true;
+        // An even clock (latency known) needs one step at the expected rate, a bare element three
+        if (!c.locked && (c.run >= (latency > 0 ? 1 : LOCK_STEPS) || (c.movedAt && now - c.movedAt > LOCK_TIMEOUT_MS))) c.locked = true;
 
         if (!c.locked || c.vel <= 0) {
             // Output starting: hold still where playback started
             c.at = now;
             return c.pos;
         }
-        const target = c.raw + c.vel * Math.min(now - c.rawAt, STALL_MS);
+        const target = c.raw - Math.max(0, latency) + c.vel * Math.min(now - c.rawAt, STALL_MS);
+        // The sound has not reached the shown position yet (latency, start): wait for it
+        if (target <= c.pos) { c.waiting = true; c.at = now; return c.pos; }
         // Offset from where the nominal rate alone would put it this frame
         const err = target - (c.pos + c.vel * dt);
-        if (err > c.vel * SNAP_MS) {
+        if (c.waiting && target - c.pos <= c.vel * dt * MAX_SPEEDUP) {
+            // The sound just passed the waiting playhead: start right there, no slow ramp
+            c.pos = target;
+        } else if (err > c.vel * SNAP_MS) {
             c.pos = target;
         } else {
             const speed = Math.min(MAX_SPEEDUP, Math.max(0, 1 + err / (c.vel * FOLLOW_MS)));
             c.pos += c.vel * dt * speed;
         }
+        c.waiting = false;
         c.at = now;
         return c.pos;
     }

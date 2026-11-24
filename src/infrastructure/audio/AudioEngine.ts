@@ -143,7 +143,7 @@ export class AudioEngine extends AudioEngineBase {
   muted: boolean;
   normalize: boolean;
   normGain: number;
-  _mediaGraph: { el: HTMLMediaElement; ctx: AudioContext; gain: GainNode; resume: () => void } | null;
+  _mediaGraph: { el: HTMLMediaElement; ctx: AudioContext; gain: GainNode; dispose: () => void } | null;
   preMuteVolume: number;
   _segmentMode: boolean;
   _activeSegmentLabelId: string | null;
@@ -278,7 +278,9 @@ export class AudioEngine extends AudioEngineBase {
     );
     onProgress?.('decode');
     const audioBuffer = await this._decodeBlob(blob, name);
-    await this._setupWaveSurfer(url, name);
+    // Play the downloaded bytes: a cross-origin URL on the media element would make the
+    // output graph (createMediaElementSource) play silence, and it would download twice.
+    await this._setupWaveSurfer(blob, name);
     return { duration: audioBuffer.duration, sampleRate: audioBuffer.sampleRate };
   }
 
@@ -816,11 +818,16 @@ export class AudioEngine extends AudioEngineBase {
     this._applyOutputGain();
   }
 
-  // ── Normalized playback ─────────────────────────────────────────────
-  // Gain = target peak (-1 dBFS) / file peak, capped at +40 dB. Amplifying above 1 is impossible
-  // with media-element volume, so the WaveSurfer <audio> is routed through a WebAudio GainNode
-  // (built lazily, only while normalizing; a routed element stays routed until the next load).
+  // ── Output graph & normalized playback ──────────────────────────────
+  // The WaveSurfer <audio> always plays through a WebAudio GainNode in an AudioContext that
+  // stays running between plays. A bare media element opens its audio output on every play():
+  // ~100 ms (Chromium) to ~0.5 s (QtWebEngine, the Analyzer window) of silence and a stalling
+  // clock before it runs; through a running context it sounds after outputLatency (~40 ms).
+  // The GainNode also allows normalizing: gain = target peak (-1 dBFS) / file peak, capped at
+  // +40 dB, which media-element volume (max 1) cannot do.
 
+  /** Pause this long and the output context is suspended. */
+  static OUTPUT_IDLE_MS = 60_000;
   static NORM_TARGET = 10 ** (-1 / 20);
   static NORM_MAX_GAIN = 100;
 
@@ -855,10 +862,26 @@ export class AudioEngine extends AudioEngineBase {
       const gain = ctx.createGain();
       src.connect(gain);
       gain.connect(ctx.destination);
-      // Media starts playing via a user gesture; resume the context alongside it.
-      const resume = () => { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); };
+      // Media starts playing via a user gesture; resume the context alongside it. Suspended
+      // again after a minute without playback, so an idle player does not keep the audio
+      // device busy (the first play after that has the slower start again).
+      let idle: ReturnType<typeof setTimeout> | null = null;
+      const resume = () => {
+        if (idle) { clearTimeout(idle); idle = null; }
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      };
+      const pause = () => {
+        if (idle) clearTimeout(idle);
+        idle = setTimeout(() => { idle = null; if (el.paused && ctx.state === 'running') ctx.suspend().catch(() => {}); }, AudioEngine.OUTPUT_IDLE_MS);
+      };
       el.addEventListener('play', resume);
-      this._mediaGraph = { el, ctx, gain, resume };
+      el.addEventListener('pause', pause);
+      const dispose = () => {
+        if (idle) clearTimeout(idle);
+        el.removeEventListener('play', resume);
+        el.removeEventListener('pause', pause);
+      };
+      this._mediaGraph = { el, ctx, gain, dispose };
       return this._mediaGraph;
     } catch (err) {
       console.warn('[AudioEngine] normalized playback unavailable for this media element', err);
@@ -869,13 +892,25 @@ export class AudioEngine extends AudioEngineBase {
   _closeMediaGraph() {
     const g = this._mediaGraph;
     if (!g) return;
-    g.el.removeEventListener('play', g.resume);
+    g.dispose();
     try { g.ctx.close(); } catch { /**/ }
     this._mediaGraph = null;
   }
 
+  /**
+   * Seconds between the media clock and what is audible: the output context's latency while it
+   * runs (Chromium reports the routed element's currentTime before that latency), else 0 (a
+   * bare media element's clock already accounts for its output delay).
+   */
+  outputLatency(): number {
+    const ctx = this._mediaGraph?.ctx;
+    if (!ctx || ctx.state !== 'running') return 0;
+    const lat = Number(ctx.outputLatency) || Number(ctx.baseLatency) || 0;
+    return lat > 0 && lat < 1 ? lat : 0;
+  }
+
   _applyOutputGain() {
-    const graph = this.normalize ? this._ensureMediaGraph() : this._mediaGraph;
+    const graph = this._ensureMediaGraph();
     if (this.wavesurfer) {
       if (graph) {
         this.wavesurfer.setVolume(1);  // level is set by the GainNode
