@@ -48,7 +48,7 @@ import { openLabelNameEditor } from '../../domain/annotations.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
 import { keyScope } from '../../shared/keymap.ts';
 import { installOverlayPeekKey } from '../../ui/components/similar-review/overlay-peek.ts';
-import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, withoutAdopted, applyPlayerRestore, migrateSessionState } from '../../app/annotation-sets.ts';
+import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, withoutAdopted, applyPlayerRestore, migrateSessionState, setDisplayName, removeSetLabels, soloHidden, isSoloSet } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator } from '../../app/label-sources.ts';
 import { XenoCantoPanel, defaultSetInfo, SET_LICENSES } from '../../ui/panels/xc-panel.ts';
 import { AnnotatorProfile, onboardingPending } from '../../app/annotator-profile.ts';
@@ -1859,20 +1859,81 @@ function renameLabelSet(id, newName) {
   // Route name changes through the central updateSet path so all
   // dependent UI (label list, XC panel, recording explorer, props)
   // is notified and persistence happens via the debounced updateSet.
-  updateSet(id, { name: newName });
+  // Imported sets keep `name` (XC re-import matches by it) and get a display name.
+  const s = state.labelSets.get(id);
+  if (s && !isOwnSet(s) && id !== OWN_SOURCE_ID) updateSet(id, { displayName: newName });
+  else updateSet(id, { name: newName });
 }
 
-function deleteLabelSet(id) {
-  // BirdBox keeps its raw rows to re-fuse on slider changes: drop them with the set
-  if (state.labelSets.get(id)?.origin === BIRDBOX_ORIGIN) forgetBirdboxResults();
-  // Remove the set's labels along with the set itself — orphaned
-  // labels would otherwise float in the unassigned bucket.
-  labelStore.replaceAll(state.labels.filter((lbl) => lbl.setId !== id));
-  state.labelSets.delete(id);
-  state.hiddenSetIds?.delete(id);
-  if (state.activeSetId === id) state.activeSetId = null;
+/**
+ * Remove a set's labels from the recording on screen or from all recordings, with Undo.
+ * Other sets disappear from the registry once no recording uses them; the own set stays
+ * (it is the upload set) and only loses its labels.
+ */
+function removeLabelSet(id, where = 'all') {
+  const s = state.labelSets.get(id);
+  const own = id === OWN_SOURCE_ID;
+  const name = setDisplayName(s, own ? 'My labels' : 'set');
+  const undo = snapshotLabels();   // saves the recording on screen first
+  const activeId = recordingManager.activeId || null;
+  const r = removeSetLabels(id, where, state.labels, recordingManager.getAll(), activeId, OWN_SOURCE_ID);
+  for (const [entryId, anns] of r.entries) recordingManager.update(entryId, { annotations: anns });
+  labelStore.replaceAll(r.live);
+  if (!own && !r.usedElsewhere) {
+    // BirdBox keeps its raw rows to re-fuse on slider changes: drop them with the set
+    if (s?.origin === BIRDBOX_ORIGIN) forgetBirdboxResults();
+    state.labelSets.delete(id);
+    state.hiddenSetIds?.delete(id);
+    if (state.activeSetId === id) state.activeSetId = null;
+  } else if (s?.origin === BIRDBOX_ORIGIN && activeId) forgetBirdboxResults(activeId);
+  if (own) touchOwnSet(OWN_SOURCE_ID);
+  saveSessionSets(state);
   syncToPlayer();
+  recordingExplorer.render();
   xcPanel._rebuildSetSection?.();
+  const scope = where === 'recording' ? ' from this recording' : '';
+  const what = own ? `Cleared ${r.removed} of my labels${scope}` : `Removed "${name}"${scope} (${r.removed} label${r.removed === 1 ? '' : 's'})`;
+  showUndoToast(what, undo);
+}
+
+/** Show/hide one set on the spectrogram (both tabs). */
+function setSetHidden(id, hide) {
+  if (hide) state.hiddenSetIds.add(id);
+  else state.hiddenSetIds.delete(id);
+  labelList.setHiddenSets(state.hiddenSetIds);
+  syncToPlayer();
+  recordingExplorer.render();
+}
+
+/** "Show only this set" — again: show all. */
+function toggleSoloSet(id) {
+  state.hiddenSetIds = soloHidden(state.hiddenSetIds, [...state.labelSets.keys()], id);
+  labelList.setHiddenSets(state.hiddenSetIds);
+  syncToPlayer();
+  recordingExplorer.render();
+}
+function toggleLockSet(id, lock) {
+  const s = state.labelSets.get(id);
+  if (!s) return;
+  s.locked = lock ?? !s.locked;
+  _pushLockedIds(_computeLockedIds());
+  saveSessionSets(state);
+  labelViews.invalidate('list');
+  recordingExplorer.render();
+}
+const isSetSolo = (id) => isSoloSet(state.hiddenSetIds, [...state.labelSets.keys()], id);
+
+/** Recordings with labels of a set (the one on screen counted from the live labels). */
+function setRecordingCount(id) {
+  const activeId = recordingManager.activeId;
+  const inSet = (l) => (l?.setId || OWN_SOURCE_ID) === id;
+  let n = 0;
+  for (const e of recordingManager.getAll()) {
+    const anns = e.id === activeId ? state.labels : (e.annotations || []);
+    if (anns.some(inSet)) n++;
+  }
+  if (!activeId && state.labels.some(inSet)) n++;
+  return n;
 }
 
 function assignLabelToSet(labelId, setId) {
@@ -2415,19 +2476,18 @@ const recordingExplorer = new RecordingExplorer({
   getSetName: () => state.labelSets.get(OWN_SOURCE_ID)?.name || 'My Annotations',
   getSetStatus: () => state.labelSets.get(OWN_SOURCE_ID)?.status || 'draft',
   getOwnSetId: () => OWN_SOURCE_ID,
-  onRenameSet: (name) => renameLabelSet(OWN_SOURCE_ID, name),
+  onRenameSet: (id, name) => renameLabelSet(id, name),
+  onRemoveSet: (id) => removeLabelSet(id, 'all'),
+  onSoloSet: (id) => toggleSoloSet(id),
+  isSetSolo: (id) => isSetSolo(id),
+  onToggleLockSet: (id) => toggleLockSet(id),
   onActivate: (entry) => activateRecordingEntry(entry),
   getEntryLabels: (entry) => (entry.id === recordingManager.activeId ? state.labels : entry.annotations) || [],
   getSetInfo: (setId) => state.labelSets.get(setId),
   isSetHidden: (setId) => state.hiddenSetIds.has(setId),
   // Same rule as "Copy to mine": detections count by the call boxes still to copy
   countAdoptable: (labels, all) => adoptSources(labels, all, 'all').length,
-  onToggleSetHidden: (setId) => {
-    if (state.hiddenSetIds.has(setId)) state.hiddenSetIds.delete(setId);
-    else state.hiddenSetIds.add(setId);
-    syncToPlayer();
-    recordingExplorer.render();
-  },
+  onToggleSetHidden: (setId) => setSetHidden(setId, !state.hiddenSetIds.has(setId)),
   onAdoptSet: (setId) => {
     const undo = snapshotLabels();
     const n = adoptSetLabels(setId);
@@ -2631,8 +2691,11 @@ const labelList = new LabelList({
   getSets: () => state.labelSets,
   onCreateSet: (partial) => createLabelSet(partial),
   onRenameSet: (id, name) => renameLabelSet(id, name),
-  onDeleteSet: (id) => deleteLabelSet(id),
-  canDeleteSet: (id) => id !== OWN_SOURCE_ID,
+  onRemoveSet: (id, where) => removeLabelSet(id, where),
+  onSoloSet: (id) => toggleSoloSet(id),
+  isSetSolo: (id) => isSetSolo(id),
+  setRecordingCount: (id) => setRecordingCount(id),
+  countPending: (id) => adoptSources(state.labels.filter((l) => l.setId === id), state.labels, 'all').length,
   onAssignSet: (labelId, setId) => assignLabelToSet(labelId, setId),
   onAssignSpecies: (labelId, representative) => {
     const lbl = state.labels.find(l => l.id === labelId);
@@ -2646,7 +2709,11 @@ const labelList = new LabelList({
     syncToPlayer();
   },
   // onConvertSetToManual: (setId) => convertSetToManual(setId),  // hidden for now
-  onAdoptSet: (setId) => adoptSetLabels(setId),
+  onAdoptSet: (setId) => {
+    const undo = snapshotLabels();
+    const n = adoptSetLabels(setId);
+    if (n) showUndoToast(`Copied ${n} label${n === 1 ? '' : 's'} into my labels`, undo);
+  },
   onAdoptLabel: (labelId) => adoptOneLabel(labelId),
   // converted detections are hidden; the set menu can show them again
   adoptedToggle: {
@@ -2660,20 +2727,8 @@ const labelList = new LabelList({
   },
   onPlaySegment: (lbl) => toggleSegmentPlay(lbl),
   onOpenRefCalls: (lbl) => openRefCalls(lbl),
-  onToggleLockSet: (setId, lock) => {
-    const s = state.labelSets.get(setId);
-    if (s) {
-      s.locked = lock;
-      _pushLockedIds(_computeLockedIds());
-      labelViews.invalidate('list');
-    }
-  },
-  onToggleSetVisibility: (setId, hide) => {
-    if (hide) state.hiddenSetIds.add(setId);
-    else state.hiddenSetIds.delete(setId);
-    labelList.setHiddenSets(state.hiddenSetIds);
-    syncToPlayer();
-  },
+  onToggleLockSet: (setId, lock) => toggleLockSet(setId, lock),
+  onToggleSetVisibility: (setId, hide) => setSetHidden(setId, hide),
   onToggleSpeciesVisibility: (speciesKey, hide) => {
     if (hide) state.hiddenSpeciesKeys.add(speciesKey);
     else state.hiddenSpeciesKeys.delete(speciesKey);

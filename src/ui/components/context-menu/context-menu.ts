@@ -28,6 +28,7 @@
  * @property {boolean}     [danger]    Red/destructive styling.
  * @property {boolean}     [disabled]  Greyed out, not interactive.
  * @property {boolean}     [separator] Renders a divider line instead of an item.
+ * @property {string}      [shortcut]  Key hint shown on the right (e.g. "F2").
  */
 
 let _current: any = null;
@@ -77,6 +78,13 @@ export function showContextMenu({ x, y, items }: any) {
     labelEl.className = 'ctx-item-label';
     labelEl.textContent = item.label ?? '';
     row.appendChild(labelEl);
+
+    if (item.shortcut) {
+      const kbd = document.createElement('span');
+      kbd.className = 'ctx-item-kbd';
+      kbd.textContent = item.shortcut;
+      row.appendChild(kbd);
+    }
 
     if (!item.disabled) {
       row.addEventListener('click', () => {

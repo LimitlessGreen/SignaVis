@@ -97,3 +97,12 @@
   background: var(--color-border);
   margin: 3px 0;
 }
+
+/* ── Shortcut hint ─────────────────────────────────────────────────────── */
+.ctx-item-kbd {
+  margin-left: auto;
+  padding-left: 18px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--color-text-secondary);
+}

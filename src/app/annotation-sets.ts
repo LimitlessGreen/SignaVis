@@ -144,3 +144,48 @@ export function migrateSessionState(state: any, storage: any = prefsStorage) {
     state.labelSets = sets;
     return state;
 }
+
+/** Name shown for a set: imported sets keep their original `name` (re-import matches by it). */
+export function setDisplayName(set: any, fallback = ''): string {
+    return (set?.displayName || set?.name || fallback) as string;
+}
+
+/**
+ * Remove the labels of one set — from the recording on screen (`where: 'recording'`) or from every
+ * recording (`'all'`). Labels without a setId belong to the own set. Returns the new label arrays and
+ * whether other recordings still use the set (then its registry entry must stay).
+ */
+export function removeSetLabels(
+    setId: string, where: 'recording' | 'all',
+    live: any[], entries: { id: string; annotations?: any[] }[], activeId: string | null, ownSetId: string | null,
+) {
+    const inSet = (l: any) => (l?.setId || ownSetId) === setId;
+    const liveKept = live.filter((l) => !inSet(l));
+    let removed = live.length - liveKept.length;
+    const changed = new Map<string, any[]>();
+    let usedElsewhere = false;
+    for (const e of entries) {
+        if (e.id === activeId) continue;
+        const anns = e.annotations || [];
+        if (where === 'all') {
+            const kept = anns.filter((l) => !inSet(l));
+            if (kept.length !== anns.length) { changed.set(e.id, kept); removed += anns.length - kept.length; }
+        } else if (anns.some(inSet)) usedElsewhere = true;
+    }
+    return { live: liveKept, entries: changed, removed, usedElsewhere };
+}
+
+/** "Show only this set": hide all others, or — when it is already the only one shown — show all again. */
+export function soloHidden(hidden: ReadonlySet<string>, setIds: readonly string[], setId: string): Set<string> {
+    const others = setIds.filter((id) => id !== setId);
+    const isSolo = !hidden.has(setId) && others.length > 0 && others.every((id) => hidden.has(id));
+    const next = new Set(hidden);
+    if (isSolo) for (const id of others) next.delete(id);
+    else { next.delete(setId); for (const id of others) next.add(id); }
+    return next;
+}
+
+export function isSoloSet(hidden: ReadonlySet<string>, setIds: readonly string[], setId: string): boolean {
+    const others = setIds.filter((id) => id !== setId);
+    return !hidden.has(setId) && others.length > 0 && others.every((id) => hidden.has(id));
+}

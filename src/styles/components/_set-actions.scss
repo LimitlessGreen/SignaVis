@@ -1,0 +1,49 @@
+/* ── Label sets: always-visible row controls + action bar of the selected set (set-actions.ts) ──
+   Shared by the Project tab (.rec-set) and the Labels tab (.lt-src-head). Small but framed and at
+   normal contrast, so the actions are seen without hovering. */
+
+.set-ctl { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.set-ctl-btn {
+  display: inline-grid; place-items: center;
+  width: 22px; height: 20px; padding: 0;
+  border: 1px solid var(--color-border-strong); border-radius: 5px;
+  background: var(--input-bg-weak, transparent);
+  color: var(--color-text-primary); cursor: pointer;
+  svg { width: 13px; height: 13px; display: block; }
+  &:hover { border-color: var(--color-accent); color: var(--color-accent); }
+  &:focus-visible { outline: 1px solid var(--color-accent); outline-offset: 1px; }
+  &.is-off { color: var(--color-text-secondary); border-style: dashed; }
+}
+
+.set-bar {
+  display: flex; align-items: center; gap: 3px; flex-wrap: nowrap; min-width: 0;
+  padding: 2px 8px 6px 22px;
+}
+.set-bar-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 22px; padding: 0 6px; flex-shrink: 0;
+  border: 1px solid var(--color-border-strong); border-radius: 5px;
+  background: var(--input-bg-weak, transparent);
+  color: var(--color-text-primary);
+  font-size: 11px; font-weight: 500; white-space: nowrap; cursor: pointer;
+  svg { width: 12px; height: 12px; flex-shrink: 0; }
+  &:hover { border-color: var(--color-accent); }
+  &:focus-visible { outline: 1px solid var(--color-accent); outline-offset: 1px; }
+  &:disabled { opacity: .5; cursor: default; }
+}
+.set-bar-btn--primary {
+  color: var(--color-accent); border-color: var(--color-accent);
+  background: var(--color-accent-faint);
+}
+.set-bar-btn--danger {
+  margin-left: auto; border-color: transparent; background: none;
+  color: var(--color-danger, #ef4444);
+  &:hover { border-color: var(--color-danger, #ef4444); }
+}
+.set-rename-input { width: 100%; font-size: 11px; padding: 0 3px; }
+
+/* Labels tab: chevron collapses, header click selects the set (bar below the sticky header) */
+.lt-src-head .lt-chev { cursor: pointer; padding: 2px; margin: -2px; box-sizing: content-box; border-radius: 3px; }
+.lt-src-head .lt-chev:hover { background: var(--color-accent-faint); }
+.lt-src--selected > .lt-src-head { box-shadow: inset 2px 0 0 var(--color-accent); }
+.lt-src > .set-bar { background: var(--color-bg-tertiary); padding: 0 8px 6px 26px; }
