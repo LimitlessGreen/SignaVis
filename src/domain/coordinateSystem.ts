@@ -245,6 +245,8 @@ export class CoordinateSystem {
         }
         const freqs = this.melFreqs;
         if (cf >= freqs[this._maxBin]) return this._maxBin;
+        // Log bands start above 0 Hz: anything below the lowest one is bin 0.
+        if (cf <= freqs[0]) return 0;
         for (let i = 0; i < this._maxBin; i++) {
             if (freqs[i + 1] >= cf) {
                 const range = freqs[i + 1] - freqs[i];
