@@ -148,6 +148,13 @@ pub async fn catalog_roots(state: tauri::State<'_, CatalogState>, project_root: 
     blocking(move || aw_catalog::roots(&*cat.lock().map_err(err)?, &machine_name()).map_err(err)).await
 }
 
+/// The project has a catalog file (opening one creates it, so the UI asks first before loading at startup).
+#[tauri::command]
+pub fn catalog_exists(state: tauri::State<'_, CatalogState>, project_root: String) -> bool {
+    state.open.lock().map(|o| o.contains_key(&project_root)).unwrap_or(false)
+        || Path::new(&project_root).join(CATALOG_FILE).is_file()
+}
+
 #[tauri::command]
 pub async fn catalog_facets(state: tauri::State<'_, CatalogState>, project_root: String, filter: Filter) -> Result<Facets, String> {
     let cat = state.get(&project_root)?;

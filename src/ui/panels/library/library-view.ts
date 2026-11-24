@@ -19,6 +19,7 @@ import {
     type Thumb, type ThumbSpec,
 } from '../../../domain/catalog/thumb-grid.ts';
 import { CatalogView, type ViewChange } from '../../../domain/catalog/catalog-view.ts';
+import { chipsText, viewChips, type ChipKind } from '../../../domain/catalog/view-chips.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 import { prefs } from '../../../infrastructure/storage/prefs.ts';
 import { ImportDialog, timeZones } from './import-dialog.ts';
@@ -495,9 +496,9 @@ export class LibraryView {
     }
 
     /** Summary line (also its tooltip: the panel header may cut it off). */
-    #setStats(text: string) {
+    #setStats(text: string, message = true) {
         const el = this.#q<HTMLElement>('.lib-stats');
-        if (el) { el.textContent = text; el.title = text; }
+        if (el) { el.textContent = text; el.title = text; el.classList.toggle('is-message', message); }
     }
 
     #renderStats() {
@@ -506,7 +507,7 @@ export class LibraryView {
         const hours = f.seconds ? `${formatDuration(f.seconds)} · ` : '';
         const span = f.firstMs != null && f.lastMs != null
             ? ` · ${new Date(f.firstMs).toISOString().slice(0, 10)} – ${new Date(f.lastMs).toISOString().slice(0, 10)}` : '';
-        this.#setStats(`${f.total.toLocaleString()} recordings · ${hours}${formatBytes(f.bytes)}${span}${f.noStart ? ` · ${f.noStart} without start time` : ''}`);
+        this.#setStats(`${f.total.toLocaleString()} recordings · ${hours}${formatBytes(f.bytes)}${span}${f.noStart ? ` · ${f.noStart} without start time` : ''}`, false);
     }
 
     #renderFacets() {
@@ -645,59 +646,18 @@ export class LibraryView {
 
     /** Active filters as removable chips (above the grid). */
     #renderViewbar() {
-        const tf = this.#v.filter, f = this.#v.facets;
-        const named = (ids: number[] | undefined, vals: Facets['sites'] | undefined) =>
-            (ids ?? []).map((id) => ({ id, name: vals?.find((v) => v.id === id)?.name ?? `#${id}` }));
-        const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-        /** [kind, label, colour, id of the facet value (sites, recorders, tags)] */
-        const chips: [string, string, string?, number?][] = [];
-        if (tf.datasetId != null) {
-            const d = this.#v.datasets.find((x) => x.id === tf.datasetId);
-            chips.push(['dataset', `in ${d?.name ?? `dataset ${tf.datasetId}`}`, safeColor(d?.color) ?? undefined]);
-        }
-        for (const v of named(tf.siteIds, f?.sites)) chips.push(['site', v.name, valueColor('site', v.name), v.id]);
-        for (const v of named(tf.deviceIds, f?.devices)) chips.push(['device', v.name, valueColor('device', v.name), v.id]);
-        for (const v of named(tf.tagIds, f?.tags)) chips.push(['tag', `#${v.name}`, undefined, v.id]);
-        if (tf.pathContains) chips.push(['path', `“${tf.pathContains}”`]);
-        if (tf.hourFrom != null) chips.push(['tod', `${String(tf.hourFrom).padStart(2, '0')}–${String(tf.hourTo).padStart(2, '0')} h`]);
-        if (tf.fromMs != null || tf.toMs != null) chips.push(['period', `${tf.fromMs != null ? day(tf.fromMs) : '…'} – ${tf.toMs != null ? day(tf.toMs - 86_400_000) : '…'}`]);
-        if (tf.localDayFrom || tf.localDayTo) chips.push(['localdays', `${tf.localDayFrom ?? '…'} – ${tf.localDayTo ?? '…'} (local)`]);
-        if (tf.noSite) chips.push(['nosite', 'without site']);
-        if (tf.hasLabels != null) chips.push(['labels', tf.hasLabels ? 'with labels' : 'without labels']);
-        if (tf.hasPosition != null) chips.push(['pos', tf.hasPosition ? 'with position' : 'without position']);
-        if (tf.bbox) chips.push(['bbox', `area ${bboxLabel(tf.bbox)}`]);
-        if (tf.status) chips.push(['status', tf.status]);
-        if (tf.unassigned) chips.push(['unassigned', 'without site/recorder']);
-        if (tf.sun) chips.push(['sun', `☀ ${sunWindowLabel(tf.sun)}`]);
-        this.#chipText = chips.map((c) => c[1]).join(' · ');
+        const chips = viewChips(this.#v.filter, this.#v.facets, this.#v.datasets, valueColor);
+        this.#chipText = chipsText(chips);
+        // Split (spaces): the view bar above the spaces shows the chips.
+        if (this.parts) return;
         const host = this.#q<HTMLElement>('.lib-viewbar')!;
         host.innerHTML = chips.length
-            ? chips.map(([k, label, color, id]) => `<span class="lib-chip" data-k="${k}"${id != null ? ` data-id="${id}"` : ''}${color ? ` style="--pill:${color}"` : ''}>${esc(label)}<button data-act="chip-clear" title="Remove this filter">×</button></span>`).join('')
+            ? chips.map((c) => `<span class="lib-chip" data-k="${c.kind}"${c.id != null ? ` data-id="${c.id}"` : ''}${c.color ? ` style="--pill:${c.color}"` : ''}>${esc(c.label)}<button data-act="chip-clear" title="Remove this filter">×</button></span>`).join('')
               + (chips.length > 1 ? '<button class="lib-chip lib-chip--reset" data-act="chip-clear" data-k="all">Reset</button>' : '')
-            : `<span class="lib-muted">${(f?.total ?? 0).toLocaleString()} recordings · no filter</span>`;
+            : `<span class="lib-muted">${(this.#v.facets?.total ?? 0).toLocaleString()} recordings · no filter</span>`;
     }
 
-    #clearChip(k: string, id: number | null) {
-        const tf = this.#v.filter;
-        const drop = (ids: number[] | undefined) => (ids ?? []).filter((x) => x !== id);
-        if (k === 'all') { this.#v.filter = {}; this.#v.activeDs = null; }
-        else if (k === 'dataset') { tf.datasetId = null; if (this.#v.active?.kind === 'static') this.#v.activeDs = null; }
-        else if (k === 'sun') tf.sun = null;
-        else if (k === 'site') tf.siteIds = drop(tf.siteIds);
-        else if (k === 'device') tf.deviceIds = drop(tf.deviceIds);
-        else if (k === 'tag') tf.tagIds = drop(tf.tagIds);
-        else if (k === 'path') tf.pathContains = null;
-        else if (k === 'tod') { tf.hourFrom = null; tf.hourTo = null; }
-        else if (k === 'period') { tf.fromMs = null; tf.toMs = null; }
-        else if (k === 'localdays') { tf.localDayFrom = null; tf.localDayTo = null; }
-        else if (k === 'nosite') tf.noSite = false;
-        else if (k === 'labels') tf.hasLabels = null;
-        else if (k === 'pos') tf.hasPosition = null;
-        else if (k === 'bbox') tf.bbox = null;
-        else if (k === 'status') tf.status = null;
-        else if (k === 'unassigned') tf.unassigned = false;
-        void this.reload();
-    }
+    #clearChip(k: string, id: number | null) { void this.#v.clearChip(k as ChipKind | 'all', id); }
 
     #renderRows() {
         if (this.#view === 'grid') { this.#renderTiles(); return; }
@@ -1017,7 +977,7 @@ export class LibraryView {
         this.#importDialog = new ImportDialog({
             projectRoot: this.#o.projectRoot,
             onImported: () => {
-                this.#v.datasetsChanged();
+                this.#v.catalogChanged();
                 void this.reload();
                 // Headers + fingerprints of new files in the background (renames are recognised on the next import).
                 void catalogApi.hashStart(this.#o.projectRoot).catch(() => {}).finally(() => void this.#loadIntegrity());
@@ -1061,6 +1021,12 @@ export class LibraryView {
             onPickWeek: (siteId, week) => { this.#hideImport(); this.#pickWeek(siteId, week); },
         }).el);
     }
+
+    /** The view this library shows (its own, or the shared one it was given). */
+    get view(): CatalogView { return this.#v; }
+
+    /** "Save as dataset" (view bar): the new-dataset dialog for the current filter. */
+    saveAsDataset() { void this.#onDatasetAction('ds-new', this.el); }
 
     /** Map clicks change the shared filter (dialog: `done` closes it first). */
     #mapActions(done: () => void) {

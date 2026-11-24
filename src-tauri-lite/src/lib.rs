@@ -107,6 +107,7 @@ pub fn run() {
             catalog::catalog_import,
             catalog::catalog_profiles,
             catalog::catalog_roots,
+            catalog::catalog_exists,
             catalog::catalog_facets,
             catalog::catalog_list,
             catalog::catalog_heatmap,

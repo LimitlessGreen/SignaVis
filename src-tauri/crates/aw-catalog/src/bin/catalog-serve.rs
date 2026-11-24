@@ -144,6 +144,7 @@ fn handle(st: &mut State, cmd: &str, a: Args) -> R {
         }
         "catalog_profiles" => j(serde_json::to_value(st.cat(&a.project_root)?.profiles().map_err(e)?)),
         "catalog_roots" => j(serde_json::to_value(aw_catalog::roots(st.cat(&a.project_root)?, &machine_name()).map_err(e)?)),
+        "catalog_exists" => Ok(json!(true)),   // the test server always serves a catalog
         "catalog_facets" => j(serde_json::to_value(aw_catalog::query::facets(st.cat(&a.project_root)?, &a.filter).map_err(e)?)),
         "catalog_heatmap" => j(serde_json::to_value(aw_catalog::query::heatmap(st.cat(&a.project_root)?, &a.filter).map_err(e)?)),
         "catalog_list" => j(serde_json::to_value(aw_catalog::query::list(

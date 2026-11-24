@@ -42,6 +42,8 @@ export interface SpacesShellOptions {
     defaultActive: string;
     /** Spaces built right away, even when another one is shown (Annotate: the editor must be in the page). */
     eager?: string[];
+    /** Bar above the spaces (the current view), in every space. */
+    bar?: HTMLElement;
     /** After a space was shown (e.g. resize the player). */
     onSpaceShown?: (id: string) => void;
 }
@@ -104,6 +106,7 @@ export class SpacesShell {
             this.#tabs.appendChild(tab);
             this.#spaces.set(def.id, { def, el, tab, api: null });
         }
+        if (o.bar) this.el.prepend(o.bar);
         o.replace.replaceWith(this.el);
         this.#syncTabs();
     }
@@ -140,6 +143,12 @@ export class SpacesShell {
     }
 
     get active(): string { return this.#state.active; }
+
+    /** Put the view bar above the spaces later (the project got its catalog in this session). */
+    setBar(el: HTMLElement) {
+        this.el.querySelector(':scope > .view-bar')?.remove();
+        this.el.prepend(el);
+    }
 
     /** Make an optional space (Embeddings) available; it then stays. */
     setAvailable(id: string) {

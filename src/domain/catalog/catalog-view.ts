@@ -9,10 +9,11 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import {
-    pickRows, sameFilter,
+    isEmptyFilter, pickRows, sameFilter,
     type CatalogCursor, type CatalogFilter, type CatalogRow, type CatalogSort, type DatasetInfo,
     type Facets, type HeatCell, type Selection,
 } from './catalog-types.ts';
+import { withoutChip, type ChipKind } from './view-chips.ts';
 
 /** The part of the catalog API the view needs. */
 export interface CatalogViewApi {
@@ -51,6 +52,8 @@ export class CatalogView {
     error: string | null = null;
     /** A reload is under way (until its first page is there). */
     loading = false;
+    /** Recordings in the whole catalog (no filter); null until known. */
+    allTotal: number | null = null;
 
     /** Current row (keyboard, large view, editor); -1: none. */
     current = -1;
@@ -66,6 +69,8 @@ export class CatalogView {
     #gen = 0;
     /** Dataset counts are reloaded only after changes (a dynamic dataset over a big catalog can take a second). */
     #dsStale = true;
+    /** The catalog changed (import, first load): count all recordings again on the next reload. */
+    #allStale = true;
     #disposed = false;
 
     constructor(projectRoot: string, api: CatalogViewApi) {
@@ -108,6 +113,15 @@ export class CatalogView {
 
     /** Dataset list changed elsewhere (dialog, large view): counts are fetched on the next reload. */
     datasetsChanged() { this.#dsStale = true; }
+
+    /** Recordings were added or removed (import): the catalog total and dataset counts are fetched again. */
+    catalogChanged() { this.#dsStale = true; this.#allStale = true; }
+
+    /** Remove one filter chip (`'all'`: every one) and reload. */
+    clearChip(kind: ChipKind | 'all', id: number | null = null): Promise<void> {
+        const r = withoutChip(this.filter, this.activeDs, this.active, kind, id);
+        return this.setFilter(r.filter, { activeDs: r.activeDs });
+    }
 
     // ── Changing the query ─────────────────────────────────────────
 
@@ -155,14 +169,20 @@ export class CatalogView {
 
     async #reload(gen: number, opts: { keepPicks?: boolean }) {
         try {
-            const [facets, heat, datasets] = await Promise.all([
+            const empty = isEmptyFilter(this.filter);
+            const [facets, heat, datasets, all] = await Promise.all([
                 this.#api.facets(this.projectRoot, this.filter),
                 this.#api.heatmap(this.projectRoot, this.filter),
                 this.#dsStale || opts.keepPicks
                     ? this.#api.datasets(this.projectRoot).catch(() => this.datasets)
                     : Promise.resolve(this.datasets),
+                this.#allStale && !empty
+                    ? this.#api.facets(this.projectRoot, {}).then((f) => f.total, () => this.allTotal)
+                    : Promise.resolve(this.allTotal),
             ]);
             if (gen !== this.#gen) return;
+            this.allTotal = empty ? facets.total : all;
+            this.#allStale = false;
             this.facets = facets;
             this.heat = heat;
             this.datasets = datasets;

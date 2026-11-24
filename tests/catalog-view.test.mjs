@@ -165,3 +165,35 @@ test('dispose: no more events, late pages are dropped', async () => {
     await p;
     assert.deepEqual(seen, ['loading']);
 });
+
+test('allTotal: the whole catalog is counted once, again only after catalogChanged', async () => {
+    const { api, calls } = fakeApi(9);
+    const v = new CatalogView('/p', api);
+    await v.setFilter({ siteIds: [1] });
+    assert.equal(v.total, 3);
+    assert.equal(v.allTotal, 9);
+    const before = calls.facets;
+    await v.setFilter({ siteIds: [2] });
+    assert.equal(calls.facets - before, 1, 'no second count of the whole catalog');
+    v.catalogChanged();
+    await v.setFilter({ siteIds: [0] });
+    assert.equal(calls.facets - before, 3);
+    await v.setFilter({});
+    assert.equal(v.allTotal, 9, 'without a filter the facets are the whole catalog');
+});
+
+test('clearChip removes one part of the filter and reloads; all clears the dataset too', async () => {
+    const ds = [{ id: 4, name: 'Fixed', kind: 'static', count: 2 }];
+    const { api } = fakeApi(9, { datasets: ds });
+    const v = new CatalogView('/p', api);
+    await v.openDataset(4);
+    await v.setFilter({ ...v.filter, siteIds: [1, 2] });
+    await v.clearChip('site', 1);
+    assert.deepEqual(v.filter.siteIds, [2]);
+    assert.equal(v.activeDs, 4);
+    await v.clearChip('dataset');
+    assert.equal(v.filter.datasetId, null);
+    assert.equal(v.activeDs, null, 'a static dataset closes with its chip');
+    await v.clearChip('all');
+    assert.deepEqual(v.filter, {});
+});

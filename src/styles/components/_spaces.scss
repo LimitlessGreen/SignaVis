@@ -67,6 +67,8 @@
   .lib-viewswitch button { white-space: nowrap; }
   // Map and statistics are panels of their own here.
   [data-act="open-map"], [data-act="open-stats"] { display: none; }
+  // The view bar above the spaces shows the count; the line stays for messages (errors, analysis).
+  .lib-stats:not(.is-message) { display: none; }
 }
 
 // ── Dock theme: dockview variables on the SignaVis tokens ───────────
@@ -121,3 +123,34 @@
   .dv-tab .dv-default-tab .dv-default-tab-action { display: none; }
   .dv-groupview { border: 1px solid var(--color-border); border-radius: 6px; overflow: hidden; }
 }
+
+// ── View bar: the current view (filter chips, counts) above every space ──
+.view-bar {
+  display: flex; align-items: center; gap: 10px; flex: none;
+  min-height: 38px; padding: 4px 10px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
+  font-size: 12px;
+  &[hidden] { display: none; }
+  &.is-loading .view-bar-count { opacity: .6; }
+  svg { width: 14px; height: 14px; flex: none; }
+}
+.view-bar-title { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-secondary); font-weight: 600; }
+.view-bar-chips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.view-chip-field { color: var(--color-text-secondary); margin-right: 2px; }
+.view-bar-add {
+  height: 24px; padding: 0 10px; border-radius: 12px; cursor: pointer; font: inherit;
+  border: 1px dashed var(--color-border); background: none; color: var(--color-text-secondary);
+  &:hover { color: var(--color-text-primary); border-color: var(--color-accent); }
+}
+.view-bar-count {
+  white-space: nowrap; color: var(--color-text-secondary); font-variant-numeric: tabular-nums;
+  b { color: var(--color-text-primary); }
+}
+.view-bar-picked {
+  margin-left: 8px; color: var(--color-accent);
+  button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 2px; font-size: 14px; }
+}
+.view-bar-save { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+// The recordings panel shows no chips of its own then; in table mode its bar row would be empty.
+.lib-part--recordings:not(.lib--tiles) .lib-tilebar { display: none; }

@@ -22,6 +22,8 @@ export const catalogApi = {
         call<ImportResult>('catalog_import', { projectRoot, source, rootName, profile, importTables }),
     profiles: (projectRoot: string) => call<ProfileSpec[]>('catalog_profiles', { projectRoot }),
     roots: (projectRoot: string) => call<RootInfo[]>('catalog_roots', { projectRoot }),
+    /** The project has a catalog (asking does not create one, unlike the other calls). */
+    exists: (projectRoot: string) => call<boolean>('catalog_exists', { projectRoot }),
     facets: (projectRoot: string, filter: CatalogFilter) => call<Facets>('catalog_facets', { projectRoot, filter }),
     list: (projectRoot: string, filter: CatalogFilter, sort: CatalogSort, after: CatalogCursor | null, limit: number) =>
         call<CatalogPage>('catalog_list', { projectRoot, filter, sort, after, limit }),

@@ -3687,6 +3687,10 @@ embedMapHost.className = 'space-fill';
 let mountLibraryPanel = () => {};
 /** Spaces: a library part's panel (map, stats) became visible. */
 let libraryPartShown = (_part) => {};
+/** Spaces: the new-dataset dialog of the library (view bar "Save as dataset"). */
+let librarySaveAsDataset = () => {};
+/** Spaces: the one catalog view (filter, dataset, selection) all panels and the view bar share; null without a catalog. */
+let catalogView = null;
 let _embedMapOpened = false;
 /** Store size the hosted map was last loaded for (null: not read yet). */
 let _embedStoreKey = null;
@@ -3746,6 +3750,7 @@ if (isLite()) {
   let libView = null;
   const closeLibrary = () => { libView?.dispose(); libView?.el.remove(); libView = null; void refreshLibraryPanel(); };
   libraryPartShown = (part) => libView?.partShown(part);
+  librarySaveAsDataset = () => libView?.saveAsDataset();
   /** Spaces: the library lives in Browse (built once, stays while a recording is open in Annotate). */
   mountLibraryPanel = () => {
     const root = libRoot();
@@ -3758,10 +3763,16 @@ if (isLite()) {
       projectRoot: root,
       embedded: true,
       split: true,
+      view: catalogView ?? undefined,
       revealPart: (k) => void spaces?.reveal(`lib-${k}`),
       openRecording: (path) => openCatalogRecording(path, () => spaces?.reveal('editor')),
     });
     for (const k of LIB_PARTS) libraryHosts[k].replaceChildren(libView.parts[k]);
+    // No catalog at startup (first import now): the library's view becomes the shared one, with its bar.
+    if (!catalogView) {
+      catalogView = libView.view;
+      void makeViewBar(catalogView).then((el) => spaces?.setBar(el));
+    }
   };
   let _catalogOpenSeq = 0;
   /**
@@ -5397,7 +5408,17 @@ async function installLiteSpaces() {
   const { SPACES_FILE } = await import('../lite/spaces-state.ts');
   const workspace = document.getElementById('workspace');
   const folder = projectKind === 'folder' && projectStore?.readText ? projectStore : null;
+  // The current view above all spaces, once the project has a catalog (asking does not create one).
+  let bar = null;
+  const root = projectKind === 'folder' ? projectStore?.rootPath : null;
+  if (root && await catalogApi.exists(root).catch(() => false)) {
+    const { CatalogView } = await import('../../domain/catalog/catalog-view.ts');
+    catalogView = new CatalogView(root, catalogApi);
+    bar = await makeViewBar(catalogView);
+    void catalogView.reload();
+  }
   return SpacesShell.create({
+    bar,
     tabsBefore: fileLabel,   // fixed place right of the logo; the file name may be long
     replace: workspace,
     defaultActive: 'annotate',
@@ -5438,6 +5459,14 @@ async function installLiteSpaces() {
       : { load: async () => prefs.get(SPACES_PREF), save: async (text) => { prefs.set(SPACES_PREF, text); } },
     onSpaceShown: (id) => { if (id === 'annotate') requestAnimationFrame(() => player?.resize?.()); },
   });
+}
+/** The bar showing the current view above the spaces. */
+async function makeViewBar(view) {
+  const { ViewBar } = await import('../../ui/panels/library/view-bar.ts');
+  return new ViewBar(view, {
+    onAddFilter: () => void spaces?.reveal('lib-fields'),
+    onSaveDataset: () => void spaces?.reveal('lib-recordings').then(() => librarySaveAsDataset()),
+  }).el;
 }
 /** Keys (arrows, Enter) go to the library once Browse is shown. */
 function focusLibrarySoon() {
