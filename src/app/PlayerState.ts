@@ -206,8 +206,9 @@ export class PlayerState {
         this.d = this._queryDom(container);
         /** @type {import('../infrastructure/storage/IStorage.ts').IStorage} */
         this._storage = options.storage ?? new LocalStorageAdapter();
-        this._offChannelSelection = onChannelSelectionChange(() => this._onChannelSelectionChanged());
+        // Before any listener: invalid settings throw here, with nothing to clean up.
         const host = parseHostSpectrogramSettings(options.spectrogramSettings);
+        this._offChannelSelection = onChannelSelectionChange(() => this._onChannelSelectionChanged());
         this._presets = new PresetManager(this.d, {
             onRegenerateSpectrogram: (opts: unknown) => { if (this.audioBuffer) this._regenerateSpectrogram(opts); },
             onStage1Rebuild: () => this._rebuildStage1(),
@@ -1044,13 +1045,13 @@ export class PlayerState {
      * Spectrogram settings the host app fixes (see HostSpectrogramSettings); replaces the
      * previous ones. A loaded recording is drawn again when they changed.
      */
-    setSpectrogramSettings(settings: HostSpectrogramSettings | null) {
+    setSpectrogramSettings(settings: HostSpectrogramSettings | null, { redraw = true }: { redraw?: boolean } = {}) {
         const { dsp, contrastRangeDb } = parseHostSpectrogramSettings(settings);
         const before: Record<string, unknown> = this._presets.getCurrentPresetSettings();
         const rangeChanged = this._spectro.contrastRangeDb !== contrastRangeDb;
         this._presets.setHostSettings(dsp);
         this._spectro.contrastRangeDb = contrastRangeDb;
-        if (!this.audioBuffer) return;
+        if (!redraw || !this.audioBuffer) return;
         const after: Record<string, unknown> = this._presets.getCurrentPresetSettings();
         const changed = Object.keys({ ...before, ...after })
             .filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
@@ -1073,7 +1074,7 @@ export class PlayerState {
 
     /** Recolour the computed spectrogram (colour scheme, noise reduction, CLAHE). */
     _rebuildStage1() {
-        if (!this._spectro.hasData) return;
+        if (!this._spectro.hasData || this._spectro.externalImage) return;
         this._spectro.buildGrayscale();
         this._spectro.buildBaseImage(this._presets.currentColorScheme);
         this._drawSpectrogram();

@@ -1064,12 +1064,12 @@ export class BirdNETPlayer {
     /**
      * Sets the spectrogram settings the host app fixes (see options.spectrogramSettings),
      * replacing the previous ones; null clears them. A loaded recording is drawn again
-     * when they changed. Throws a TypeError on an unknown setting or value.
+     * when they changed, unless `redraw` is false (a new file is about to load). Throws a TypeError on an unknown setting or value.
      */
-    setSpectrogramSettings(settings: HostSpectrogramSettings | null) {
+    setSpectrogramSettings(settings: HostSpectrogramSettings | null, { redraw = true }: { redraw?: boolean } = {}) {
         parseHostSpectrogramSettings(settings);
         this.options.spectrogramSettings = settings;
-        this._state?.setSpectrogramSettings(settings);
+        this._state?.setSpectrogramSettings(settings, { redraw });
     }
 
     /** The dictionary loads only for a language other than English. */

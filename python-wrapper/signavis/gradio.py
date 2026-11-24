@@ -202,7 +202,8 @@ async function sync() {
     const key = JSON.stringify(v.spectrogram);
     if (key !== state.spectrogram) {
       state.spectrogram = key;
-      player.setSpectrogramSettings(v.spectrogram);
+      // A new file computes with them anyway; the old one must not start a run.
+      player.setSpectrogramSettings(v.spectrogram, { redraw: v.src === state.src });
     }
   }
   // Before loading, so the new spectrogram is framed as asked.

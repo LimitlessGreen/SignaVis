@@ -200,6 +200,8 @@ export class SpectrogramController extends EventTarget {
     get activeScale()         { return this._activeScale; }
     get colourScale()         { return this._colourScale; }
     get externalMode()        { return this._externalMode; }
+    /** An injected picture: no values behind it to recolour. */
+    get externalImage()       { return this._externalMode && !(this._data as Float32Array | null)?.length; }
     get externalImageConfig() { return this._externalImageConfig; }
     /** True when there is valid spectrogram data to render. */
     get hasData()             { return this._tileManager ? this._tileManager.hasTiles : (this._data !== null && this._nFrames > 0); }
