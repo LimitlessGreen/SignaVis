@@ -883,7 +883,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.dataset.id = region.id;
         el.dataset.start = String(region.start);
         el.dataset.end = String(region.end);
-        const readonlyNote = isBlocked ? ' [gesperrt]' : '';
+        const readonlyNote = isBlocked ? ' [read-only]' : '';
         el.title = `${region.species || 'Annotation'} (${region.start.toFixed(2)}s–${region.end.toFixed(2)}s)${readonlyNote}`;
         el.setAttribute('aria-label', el.title);
         const confidenceStr = region.confidence != null ? `${Math.round(region.confidence * 100)}%` : '';
