@@ -2630,7 +2630,8 @@ const labelList = new LabelList({
     // Delay so the panel is visible before scrolling + highlighting
     setTimeout(() => propsPanel.highlightLabelSection(), 60);
   },
-  onBulkEdit: (ids) => player.spectrogramLabels?._renameBulkPrompt?.(ids),
+  // Lite: several labels in the label window (M3); elsewhere the rename prompt
+  onBulkEdit: (ids) => (isLite() && ids?.length > 1 ? void openLabelModal(ids[0], ids) : player.spectrogramLabels?._renameBulkPrompt?.(ids)),
   onMultiSelectionChange: (ids) => { syncMultiSelected(ids); },
   onFocus: (id, src) => {
     player._emit?.('labelfocus', { id, source: src || 'list', interaction: 'click' });
@@ -5878,7 +5879,7 @@ if (isLite()) {
 // ── Lite: label window (Annotate v2 mockup M2) ──
 let labelModal = null;
 let _modalSearchFactory = null;
-async function openLabelModal(id) {
+async function openLabelModal(id, selection = []) {
   if (!state.labels.some((l) => l.id === id)) return false;
   const { LabelModal } = await import('../../ui/components/label-modal/label-modal.ts');
   const { selectedSamples } = await import('../../shared/channels.ts');
@@ -5900,6 +5901,23 @@ async function openLabelModal(id) {
       touchOwnSet(l.setId);
       labelStore.remove(lid);
       showUndoToast(`Deleted ${l.label || 'label'}`, undo);
+    },
+    removeMany: (ids) => {
+      const set = new Set(ids);
+      const ls = state.labels.filter((x) => set.has(x.id) && !x.readonly);
+      if (!ls.length) return;
+      const undo = snapshotLabels();
+      for (const l of ls) { touchOwnSet(l.setId); labelStore.remove(l.id); }
+      showUndoToast(`Deleted ${ls.length} labels`, undo);
+    },
+    sourceSummary: (ls) => {
+      const by = new Map();
+      for (const l of ls) {
+        const set = l.setId && l.setId !== OWN_SOURCE_ID ? state.labelSets?.get(l.setId) : null;
+        const k = l.adoptedFrom ? `accepted from ${l.adoptedFrom.origin || 'detection'}` : set ? `from ${set.name || l.origin}` : l.origin && l.origin !== 'manual' ? `from ${l.origin}` : 'drawn';
+        by.set(k, (by.get(k) || 0) + 1);
+      }
+      return [...by].map(([k, n]) => `${n} ${k}`).join(', ');
     },
     duplicate: (lid) => {
       const l = state.labels.find((x) => x.id === lid);
@@ -5943,7 +5961,7 @@ async function openLabelModal(id) {
     fileName: () => entry?.filename || entry?.name || '',
     clock: start ? (sec) => ravenClock(start, sec, sec)[1].slice(0, 11) : null,
     fields: labelFieldsOptions(),
-  }, id);
+  }, id, selection);
   labelModal.open();
   labelModal.el.addEventListener('remove', () => {}, { once: true });
   return true;

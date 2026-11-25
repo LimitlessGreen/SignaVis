@@ -6,8 +6,11 @@
 // film strip of all labels (absent hatched). Right: Fields | History (label-fields-form.ts).
 // Foot: Delete, Duplicate, Keep species + tags for next labels · "Changes save when you leave the label" · Revert, Done.
 // Every change applies at once; all changes to one label until leaving it = one undo step (host).
+// Several labels (M3): Shift/Ctrl-click in the film strip, Ctrl A, or opened with a selection → the selection
+// as tiles, fields shared by all (multi-fields-form.ts), Delete N; everything until leaving it = one undo step.
 
 import { LabelFieldsForm, type FieldsFormOptions } from './label-fields-form.ts';
+import { MultiFieldsForm, updatesFor, type MultiEdit } from './multi-fields-form.ts';
 import { getSpectrogramColor } from '../../../domain/spectrogram.ts';
 import { colorForName } from '../../../domain/annotations.ts';
 import type { SnapPatch } from '../../../domain/snapToCall.ts';
@@ -22,6 +25,8 @@ export interface LabelModalHost {
     /** One undo step for the visit of a label that changed something. */
     commitVisit: (label: any, restore: () => void) => void;
     remove: (id: string) => void;
+    /** Delete several as one undo step. */
+    removeMany?: (ids: string[]) => void;
     /** Returns the id of the copy. */
     duplicate: (id: string) => string | null;
     fitToCall: (id: string) => void;
@@ -42,6 +47,8 @@ export interface LabelModalHost {
     fileName: () => string;
     clock: ((sec: number) => string) | null;
     fields: Omit<FieldsFormOptions, 'change'>;
+    /** "2 from BirdNET, 1 drawn" for several labels. */
+    sourceSummary?: (labels: any[]) => string;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
@@ -66,7 +73,13 @@ export class LabelModal {
     private box = el('div', 'lm');
     private id: string;
     private form: LabelFieldsForm;
-    private visit: { id: string; restore: () => void; changed: boolean } | null = null;
+    private visit: { id: string; restore: () => void; changed: boolean; name?: string } | null = null;
+    /** Several labels selected (M3) when it holds more than one id. */
+    private sel = new Set<string>();
+    private multi: MultiFieldsForm;
+    /** "Play one after another": what is left to play. */
+    private queue: any[] = [];
+    private wasPlaying = false;
     private mode: 'label' | 'context' = 'label';
     private loop = false;
     private slow = false;
@@ -83,9 +96,41 @@ export class LabelModal {
     private tiles = new Map<string, HTMLCanvasElement>();
     private pending = 0;
 
-    constructor(private h: LabelModalHost, id: string) {
+    constructor(private h: LabelModalHost, id: string, selection: string[] = []) {
         this.id = id;
         this.form = new LabelFieldsForm({ ...h.fields, change: (u) => this.change(u) });
+        this.multi = new MultiFieldsForm({
+            edit: (e) => this.editAll(e),
+            speciesSearch: h.fields.speciesSearch,
+            tagPresets: h.fields.tagPresets,
+            sourceSummary: h.sourceSummary || ((ls) => `${ls.length} labels`),
+        });
+        if (selection.length > 1) this.sel = new Set(selection);
+    }
+
+    private get isMulti() { return this.sel.size > 1; }
+    /** The selected labels in film-strip order. */
+    private get selected() { return this.h.labels().filter((l) => this.sel.has(l.id)); }
+
+    private editAll(e: MultiEdit) {
+        for (const l of this.selected) if (!l.readonly) this.h.change(l.id, updatesFor(l, e));
+        if (this.visit) this.visit.changed = true;
+        this.refresh();
+    }
+
+    /** Change the selection (leaving one label or one selection ends its undo step). */
+    private select(ids: string[]) {
+        const list = this.h.labels().map((l) => l.id);
+        const next = new Set(ids.filter((x) => list.includes(x)));
+        const wasMulti = this.isMulti;
+        this.endVisit();
+        this.h.stop(); this.queue = [];
+        this.sel = next.size > 1 ? next : new Set();
+        if (next.size === 1) this.id = [...next][0];
+        if (!this.isMulti && wasMulti && !next.size) this.sel = new Set();
+        this.multi.changed.clear();
+        this.startVisit();
+        this.render();
     }
 
     get current() { return this.h.labels().find((l) => l.id === this.id) || null; }
@@ -106,6 +151,7 @@ export class LabelModal {
         cancelAnimationFrame(this.raf);
         document.removeEventListener('keydown', this.onKey, true);
         this.form.destroy();
+        this.multi.destroy();
         this.el.remove();
     }
 
@@ -115,16 +161,25 @@ export class LabelModal {
         this.pending = requestAnimationFrame(() => {
             this.pending = 0;
             if (!this.el.isConnected) return;
-            if (!this.current) this.close(); else this.render();
+            if (this.isMulti) {
+                const left = this.selected.map((l) => l.id);
+                if (left.length !== this.sel.size) { this.sel = new Set(left.length > 1 ? left : []); if (left.length === 1) this.id = left[0]; }
+                if (!this.isMulti && !this.current) { this.close(); return; }
+                this.render();
+            } else if (!this.current) this.close(); else this.render();
         });
     }
 
-    private startVisit() { this.visit = { id: this.id, restore: this.h.snapshot(), changed: false }; }
+    private startVisit() {
+        this.visit = this.isMulti
+            ? { id: '', restore: this.h.snapshot(), changed: false, name: `${this.sel.size} labels` }
+            : { id: this.id, restore: this.h.snapshot(), changed: false };
+    }
     private endVisit() {
         const v = this.visit;
         this.visit = null;
         if (v?.changed) {
-            const l = this.h.labels().find((x) => x.id === v.id);
+            const l = v.name ? { id: '', label: v.name } : this.h.labels().find((x) => x.id === v.id);
             this.h.commitVisit(l || { id: v.id }, v.restore);
         }
     }
@@ -159,6 +214,14 @@ export class LabelModal {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (typing) t.blur(); else this.close(); return; }
         if (typing) return;
         e.stopPropagation();
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); this.select(this.h.labels().map((l) => l.id)); return; }
+        if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); this.extend(e.key === 'ArrowLeft' ? -1 : 1); return; }
+        if (this.isMulti) {
+            if (e.key === 'Enter') { e.preventDefault(); this.close(); }
+            else if (e.key === ' ') { e.preventDefault(); this.togglePlay(); }
+            else if (e.key === 'Delete' || e.key === 'Del') { e.preventDefault(); this.delAll(); }
+            return;
+        }
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); this.go(e.key === 'ArrowLeft' ? -1 : 1); }
         else if (e.key === 'Enter') { e.preventDefault(); this.close(); }
         else if (e.key === ' ') { e.preventDefault(); this.togglePlay(); }
@@ -179,17 +242,54 @@ export class LabelModal {
         this.render();
     }
 
+    /** Shift ← →: add the neighbour of the selection's edge. */
+    private extend(dir: number) {
+        const list = this.h.labels();
+        const ids = this.isMulti ? [...this.sel] : [this.id];
+        const idx = ids.map((x) => list.findIndex((l) => l.id === x)).filter((i) => i >= 0);
+        if (!idx.length) return;
+        const j = dir < 0 ? Math.min(...idx) - 1 : Math.max(...idx) + 1;
+        if (j < 0 || j >= list.length) return;
+        this.select([...ids, list[j].id]);
+    }
+
+    private delAll() {
+        const ls = this.selected.filter((l) => !l.readonly);
+        if (!ls.length) return;
+        this.endVisit();
+        this.h.stop(); this.queue = [];
+        if (this.h.removeMany) this.h.removeMany(ls.map((l) => l.id));
+        else for (const l of ls) this.h.remove(l.id);
+        const left = this.h.labels();
+        this.sel = new Set();
+        if (!left.length) { this.close(); return; }
+        if (!left.some((l) => l.id === this.id)) this.id = left[0].id;
+        this.startVisit();
+        this.render();
+    }
+
     private togglePlay() {
-        if (this.h.isPlaying()) { this.h.stop(); return; }
+        if (this.h.isPlaying() || this.queue.length) { this.queue = []; this.h.stop(); return; }
+        if (this.isMulti) { this.queue = [...this.selected]; this.playNext(); return; }
         const l = this.current;
         if (!l) return;
         const [a, b] = this.mode === 'label' ? [l.start, l.end] : [Math.max(0, l.start - CONTEXT), l.end + CONTEXT];
         this.h.play(a, b, { loop: this.loop, slow: this.slow });
     }
 
+    /** One after another; Loop starts over. */
+    private playNext() {
+        if (!this.queue.length && this.loop && this.isMulti) this.queue = [...this.selected];
+        const l = this.queue.shift();
+        if (!l) return;
+        this.wasPlaying = false;
+        this.h.play(l.start, l.end, { loop: false, slow: this.slow });
+    }
+
     // ── rendering ──
 
     private render() {
+        if (this.isMulti) { this.renderMulti(); return; }
         const l = this.current;
         if (!l) return;
         const list = this.h.labels();
@@ -197,6 +297,108 @@ export class LabelModal {
         this.box.replaceChildren(this.head(l, i, list.length), this.body(l, list), this.foot(l));
         this.form.render(l);
         requestAnimationFrame(() => this.draw(l, list));
+    }
+
+    // ── several labels (M3) ──
+
+    private renderMulti() {
+        const ls = this.selected;
+        const list = this.h.labels();
+        // head
+        const h = el('div', 'lm-head');
+        const t = el('div', 'lm-title');
+        t.append(el('span', 'lm-kind', '☑'), el('b', '', `${ls.length} labels selected`));
+        const nav = el('div', 'lm-nav');
+        const x = btn('lm-x', '✕', 'Close (Esc)');
+        x.onclick = () => this.close();
+        nav.append(el('span', 'lm-kbd', 'Ctrl A'), el('span', '', `all ${list.length} ·`), el('span', 'lm-kbd', 'Shift ← →'), el('span', '', 'extend'), x);
+        h.append(t, el('span', 'lm-file', this.h.fileName()), nav);
+        // body: tool bar, tiles, film strip | fields
+        const b = el('div', 'lm-body');
+        const media = el('div', 'lm-media');
+        const tb = el('div', 'lm-tb');
+        this.playBtn = btn('lm-play', '▶', 'Play one after another (Space)');
+        this.playBtn.onclick = () => this.togglePlay();
+        const seq = btn('on', 'Play one after another');
+        seq.onclick = () => this.togglePlay();
+        const loop = btn(this.loop ? 'on' : '', 'Loop');
+        loop.onclick = () => { this.loop = !this.loop; this.render(); };
+        const fitAble = ls.filter((l) => !l.readonly && this.h.canFit(l));
+        const fit = btn('', '<span class="lm-ic">⛶</span> Fit all to calls', 'Fit each box to its call');
+        fit.disabled = !fitAble.length;
+        fit.onclick = () => { if (this.visit) this.visit.changed = true; for (const l of fitAble) this.h.fitToCall(l.id); this.render(); };
+        tb.append(this.playBtn, seq, loop, el('span', 'lm-gap'), fit);
+        const grid = el('div', 'lm-grid');
+        for (const l of ls) grid.append(this.tile(l));
+        media.append(tb, grid, this.film(this.current, list));
+        const side = el('div', 'lm-side');
+        const tabs = el('div', 'lm-tabs');
+        tabs.append(btn('on', `Fields · ${ls.length} labels`), el('span', 'lm-tabs-r', 'only changed fields are written'));
+        const pane = el('div', 'lm-pane');
+        this.multi.render(ls);
+        pane.append(this.multi.el);
+        side.append(tabs, pane);
+        b.append(media, side);
+        // foot
+        const f = el('div', 'lm-foot');
+        const editable = ls.filter((l) => !l.readonly).length;
+        const del = btn('lm-del', `Delete ${editable} <span class="lm-kbd">Del</span>`);
+        del.disabled = !editable;
+        del.onclick = () => this.delAll();
+        const n = this.multi.changed.size;
+        const ro = ls.length - editable;
+        const note = el('span', 'lm-note', `${n ? `${n} field${n > 1 ? 's' : ''} changed · one undo step` : 'Changes apply to all selected'}${ro ? ` · ${ro} read-only` : ''}`);
+        const revert = btn('', 'Revert', 'Back to how these labels were when you selected them');
+        revert.disabled = !this.visit?.changed;
+        revert.onclick = () => {
+            if (!this.visit) return;
+            this.visit.restore();
+            this.multi.changed.clear();
+            this.startVisit();
+            this.render();
+        };
+        const done = btn('lm-done', 'Done <span class="lm-kbd">Enter</span>');
+        done.onclick = () => this.close();
+        f.append(del, el('span', 'lm-gap'), note, revert, done);
+        this.box.replaceChildren(h, b, f);
+    }
+
+    /** A selected label as a tile: its call with a little context, the box, name and time. */
+    private tile(l: any) {
+        const card = el('button', 'lm-card' + (l.polarity === 'absent' ? ' absent' : ''));
+        card.type = 'button';
+        card.title = 'Open this label';
+        card.onclick = () => this.select([l.id]);
+        const wrap = el('div', 'lm-card-img');
+        const c = el('canvas');
+        c.width = 320; c.height = 220;
+        wrap.append(c);
+        const w = this.tileWin(l.start, l.end, l.freqMin, l.freqMax, l.fullBand === true);
+        const full = l.fullBand === true || l.freqMin == null || l.freqMax == null;
+        const bx = el('div', 'lm-card-box');
+        const col = l.color || colorForName(l.label || '');
+        bx.style.borderColor = col;
+        bx.style.left = `${((l.start - w.a) / (w.b - w.a)) * 100}%`;
+        bx.style.width = `${((l.end - l.start) / (w.b - w.a)) * 100}%`;
+        bx.style.top = full ? '0' : `${((w.hi - l.freqMax) / (w.hi - w.lo)) * 100}%`;
+        bx.style.height = full ? '100%' : `${((l.freqMax - l.freqMin) / (w.hi - w.lo)) * 100}%`;
+        wrap.append(bx);
+        const cap = el('div', 'lm-card-cap');
+        const sw = el('span', 'lm-sw');
+        sw.style.background = col;
+        cap.append(sw, el('span', '', `${l.label || '–'}${l.polarity === 'absent' ? ' · absent' : l.tags?.soundType ? ` · ${l.tags.soundType}` : ''}`),
+            el('span', 'lm-m', this.fmt(l.start).slice(0, 8)));
+        card.append(wrap, cap);
+        requestAnimationFrame(() => this.drawPatch(c, l.start, l.end, l.freqMin, l.freqMax, false));
+        return card;
+    }
+
+    /** Time/frequency window of a tile: the label with a little context and its band (+ margin). */
+    private tileWin(start: number, end: number, fLo: number | null, fHi: number | null, fullBand = false) {
+        const pad = Math.max(0.15, (end - start) * 0.15);
+        let lo = 0, hi = this.h.maxFreq();
+        if (!fullBand && fLo != null && fHi != null && fHi > fLo) { const m = (fHi - fLo) * 0.3 + 300; lo = Math.max(0, fLo - m); hi = Math.min(hi, fHi + m); }
+        return { a: Math.max(0, start - pad), b: end + pad, lo, hi };
     }
 
     private head(l: any, i: number, n: number) {
@@ -286,15 +488,25 @@ export class LabelModal {
         f.append(el('span', 'lm-film-l', 'Labels'));
         const strip = el('div', 'lm-film-s');
         for (const l of list) {
-            const t = el('button', 'lm-ft' + (l.id === cur.id ? ' cur' : '') + (l.polarity === 'absent' ? ' absent' : ''));
+            const inSel = this.isMulti ? this.sel.has(l.id) : l.id === cur?.id;
+            const t = el('button', 'lm-ft' + (inSel ? (this.isMulti ? ' sel' : ' cur') : '') + (l.polarity === 'absent' ? ' absent' : ''));
             t.type = 'button';
+            t.title = 'Click: open · Shift/Ctrl-click: select several';
+            if (this.isMulti && inSel) t.append(el('span', 'lm-ft-ck', '✓'));
             const c = el('canvas');
             c.width = 118; c.height = 52;
             t.append(c, el('span', 'lm-ft-t', this.fmt(l.start).slice(0, 8)));
             const nm = el('span', 'lm-ft-n', `${l.label || '–'}${l.polarity === 'absent' ? ' · absent' : l.tags?.soundType ? ` · ${l.tags.soundType}` : ''}`);
             nm.style.background = l.color || colorForName(l.label || '');
             t.append(nm);
-            t.onclick = () => this.goto(l.id);
+            t.onclick = (ev) => {
+                if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
+                    const ids = new Set(this.isMulti ? this.sel : [this.id]);
+                    if (ids.has(l.id)) ids.delete(l.id); else ids.add(l.id);
+                    this.select([...ids]);
+                } else if (this.isMulti) this.select([l.id]);
+                else this.goto(l.id);
+            };
             strip.append(t);
             const key = `${l.start}|${l.end}|${l.freqMin}|${l.freqMax}|${l.fullBand === true}`;
             const cached = this.tiles.get(key);
@@ -302,7 +514,7 @@ export class LabelModal {
             else requestAnimationFrame(() => { this.drawPatch(c, l.start, l.end, l.freqMin, l.freqMax, l.fullBand === true); this.tiles.set(key, c); });
         }
         f.append(strip);
-        queueMicrotask(() => strip.querySelector('.cur')?.scrollIntoView({ block: 'nearest', inline: 'center' }));
+        queueMicrotask(() => strip.querySelector('.cur, .sel')?.scrollIntoView({ block: 'nearest', inline: 'center' }));
         return f;
     }
 
@@ -443,11 +655,7 @@ export class LabelModal {
         ctx.fillRect(0, 0, c.width, c.height);
         // tiles: the label with a little context and its band (+ margin); the crop: exactly [start, end]
         let a = start, b2 = end, lo = 0, hi = this.h.maxFreq();
-        if (!keepBand) {
-            const pad = Math.max(0.15, (end - start) * 0.15);
-            a = Math.max(0, start - pad); b2 = end + pad;
-            if (fLo != null && fHi != null && fHi > fLo) { const m = (fHi - fLo) * 0.3 + 300; lo = Math.max(0, fLo - m); hi = Math.min(hi, fHi + m); }
-        } else if (fHi != null) { hi = fHi; lo = fLo ?? 0; }
+        if (!keepBand) ({ a, b: b2, lo, hi } = this.tileWin(start, end, fLo, fHi)); else if (fHi != null) { hi = fHi; lo = fLo ?? 0; }
         const p = this.h.patch(a, Math.min(b2, a + MAX_SPAN));
         if (!p) return;
         const img = ctx.createImageData(c.width, c.height);
@@ -503,7 +711,10 @@ export class LabelModal {
         this.raf = requestAnimationFrame(() => this.tick());
         const ph = this.cropEl.querySelector<HTMLElement>('.lm-ph');
         const playing = this.h.isPlaying();
-        if (this.playBtn) { this.playBtn.textContent = playing ? '❚❚' : '▶'; }
+        if (playing) this.wasPlaying = true;
+        else if (this.wasPlaying && this.queue.length + (this.loop ? 1 : 0) > 0 && this.isMulti) { this.wasPlaying = false; this.playNext(); }
+        else if (this.wasPlaying) this.wasPlaying = false;
+        if (this.playBtn) { this.playBtn.textContent = playing || this.queue.length ? '❚❚' : '▶'; }
         if (!ph) return;
         const t = this.h.currentTime();
         const { t0, t1 } = this.win;

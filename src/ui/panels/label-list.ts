@@ -268,6 +268,10 @@ export class LabelList {
     };
     if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); pick(cur + 1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); pick(cur < 0 ? 0 : cur - 1); }
+    else if (e.key === 'Enter' && this._enterEdits && this._multiSelectedIds?.size > 1 && this._onBulkEdit) {
+      e.preventDefault(); e.stopPropagation();
+      this._onBulkEdit([...this._multiSelectedIds].filter((id) => !this._lockedIds?.has(id)));
+    }
     else if (e.key === 'Enter' && cur >= 0 && this._enterEdits && this._onEdit) {
       // Lite: Enter opens the label window, Space plays
       e.preventDefault(); e.stopPropagation();
@@ -1120,7 +1124,9 @@ export class LabelList {
     this._bulkToolbar.appendChild(el('span', 'label-multi-info', `${count} selected`));
     const editableIds = [...this._multiSelectedIds].filter((id) => !this._lockedIds.has(id));
     if (this._onBulkEdit && editableIds.length > 0) {
-      const btn = el('button', 'tb-btn', editableIds.length < count ? `Rename ${editableIds.length} editable` : 'Rename selected');
+      // Lite (enterEdits): the label window edits several; elsewhere a rename prompt
+      const verb = this._enterEdits ? 'Edit' : 'Rename';
+      const btn = el('button', 'tb-btn', editableIds.length < count ? `${verb} ${editableIds.length} editable` : `${verb} selected`);
       btn.addEventListener('click', () => this._onBulkEdit(editableIds));
       this._bulkToolbar.appendChild(btn);
     }
