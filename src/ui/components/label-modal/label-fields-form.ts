@@ -21,6 +21,8 @@ export interface FieldsFormOptions {
     channels: number;
     /** Text for the SOURCE section. */
     source: (label: any) => { from: string; author: string; history?: number };
+    /** Signal-to-noise text ("12.3 dB", "Computing…"); default: the label's stored `snr`. */
+    snr?: (label: any) => string;
     /** "History (n)" link. */
     showHistory?: () => void;
 }
@@ -321,6 +323,12 @@ export class LabelFieldsForm {
             b.append(' · ', h);
         }
         p.append(a, b);
+        const snr = this.o.snr ? this.o.snr(l) : (Number.isFinite(l.snr) ? `${Number(l.snr).toFixed(1)} dB` : '');
+        if (snr) {
+            const c = el('div');
+            c.append(el('span', 'lf-m', 'SNR '), snr);
+            p.append(c);
+        }
         s.append(p);
         return s;
     }

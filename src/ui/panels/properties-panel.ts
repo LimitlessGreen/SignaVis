@@ -171,6 +171,10 @@ export class PropertiesPanel {
     (this as any)._formOpts = fields;
     (this as any)._form?.destroy();
     const opts = Object.create(fields);
+    opts.snr = (l: any) => {
+      const e = this._snrCache.get(l.id) ?? (Number.isFinite(l.snr) ? { status: 'done', value: l.snr } : undefined);
+      return e ? this._formatSnr(e) : '';
+    };
     opts.change = (u: Record<string, any>) => {
       const l = this._pinnedLabel;
       if (l && !l.readonly && !this._lockedIds.has(l.id)) this.onChange?.(l.id, u);
@@ -289,6 +293,7 @@ export class PropertiesPanel {
       this._snrCache.set(id, { status });
     }
     // Fast path: update the cell directly without rebuilding the whole panel.
+    if (this.displayedLabel?.id === id && (this as any)._form) { this._renderLabel(); return; }
     if (this.displayedLabel?.id === id && this._snrDd) {
       this._snrDd.textContent = this._formatSnr(this._snrCache.get(id));
     }
