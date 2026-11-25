@@ -21,6 +21,7 @@ import { buildQualityLight } from '../components/quality-light.ts';
 import { appPrompt } from '../components/modal/dialogs.ts';
 import { ANNOTA_FIELDS, ANNOTA_FIELD_KEYS, PROP_FIELDS, formatAnnotaValue, toYN } from '../../domain/labelFields.ts';
 import { prefs } from '../../infrastructure/storage/prefs.ts';
+import { LabelFieldsForm, type FieldsFormOptions } from '../components/label-modal/label-fields-form.ts';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -160,6 +161,23 @@ export class PropertiesPanel {
     this.onEditSet = null;
 
     this._build();
+  }
+
+  /**
+   * Lite (Annotate v2): show the label with the label window's field list (one component, no second editor).
+   * `fields` without `change` – changes go to `onChange`. Getters on `fields` stay live (tag presets, channels…).
+   */
+  useFieldsForm(fields: Omit<FieldsFormOptions, 'change'>) {
+    (this as any)._formOpts = fields;
+    (this as any)._form?.destroy();
+    const opts = Object.create(fields);
+    opts.change = (u: Record<string, any>) => {
+      const l = this._pinnedLabel;
+      if (l && !l.readonly && !this._lockedIds.has(l.id)) this.onChange?.(l.id, u);
+    };
+    (this as any)._form = new LabelFieldsForm(opts);
+    this._renderSig = null;
+    this._renderLabel();
   }
 
   /** Provide or update the species search factory after construction. */
@@ -476,6 +494,18 @@ export class PropertiesPanel {
     }
 
     this._snrDd = null;
+    const form = (this as any)._form as LabelFieldsForm | undefined;
+    if (form) {
+      form.render(editable ? lbl : { ...lbl, readonly: true });
+      this._lblBody.appendChild(form.el);
+      if (isLocked) {
+        const hint = document.createElement('div');
+        hint.className = 'props-locked-hint';
+        hint.textContent = '🔒 Label is locked — unlock the set to edit.';
+        this._lblBody.appendChild(hint);
+      }
+      return;
+    }
     this._lblBody.appendChild(this._buildLabelGrid(lbl, editable));
     if (isLocked && !isHover) {
       const hint = document.createElement('div');
@@ -493,6 +523,13 @@ export class PropertiesPanel {
    */
   _patchValues(lbl: any, editable: any) {
     const active = document.activeElement;
+    const form = (this as any)._form as LabelFieldsForm | undefined;
+    if (form) {
+      // keep the field being typed in; otherwise draw the values again
+      if (!(active && form.el.contains(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))) form.render(editable ? lbl : { ...lbl, readonly: true });
+      this._renderSet();
+      return;
+    }
 
     if (editable) {
       for (const f of LABEL_FIELDS) {

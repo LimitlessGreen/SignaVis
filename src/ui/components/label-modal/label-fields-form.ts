@@ -253,8 +253,11 @@ export class LabelFieldsForm {
         // the y/n fields in one row: "Seen y n  Playback y n  Overlap y n"
         const yn = el('div', 'lf-yn');
         ANNOTA_FIELDS.filter((f) => f.kind === 'yn').forEach((f, i) => {
-            if (i) yn.append(el('span', 'lf-yn-name', f.short));
-            yn.append(seg([{ value: 'y', text: 'y' }, { value: 'n', text: 'n' }], toYN(tags[f.key]),
+            // name and buttons stay together when the row wraps (narrow Properties panel)
+            const pair = el('span', 'lf-yn-pair');
+            if (i) pair.append(el('span', 'lf-yn-name', f.short));
+            yn.append(pair);
+            pair.append(seg([{ value: 'y', text: 'y' }, { value: 'n', text: 'n' }], toYN(tags[f.key]),
                 (v) => setTag(f.key, toYN(tags[f.key]) === v ? '' : v), ro));
         });
         const ynFirst = ANNOTA_FIELDS.find((f) => f.kind === 'yn');

@@ -5834,6 +5834,33 @@ async function decideSuggestions(list, d, { advance = false } = {}) {
   return n;
 }
 
+/** Options of the label field list (label window M2 and Properties panel in Lite); getters stay live. */
+function labelFieldsOptions() {
+  return {
+    get speciesSearch() { return _modalSearchFactory ? (onSelect) => _modalSearchFactory(null, onSelect) : null; },
+    get tagPresets() { return player.getTagPresets?.() || []; },
+    get channels() { return player._state?.audioBuffer?.numberOfChannels || 1; },
+    get clock() {
+      const start = player.recordingStart;
+      return start && ravenClockFn ? (sec) => ravenClockFn?.(start, sec, sec)[1].slice(0, 11) : null;
+    },
+    source: (l) => {
+      const set = l.setId && l.setId !== OWN_SOURCE_ID ? state.labelSets?.get(l.setId) : null;
+      const from = l.adoptedFrom
+        ? `${l.adoptedFrom.origin || 'detection'}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''} · accepted ${l.createdAt ? new Date(l.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}`
+        : set ? `${set.name || l.origin}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''}`
+        : l.origin && l.origin !== 'manual' ? `${l.origin}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''}` : 'drawn by hand';
+      const edited = l.updatedAt ? ` · edited ${new Date(l.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+      return { from, author: `${l.author || 'you'}${edited}` };
+    },
+  };
+}
+let ravenClockFn = null;
+if (isLite()) {
+  void import('../../domain/recordingTime.ts').then((m) => { ravenClockFn = m.ravenClock; });
+  propsPanel.useFieldsForm(labelFieldsOptions());
+}
+
 // ── Lite: label window (Annotate v2 mockup M2) ──
 let labelModal = null;
 let _modalSearchFactory = null;
@@ -5901,20 +5928,7 @@ async function openLabelModal(id) {
     maxFreq: () => (ab()?.sampleRate || 48000) / 2,
     fileName: () => entry?.filename || entry?.name || '',
     clock: start ? (sec) => ravenClock(start, sec, sec)[1].slice(0, 11) : null,
-    fields: {
-      speciesSearch: _modalSearchFactory ? (onSelect) => _modalSearchFactory(null, onSelect) : null,
-      tagPresets: player.getTagPresets?.() || [],
-      channels: ab()?.numberOfChannels || 1,
-      source: (l) => {
-        const set = l.setId && l.setId !== OWN_SOURCE_ID ? state.labelSets?.get(l.setId) : null;
-        const from = l.adoptedFrom
-          ? `${l.adoptedFrom.origin || 'detection'}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''} · accepted ${l.createdAt ? new Date(l.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}`
-          : set ? `${set.name || l.origin}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''}`
-          : l.origin && l.origin !== 'manual' ? `${l.origin}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''}` : 'drawn by hand';
-        const edited = l.updatedAt ? ` · edited ${new Date(l.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
-        return { from, author: `${l.author || 'you'}${edited}` };
-      },
-    },
+    fields: labelFieldsOptions(),
   }, id);
   labelModal.open();
   labelModal.el.addEventListener('remove', () => {}, { once: true });
