@@ -104,6 +104,16 @@
 }
 .similar-reviewing .spectrogram-label-region--similar:not(.spectrogram-label-region--reviewing) { opacity: var(--label-dimmed); }
 
+/* BirdNET suggestions already judged (Suggestions panel): rejected hatched + faded, unsure dotted.
+   Doubled classes: win over the lane / selected styles. */
+.spectrogram-label-region.spectrogram-label-region--rejected.spectrogram-label-region--rejected,
+.annotation-region.annotation-region--rejected.annotation-region--rejected {
+    opacity: var(--label-dimmed);
+    background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--label-c, currentColor) 50%, transparent) 0 2px, transparent 2px 6px);
+}
+.spectrogram-label-region.spectrogram-label-region--unsure.spectrogram-label-region--unsure,
+.annotation-region.annotation-region--unsure.annotation-region--unsure { border-style: dotted; border-bottom-style: dotted; }
+
 /* ── Name tag: outside, above the box ── */
 .spectrogram-label-text {
     @include label-tag;
@@ -600,3 +610,14 @@
 /* Snap preview: where the box comes from (BirdBox call box / signal) */
 .snap-src { font-weight: 700; letter-spacing: 0.02em; }
 .snap-box--detector .snap-src { color: var(--snap); }
+
+/* Judged suggestions on a lane (after the lane block: wins over its background / border) */
+.spectrogram-label-region.spectrogram-label-region--lane.spectrogram-label-region--lane {
+    &.spectrogram-label-region--rejected {
+        opacity: var(--label-dimmed);
+        background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--label-c) 50%, transparent) 0 2px, transparent 2px 6px);
+    }
+    &.spectrogram-label-region--unsure,
+    &.spectrogram-label-region--unsure.selected,
+    &.spectrogram-label-region--unsure.focused { border-bottom-style: dotted; }
+}

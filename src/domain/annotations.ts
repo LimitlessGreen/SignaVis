@@ -869,6 +869,8 @@ export class AnnotationLayer extends AnnotationLayerBase {
         // Machine detections (BirdNET / BirdBox): locked, but no dashed read-only frame.
         if (region.origin && region.origin !== 'manual' && region.origin !== 'xeno-canto') el.classList.add('suggestion');
         if (region.origin === 'Similar') el.classList.add('annotation-region--similar');
+        // A BirdNET suggestion already judged (app/suggestions.ts)
+        if (region.review === 'rejected' || region.review === 'unsure') el.classList.add(`annotation-region--${region.review}`);
         if (this._liveLinkedId && region.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -1146,6 +1148,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             readonly: annotation?.readonly === true,
             origin: annotation?.origin || '',
             aiSuggested: annotation?.aiSuggested ?? null,
+            ...(annotation?.review === 'rejected' || annotation?.review === 'unsure' ? { review: annotation.review } : {}),
             recordingId: annotation?.recordingId ?? null,
             // Time-only detection (BirdNET): keeps its species colour (label design)
             fullBand: annotation?.fullBand === true,
@@ -1585,6 +1588,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (label.origin === 'Similar') el.classList.add('spectrogram-label-region--similar');
         // The one under review (similar-review.ts): stands out, and resizable for fine corrections
         if (label.origin === 'Similar' && (label as any).reviewing) el.classList.add('spectrogram-label-region--reviewing');
+        // A BirdNET suggestion already judged (app/suggestions.ts): rejected hatched, unsure dotted
+        const review = (label as any).review;
+        if (review === 'rejected' || review === 'unsure') el.classList.add(`spectrogram-label-region--${review}`);
         const isLive = !!this._liveLinkedId && label.id === this._liveLinkedId;
         if (isLive) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
@@ -3374,6 +3380,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             readonly: label?.readonly === true,
             // A similar-call suggestion under review (similar-review.ts): highlighted
             ...((label?.similar ? label.similar.active === true : label?.reviewing === true) ? { reviewing: true } : {}),
+            ...(label?.review === 'rejected' || label?.review === 'unsure' ? { review: label.review } : {}),
             aiSuggested: label?.aiSuggested ?? null,
             recordingId: label?.recordingId ?? null,
             ...labelProps(label),   // channel, … (domain/labelFields.ts)
