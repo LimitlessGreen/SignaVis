@@ -124,8 +124,11 @@ fn where_depth(cat: &Catalog, f: &Filter, skip: Skip, depth: usize) -> Result<(S
         push(format!("({LOCAL_HOUR} >= ? {op} {LOCAL_HOUR} < ?)"), vec![Box::new(a), Box::new(b)], &mut p);
     }
     if let Some(s) = &f.path_contains {
-        push("a.rel_path LIKE ? ESCAPE '\\'".into(),
-            vec![Box::new(format!("%{}%", s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")))], &mut p);
+        // Every word must occur somewhere in the path ("sk17 01_01"), in any order.
+        for w in s.split_whitespace() {
+            push("a.rel_path LIKE ? ESCAPE '\\'".into(),
+                vec![Box::new(format!("%{}%", w.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")))], &mut p);
+        }
     }
     match f.has_labels {
         Some(true) => push("EXISTS (SELECT 1 FROM label l WHERE l.recording_id = r.id)".into(), vec![], &mut p),
@@ -523,6 +526,18 @@ mod tests {
         let cat = fixture();
         assert_eq!(facets(&cat, &Filter { path_contains: Some("loose".into()), ..Default::default() }).unwrap().total, 1);
         assert_eq!(facets(&cat, &Filter { path_contains: Some("%".into()), ..Default::default() }).unwrap().total, 0);
+    }
+
+    #[test]
+    fn path_filter_words_all_match_in_any_order() {
+        let cat = fixture();
+        let n = |q: &str| facets(&cat, &Filter { path_contains: Some(q.into()), ..Default::default() }).unwrap().total;
+        let one_site = n("S2/");
+        assert_eq!(one_site, 24);
+        assert_eq!(n("S2/ _050000"), 1, "both words");
+        assert_eq!(n("_050000 S2/"), 1, "any order");
+        assert_eq!(n("  "), 49, "blank = no filter");
+        assert_eq!(n("S2/ loose"), 0);
     }
 
     #[test]
