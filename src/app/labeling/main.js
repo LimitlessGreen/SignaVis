@@ -5812,6 +5812,9 @@ async function decideSuggestions(list, d, { advance = false } = {}) {
     // the most confident window of each suggestion stands for it (a run is one call series)
     const picks = list.map((s) => [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0]);
     const live = picks.map((w) => state.labels.find((l) => l.id === w.id)).filter(Boolean);
+    // accepting after a rejection replaces its absent label
+    const winIds = new Set(list.flatMap((s) => s.windows.map((w) => String(w.id))));
+    for (const c of state.labels.filter((l) => l.setId === OWN_SOURCE_ID && l.polarity === 'absent' && winIds.has(String(l.adoptedFrom?.id)))) labelStore.remove(c.id);
     const src = adoptSources(live.map(({ review, ...l }) => l), state.labels, 'best');
     if (src.length) {
       labelStore.add(adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets)));
@@ -5824,6 +5827,15 @@ async function decideSuggestions(list, d, { advance = false } = {}) {
     const copies = state.labels.filter((l) => l.setId === OWN_SOURCE_ID && ids.has(String(l.adoptedFrom?.id)));
     for (const c of copies) labelStore.remove(c.id);
     for (const s of list) for (const w of setReview(s, d)) { labelStore.patch(w.id, { review: w.review }); n += 1; }
+    // rejected: an absent label in my labels says "checked, not there" (exports; hidden in the views)
+    if (d === 'rejected' && OWN_SOURCE_ID) {
+      const picks = list.map((s) => [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0]);
+      const live = picks.map((w) => state.labels.find((l) => l.id === w.id)).filter(Boolean).map(({ review, ...l }) => l);
+      if (live.length) {
+        labelStore.add(adoptLabels(live, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets)).map((c) => ({ ...c, polarity: 'absent' })));
+        touchOwnSet(OWN_SOURCE_ID);
+      }
+    }
   }
   const verb = { accepted: 'Accepted', rejected: 'Rejected', unsure: 'Marked unsure', open: 'Reopened' }[d];
   showUndoToast(`${verb} ${list.length === 1 ? list[0].species : `${list.length} suggestions`}`, undo);

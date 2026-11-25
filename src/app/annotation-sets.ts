@@ -90,7 +90,8 @@ function adoptKey(id: any, box: any) {
 export function adoptedSourceIds(existing: any[], targetSetId: string): Set<string> {
     const ids = new Set<string>();
     for (const l of existing || []) {
-        if (l?.setId === targetSetId && l.adoptedFrom?.id != null) ids.add(String(l.adoptedFrom.id));
+        // an absent copy records a rejection: the detection stays visible (as rejected)
+        if (l?.setId === targetSetId && l.adoptedFrom?.id != null && l.polarity !== 'absent') ids.add(String(l.adoptedFrom.id));
     }
     return ids;
 }
@@ -98,8 +99,10 @@ export function adoptedSourceIds(existing: any[], targetSetId: string): Set<stri
 /** `labels` without the detections already adopted into `targetSetId`. */
 export function withoutAdopted(labels: any[], targetSetId: string): any[] {
     const ids = adoptedSourceIds(labels, targetSetId);
-    if (!ids.size) return labels;
-    return labels.filter((l) => l?.setId === targetSetId || !ids.has(String(l?.id)));
+    // absent copies of rejected detections are kept but not drawn (the detection shows the rejection)
+    const rejectedCopy = (l: any) => l?.setId === targetSetId && l.polarity === 'absent' && l.adoptedFrom?.id != null;
+    if (!ids.size && !labels.some(rejectedCopy)) return labels;
+    return labels.filter((l) => (l?.setId === targetSetId ? !rejectedCopy(l) : !ids.has(String(l?.id))));
 }
 
 /**
