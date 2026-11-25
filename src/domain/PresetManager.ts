@@ -36,6 +36,8 @@ export interface PresetManagerCallbacks {
 const LS_USER_PRESETS  = 'aw-user-presets';
 const LS_FAV_PRESET    = 'aw-favourite-preset';
 const LS_LAST_SETTINGS = 'aw-last-settings';
+/** Preset the last settings were saved under ('' = Custom), so a restart shows the right name. */
+const LS_LAST_PRESET = 'aw-last-preset';
 
 export class PresetManager {
     value: any;
@@ -282,15 +284,25 @@ export class PresetManager {
                 ? this.loadUserPresets()[fav.slice(5)]
                 : DSP_PROFILES[fav];
         }
-        if (!p) p = this.loadLastSettings();
+        let fromLast = false;
+        if (!p) { p = this.loadLastSettings(); fromLast = !!p; }
         if (!p) {
             const defaultKey = this.#d.presetSelect?.value || this.#defaultPreset;
             p = DSP_PROFILES[defaultKey];
         }
         if (!p) return;
         this.#applyControls(p);
+        // Last-used settings: show the preset they were saved under ("Custom" when changed by hand or unknown)
+        let restored = false;
+        if (fromLast && this.#d.presetSelect) {
+            const name = this.#storage?.getItem?.(LS_LAST_PRESET);
+            const known = typeof name === 'string' && name !== '' && (name.startsWith('user:')
+                ? Object.prototype.hasOwnProperty.call(this.loadUserPresets(), name.slice(5)) : Object.prototype.hasOwnProperty.call(DSP_PROFILES, name));
+            restored = name !== null && name !== undefined;   // saved before this key existed: old rule below
+            this.#d.presetSelect.value = known ? name : (restored ? '' : this.#d.presetSelect.value);
+        }
         // Restore "Custom" label when last-used settings don't match a named preset
-        if (!fav && !DSP_PROFILES[this.#d.presetSelect?.value || '']) {
+        if (!fav && !restored && !DSP_PROFILES[this.#d.presetSelect?.value || '']) {
             if (this.#d.presetSelect) this.#d.presetSelect.value = '';
         }
         this.updatePresetButtons();
@@ -373,6 +385,7 @@ export class PresetManager {
 
     persistCurrentSettings() {
         jsonSetItem(this.#storage, LS_LAST_SETTINGS, this.getCurrentPresetSettings());
+        this.#storage?.setItem?.(LS_LAST_PRESET, this.#d.presetSelect?.value || '');
     }
 
     /**

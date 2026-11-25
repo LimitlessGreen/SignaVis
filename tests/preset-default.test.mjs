@@ -60,3 +60,45 @@ test('a favourite still wins over defaultPreset', () => {
     manager(d, storage, 'classicSmall').applyFavouritePresetControls();
     assert.equal(d.scaleSelect.value, 'mel');
 });
+
+test('restored last settings keep the name of the preset they came from', () => {
+    const storage = new InMemoryStorageAdapter();
+    const d = makeDom();
+    d.presetSelect.value = 'classic';
+    const m = manager(d, storage, 'classic');
+    m.applyFavouritePresetControls();
+    d.presetSelect.value = 'perch';
+    m.applyPreset('perch');
+    m.persistCurrentSettings();
+    // restart: the select starts at the default again
+    const d2 = makeDom();
+    d2.presetSelect.value = 'classic';
+    manager(d2, storage, 'classic').applyFavouritePresetControls();
+    assert.equal(d2.presetSelect.value, 'perch');
+    assert.equal(d2.colorSchemeSelect.value, String(DSP_PROFILES.perch.colorScheme ?? d2.colorSchemeSelect.value));
+});
+
+test('restored settings changed after picking a preset show Custom', () => {
+    const storage = new InMemoryStorageAdapter();
+    const d = makeDom();
+    const m = manager(d, storage, 'classic');
+    m.applyPreset('perch');
+    m.clearPresetHighlight();   // a setting was changed by hand
+    const d2 = makeDom();
+    d2.presetSelect.value = 'classic';
+    manager(d2, storage, 'classic').applyFavouritePresetControls();
+    assert.equal(d2.presetSelect.value, '');
+});
+
+test('a user preset is restored by name', () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.setItem('aw-user-presets', JSON.stringify({ Night: { ...DSP_PROFILES.perch } }));
+    const d = makeDom();
+    const m = manager(d, storage, 'classic');
+    m.applyPreset('user:Night');
+    m.persistCurrentSettings();
+    const d2 = makeDom();
+    d2.presetSelect.value = 'classic';
+    manager(d2, storage, 'classic').applyFavouritePresetControls();
+    assert.equal(d2.presetSelect.value, 'user:Night');
+});
