@@ -154,6 +154,21 @@ export class SpacesShell {
 
     get active(): string { return this.#state.active; }
 
+    /** Spaces that can be shown now and their panels (for the Ctrl K search). */
+    contents(): { spaces: { id: string; title: string }[]; panels: { id: string; title: string; space: string }[] } {
+        const spaces: { id: string; title: string }[] = [];
+        const panels: { id: string; title: string; space: string }[] = [];
+        for (const sp of this.#spaces.values()) {
+            if (sp.def.optional && !this.#state.spaces[sp.def.id]?.available) continue;
+            spaces.push({ id: sp.def.id, title: sp.def.title });
+            for (const id of sp.def.panels) {
+                const p = this.#panels.get(id);
+                if (p) panels.push({ id, title: p.def.title, space: sp.def.title });
+            }
+        }
+        return { spaces, panels };
+    }
+
     /** Put the view bar above the spaces later (the project got its catalog in this session). */
     setBar(el: HTMLElement) {
         this.el.querySelector(':scope > .view-bar')?.remove();

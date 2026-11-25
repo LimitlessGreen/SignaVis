@@ -3702,6 +3702,8 @@ let mountLibraryPanel = () => {};
 let libraryPartShown = (_part) => {};
 /** Spaces: the new-dataset dialog of the library (view bar "Save as dataset"). */
 let librarySaveAsDataset = () => {};
+/** Open a catalog row in Annotate (Ctrl K recordings); set where the library lives. */
+let libraryOpenRow = async (_row) => {};
 /** Spaces: the one catalog view (filter, dataset, selection) all panels and the view bar share; null without a catalog. */
 let catalogView = null;
 /** Spaces: the Annotate panel "View" (list of the catalog view with review state); null until built. */
@@ -3769,6 +3771,13 @@ if (isLite()) {
   const closeLibrary = () => { libView?.dispose(); libView?.el.remove(); libView = null; void refreshLibraryPanel(); };
   libraryPartShown = (part) => libView?.partShown(part);
   librarySaveAsDataset = () => libView?.saveAsDataset();
+  libraryOpenRow = async (row) => {
+    const root = libRoot();
+    if (!root || !row?.id) return;
+    const path = await catalogApi.recordingPath(root, row.id);
+    if (!path) { showLoadError('This recording\'s source folder is not located on this computer.', 'Cannot open'); return; }
+    if (await openCatalogRecording(path, () => spaces?.reveal('editor'))) noteOpened(row);
+  };
   /** Spaces: the library lives in Browse (built once, stays while a recording is open in Annotate). */
   mountLibraryPanel = () => {
     const root = libRoot();
@@ -5658,13 +5667,133 @@ async function installTopMenus(shell) {
       window.location.reload();
     },
   };
-  settingsBtn.addEventListener('click', () => {
-    show(below(settingsBtn), settingsMenu({
-      language: taxonomyLangSelect.value || state.taxonomyLang || '',
-      hasXcKey: xcKeyIndicator.classList.contains('has-key'),
-      dark: (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark',
-    }), (id, at) => settingsActions[id]?.(at));
+  const settingsContext = () => ({
+    language: taxonomyLangSelect.value || state.taxonomyLang || '',
+    hasXcKey: xcKeyIndicator.classList.contains('has-key'),
+    dark: (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark',
   });
+  const projectContext = () => {
+    const recordBtn = document.getElementById('recordBtn');
+    return { kind: projectKind, hasCatalog: !!catalogView, canRecord: !!recordBtn && !recordBtn.hidden,
+      xcToFolder: xcToFolder(), recentCount: loadRecent(_lsLite).length };
+  };
+  settingsBtn.addEventListener('click', () => {
+    show(below(settingsBtn), settingsMenu(settingsContext()), (id, at) => settingsActions[id]?.(at));
+  });
+  installCommandPalette(shell, settingsBtn, { projectMenu: () => projectMenu(projectContext()), settingsMenu: () => settingsMenu(settingsContext()),
+    projectActions, settingsActions, menuAt: () => below(settingsBtn) });
+}
+
+// ── Lite: Ctrl K search for species, recordings, actions and panels (Annotate v2, mockup B3) ──
+async function installCommandPalette(shell, beforeEl, menus) {
+  const [{ CommandPalette }, cs] = await Promise.all([
+    import('../../ui/components/command-palette/command-palette.ts'),
+    import('../lite/command-search.ts'),
+  ]);
+  const { Search } = await import('lucide-static');
+  // Detection classes of the catalog (for "Filter view: detected …"), read once per palette opening.
+  let classes = [];
+  const loadClasses = () => {
+    const root = catalogView?.projectRoot;
+    if (!root) { classes = []; return; }
+    catalogApi.stats(root, {})
+      .then((st) => { classes = [...new Set(st.runs.flatMap((r) => r.classes.map((c) => c.class)))]; })
+      .catch(() => { classes = []; });
+  };
+  const ebirdCode = (sci) => (sci && taxonomy.data ? taxonomy.resolve(sci)?.ebird : '') || '';
+  const classOf = (sci, name) => cs.detectionClassFor(classes, sci, name, ebirdCode(sci));
+  const speciesFound = (q) => cs.speciesItems((player.getLabelEditorSuggestions?.(q, 8) || []).map((sp) => ({ ...sp, color: sp.color || colorForName(sp.name) })),
+    (sci, name) => !!catalogView && !!classOf(sci, name));
+  const recordingsFound = async (q) => {
+    const own = recordingManager.getAll()
+      .map((r) => ({ r, s: cs.matchScore(q, r.filename || '') }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 4)
+      .map(({ r }) => ({ id: `rec:${r.id}`, group: 'recordings', label: r.filename || 'Recording',
+        sub: r.id === recordingManager.getActive()?.id ? 'open now' : (r.xcId || 'in project'), icon: 'wave' }));
+    const root = catalogView?.projectRoot;
+    // The catalog wants every word somewhere in the path; ranked here by where they match the name.
+    if (!root || q.trim().length < 2) return own;
+    const page = await catalogApi.list(root, { pathContains: q.trim() }, 'path', null, 40).catch(() => null);
+    const list = (page?.rows || [])
+      .map((row) => ({ row, s: cs.matchScore(q, String(row.path || '')) }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 5)
+      .map((x) => x.row);
+    for (const row of list) {
+      catalogRows.set(row.id, row);
+      own.push({ id: `cat:${row.id}`, group: 'recordings', label: String(row.path || '').split(/[\\/]/).pop() || `#${row.id}`,
+        sub: [row.site, row.device].filter(Boolean).join(' · ') || 'catalog', icon: 'wave' });
+    }
+    return own;
+  };
+  const catalogRows = new Map();
+  const runs = {
+    'run-birdnet': () => { void shell.reveal('analyse').then(() => birdnetPanel.analyze()); },
+    'mark-done': () => void viewList?.toggleDone(),
+    'next-recording': () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true })),
+    'prev-recording': () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true })),
+    shortcuts: () => showShortcuts(),
+  };
+  const palette = new CommandPalette({
+    species: speciesFound,
+    recordings: recordingsFound,
+    actions: () => {
+      const { spaces: sp, panels } = shell.contents();
+      return cs.paletteActions({
+        spaces: sp, activeSpace: shell.active,
+        // Panels of the shown space first.
+        panels: panels.filter((p) => p.id !== 'editor')
+          .sort((a, b) => Number(b.space === sp.find((x) => x.id === shell.active)?.title) - Number(a.space === sp.find((x) => x.id === shell.active)?.title)),
+        inView: !!viewList?.active, hasRecording: !!recordingManager.getActive(), canAnalyze: !!birdnetPanel?.canAnalyze,
+        projectMenu: menus.projectMenu(), settingsMenu: menus.settingsMenu(),
+      });
+    },
+    run: (id, item) => {
+      const [kind, ...rest] = id.split(':');
+      const arg = rest.join(':');
+      if (kind === 'species') {
+        const found = (player.getLabelEditorSuggestions?.(item.label, 8) || []).find((s) => (s.scientificName || s.name) === arg);
+        player.setSpeciesBar(item.label, { color: item.color || found?.color, scientificName: found?.scientificName || (arg !== item.label ? arg : '') });
+        selectionMeta.textContent = `Label template: ${item.label}`;
+        return;
+      }
+      if (kind === 'filter-species') {
+        const found = (player.getLabelEditorSuggestions?.(arg, 8) || []).find((s) => (s.scientificName || s.name) === arg);
+        const cls = classOf(found?.scientificName || arg, found?.name || item.label.replace(/^Filter view: detected /, ''));
+        if (cls && catalogView) void catalogView.updateFilter((f) => { f.detection = { class: cls, minScore: 0, runId: null }; });
+        return;
+      }
+      if (kind === 'rec') {
+        const entry = recordingManager.getAll().find((r) => String(r.id) === arg);
+        if (entry) void shell.reveal('editor').then(() => activateRecordingEntry(entry));
+        return;
+      }
+      if (kind === 'cat') { void libraryOpenRow(catalogRows.get(Number(arg))); return; }
+      if (kind === 'space') { void shell.show(arg); return; }
+      if (kind === 'panel') { void shell.reveal(arg); return; }
+      if (kind === 'project') { menus.projectActions[arg]?.(menus.menuAt()); return; }
+      if (kind === 'settings') { menus.settingsActions[arg]?.(menus.menuAt()); return; }
+      runs[id]?.();
+    },
+  });
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'top-search-btn';
+  btn.title = 'Search species, recordings and actions (Ctrl K)';
+  btn.innerHTML = `${Search}<span>Search</span><span class="cp-key">Ctrl K</span>`;
+  beforeEl.before(btn);
+  const openPalette = () => { if (!palette.isOpen) loadClasses(); palette.toggle(); };
+  btn.addEventListener('click', openPalette);
+  // Ctrl K everywhere, also while typing in a field (capture: before the field and the shortcuts).
+  document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() !== 'k' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openPalette();
+  }, true);
 }
 // ── Lite: editor head (recording, state, place in the view) and label bar (template, tools, Mark done) ──
 let editorHead = null;
@@ -5992,6 +6121,12 @@ async function makeViewBar(view) {
   return new ViewBar(view, {
     onAddFilter: () => void spaces?.reveal('lib-fields'),
     onSaveDataset: () => void spaces?.reveal('lib-recordings').then(() => librarySaveAsDataset()),
+    // Detection classes may be eBird codes or "Scientific_Common": show the label-language name.
+    className: (cls) => {
+      if (!taxonomy.data) return '';
+      const rec = taxonomy.byEbird(cls) || taxonomy.resolve(String(cls).split('_')[0]);
+      return rec ? taxonomy.resolveCommonName(rec, taxonomyLangSafe()) : '';
+    },
   }).el;
 }
 /** Keys (arrows, Enter) go to the library once Browse is shown. */
