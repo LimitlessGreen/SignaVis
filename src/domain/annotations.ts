@@ -2493,6 +2493,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const initialValue = tpl?.name || ref?.label || '';
         const initialColor = (tpl?.name ? tpl.color : ref?.color) || _autoAssignColor(this._items);
         const refName = initialValue.trim().toLowerCase();
+        if (this.player?.getLabelPickerStyle?.() === 'quick' && this.overlay) {
+            return this._openQuickPicker(region, { existingLabels, initialTags: tplTags || null });
+        }
         return openLabelNameEditor({
             layer: this,
             player: this.player,
@@ -2518,6 +2521,75 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 }
             },
         });
+    }
+
+    /**
+     * Quick species pick beside the new box (Lite, mockup M1). Tab / "more…" opens the label editor
+     * with what was typed; Esc drops the box.
+     */
+    async _openQuickPicker(region: any, { existingLabels, initialTags }: { existingLabels: any[]; initialTags: Record<string, string> | null }) {
+        const state = this.player?._state;
+        const generation = state?.loadGeneration;
+        const { QuickLabelPicker } = await import('../ui/components/label-editor/QuickLabelPicker.ts');
+        if (state?.loadGeneration !== generation || !this.overlay) return null;
+        const width = parseFloat(this.overlay.style.width) || 1;
+        const height = parseFloat(this.overlay.style.height) || 1;
+        const g = this._toGeometry(this._normalize({ ...region, label: '' }), width, height);
+        const o = this.overlay.getBoundingClientRect();
+        const sx = o.width / width, sy = o.height / height;
+        const anchor = { left: o.left + g.left * sx, top: o.top + g.top * sy, right: o.left + (g.left + g.width) * sx, bottom: o.top + (g.top + g.height) * sy };
+        // The drawn box stays visible while picking (mockup M1)
+        const ghost = document.createElement('div');
+        ghost.className = 'quick-picker-ghost';
+        Object.assign(ghost.style, { left: `${g.left}px`, top: `${g.top}px`, width: `${g.width}px`, height: `${g.height}px` });
+        const dur = Math.max(0, region.end - region.start);
+        const tag = document.createElement('span');
+        tag.textContent = `new · ${dur.toFixed(1)} s · ${(region.freqMin / 1000).toFixed(1)}–${(region.freqMax / 1000).toFixed(1)} kHz`;
+        ghost.append(tag);
+        this.overlay.append(ghost);
+        const presets = this.player?.getTagPresets?.() || [];
+        const soundTypes = presets.find((p: any) => p.key === 'soundType')?.options
+            || ['song', 'call', 'alarm call', 'flight call', 'begging call', 'drumming'];
+        const offerTemplate = typeof this.player?.setSpeciesBar === 'function';
+        const save = (name: string, color: string, scientificName: string, tags: Record<string, string>, keep: boolean) => {
+            if (state?.loadGeneration !== generation) return;
+            region.label = name;
+            region.color = color || colorForName(name);
+            region.scientificName = String(scientificName || '').trim();
+            region.tags = tags;
+            this.add(region);
+            if (keep) this.player?.setSpeciesBar?.(region.label, { color: region.color, scientificName: region.scientificName, tags: { ...tags } });
+        };
+        const picker = new QuickLabelPicker({
+            anchor,
+            existing: existingLabels,
+            search: (q, n) => this.player?.getLabelEditorSuggestions?.(q, n) || [],
+            soundTypes,
+            initialSoundType: initialTags?.soundType || '',
+            offerTemplate,
+            onPick: (p) => { ghost.remove(); save(p.name, p.color, p.scientificName, { ...(initialTags || {}), ...p.tags }, p.keepAsTemplate); },
+            onCancel: () => ghost.remove(),
+            onMore: (query, sound) => {
+                ghost.remove();
+                const tags = { ...(initialTags || {}) };
+                if (sound) tags.soundType = sound;
+                void openLabelNameEditor({
+                    layer: this,
+                    player: this.player,
+                    initialValue: query,
+                    initialColor: _autoAssignColor(this._items),
+                    initialTags: tags,
+                    initialScientificName: '',
+                    existingLabels,
+                    title: 'New Label',
+                    offerTemplate,
+                    onSubmit: ({ name, color, scientificName = '', tags: t = {}, changed = {}, keepAsTemplate = false }: any) =>
+                        save(name, changed.color ? color : colorForName(name), scientificName, t, keepAsTemplate),
+                });
+            },
+        });
+        picker.open();
+        return picker;
     }
 
     _startEditInteraction(labelId: any, mode: any, clientX: number, clientY: number, element: any) {

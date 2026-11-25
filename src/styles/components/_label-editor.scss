@@ -1,2 +1,125 @@
 /* Modal and overlay rules moved to _overlays.scss */
 /* See src/styles/components/_overlays.scss for label-editor and popover styles. */
+
+/* ── Quick species pick beside a new box (Lite, mockup M1) ── */
+.quick-picker {
+  position: fixed;
+  z-index: 9000;
+  width: 400px;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  color: var(--color-text-primary);
+}
+.qp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 14px;
+    outline: none;
+  }
+}
+.qp-key {
+  padding: 1px 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.qp-list { max-height: 300px; overflow-y: auto; padding: 2px 0 6px; }
+.qp-group {
+  padding: 8px 10px 3px;
+  color: var(--color-text-secondary);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.species-search-item--rich.qp-row {
+  grid-template-columns: 12px 10px minmax(0, 1fr) auto;
+  .qp-num { grid-row: 1 / span 2; color: var(--color-accent); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .search-dot { grid-column: 2; }
+  .search-name, .search-sub { grid-column: 3; }
+  .search-meta { grid-column: 4; }
+}
+.qp-none { padding: 10px; color: var(--color-text-secondary); }
+.qp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--color-border);
+}
+.qp-chips-label { margin-right: 4px; color: var(--color-text-secondary); }
+.qp-chip {
+  padding: 2px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  &[aria-pressed='true'] {
+    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: var(--color-accent);
+  }
+  &.qp-chip--more { color: var(--color-text-secondary); }
+}
+.qp-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--color-border);
+  .qp-keep { display: flex; align-items: center; gap: 4px; color: var(--color-text-secondary); cursor: pointer; }
+  .qp-key { margin-right: auto; }
+  .qp-keep + .qp-key { margin-left: 4px; }
+}
+.qp-save {
+  margin-left: auto;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 5px;
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  .qp-key { margin-left: 6px; border-color: rgba(255, 255, 255, 0.5); color: #fff; }
+}
+.quick-picker-ghost {
+  position: absolute;
+  z-index: 15;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  span {
+    position: absolute;
+    bottom: calc(100% + 2px);
+    left: -2px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #fff;
+    color: #111;
+    font-size: 10.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+}

@@ -5125,6 +5125,8 @@ window.addEventListener('beforeunload', () => {
 // ── Suggestion provider ───────────────────────────────────────────
 player.setLabelTaxonomy([]);
 player.setLabelEditorSuggestionMode('custom-only');
+// Lite: a new box gets the quick species pick beside it (mockup M1); web and phone keep the dialog
+player.setLabelPickerStyle(isLite() ? 'quick' : 'dialog');
 
 // Listen for custom tag additions from the label editor modal (annotations.js)
 player.on('tagcustomadd', (e) => {

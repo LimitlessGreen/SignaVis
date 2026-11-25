@@ -116,6 +116,7 @@ export class BirdNETPlayer {
     _labelLibrary: Map<string, number>;
     _labelSuggestionProvider: ((q: string, limit: number) => (string | LabelSuggestionItem)[]) | null;
     _labelEditorSuggestionMode: 'merge' | 'custom-only';
+    _labelPickerStyle: 'quick' | 'dialog' = 'dialog';
     _labelTaxonomy: Array<{ name: string; color?: string; shortcut?: string }>;
     _activeLabelId: string | null;
     _overviewTracksKey = '';
@@ -582,6 +583,9 @@ export class BirdNETPlayer {
         const m = String(mode || '').trim().toLowerCase();
         this._labelEditorSuggestionMode = (m === 'custom-only') ? 'custom-only' : 'merge';
     }
+    /** 'quick': a new box gets the quick picker beside it (Lite, mockup M1); 'dialog': the label editor. */
+    setLabelPickerStyle(style: 'quick' | 'dialog' = 'dialog') { this._labelPickerStyle = style === 'quick' ? 'quick' : 'dialog'; }
+    getLabelPickerStyle(): 'quick' | 'dialog' { return this._labelPickerStyle || 'dialog'; }
     getLabelEditorSuggestionMode() {
         return this._labelEditorSuggestionMode || 'merge';
     }
