@@ -41,3 +41,14 @@ test('viewChips: local days read as Date, one day without a range', () => {
     const open = viewChips({ localDayFrom: '2023-03-20' }, facets, datasets, () => '');
     assert.equal(open[0].label, '2023-03-20 – …');
 });
+
+test('viewChips: a detection filter is a removable chip (score shown only above 0)', () => {
+    const any = viewChips({ detection: { class: 'Glaucidium passerinum', minScore: 0, runId: null } }, facets, datasets, () => '');
+    assert.deepEqual(any.map((c) => [c.kind, c.field, c.label]), [['detection', 'Detected', 'Glaucidium passerinum']]);
+    const min = viewChips({ detection: { class: 'Strix aluco', minScore: 0.5 } }, facets, datasets, () => '');
+    assert.equal(min[0].label, 'Strix aluco ≥ 0.50');
+    assert.equal(withoutChip({ detection: { class: 'x', minScore: 0 } }, null, null, 'detection').filter.detection, null);
+    // the app names codes (eBird "eurbla" → Amsel)
+    const named = viewChips({ detection: { class: 'eurbla', minScore: 0 } }, facets, datasets, () => '', (c) => (c === 'eurbla' ? 'Amsel' : ''));
+    assert.equal(named[0].label, 'Amsel');
+});

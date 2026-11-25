@@ -13,7 +13,7 @@ import {
 
 export type ChipKind =
     | 'dataset' | 'site' | 'device' | 'tag' | 'path' | 'tod' | 'period' | 'localdays'
-    | 'nosite' | 'labels' | 'pos' | 'bbox' | 'status' | 'unassigned' | 'sun' | 'review';
+    | 'nosite' | 'labels' | 'pos' | 'bbox' | 'status' | 'unassigned' | 'sun' | 'review' | 'detection';
 
 export interface ViewChip {
     kind: ChipKind;
@@ -32,7 +32,10 @@ export type ValueColor = (field: 'site' | 'device', name: string) => string;
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const hh = (h: number | null | undefined) => String(h ?? 0).padStart(2, '0');
 
-export function viewChips(filter: CatalogFilter, facets: Facets | null, datasets: DatasetInfo[], color?: ValueColor): ViewChip[] {
+/** Readable name of a detection class (eBird code or scientific name → common name); passed in. */
+export type ClassName = (cls: string) => string;
+
+export function viewChips(filter: CatalogFilter, facets: Facets | null, datasets: DatasetInfo[], color?: ValueColor, className?: ClassName): ViewChip[] {
     const tf = filter;
     const named = (ids: number[] | undefined, vals: Facets['sites'] | undefined) =>
         (ids ?? []).map((id) => ({ id, name: vals?.find((v) => v.id === id)?.name ?? `#${id}` }));
@@ -58,6 +61,10 @@ export function viewChips(filter: CatalogFilter, facets: Facets | null, datasets
     if (tf.bbox) chips.push({ kind: 'bbox', field: 'Area', label: bboxLabel(tf.bbox) });
     if (tf.status) chips.push({ kind: 'status', field: 'Status', label: tf.status });
     if (tf.unassigned) chips.push({ kind: 'unassigned', field: 'Site/recorder', label: 'none' });
+    if (tf.detection) {
+        const name = className?.(tf.detection.class) || tf.detection.class;
+        chips.push({ kind: 'detection', field: 'Detected', label: tf.detection.minScore > 0 ? `${name} ≥ ${tf.detection.minScore.toFixed(2)}` : name });
+    }
     if (tf.review) chips.push({ kind: 'review', field: 'Review', label: tf.review === 'todo' ? 'not done' : tf.review });
     return chips;
 }
@@ -95,6 +102,7 @@ export function withoutChip(
         case 'status': f.status = null; break;
         case 'unassigned': f.unassigned = false; break;
         case 'review': f.review = null; break;
+        case 'detection': f.detection = null; break;
     }
     return { filter: f, activeDs };
 }

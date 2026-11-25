@@ -19,15 +19,19 @@ export interface ViewBarOptions {
     onAddFilter: () => void;
     /** "Save as dataset": the dataset dialog for the current filter or picks. */
     onSaveDataset: () => void;
+    /** Readable name of a detection class (chip "Detected …"). */
+    className?: (cls: string) => string;
 }
 
 export class ViewBar {
     readonly el: HTMLElement;
     #v: CatalogView;
+    #o: ViewBarOptions;
     #unsubscribe: () => void;
 
     constructor(view: CatalogView, o: ViewBarOptions) {
         this.#v = view;
+        this.#o = o;
         this.el = document.createElement('div');
         this.el.className = 'view-bar';
         this.el.setAttribute('role', 'toolbar');
@@ -61,7 +65,7 @@ export class ViewBar {
 
     render() {
         const v = this.#v;
-        const chips = viewChips(v.filter, v.facets, v.datasets, valueColor);
+        const chips = viewChips(v.filter, v.facets, v.datasets, valueColor, this.#o.className);
         // No catalog yet (nothing imported) and nothing filtered: no bar.
         this.el.hidden = !chips.length && (v.allTotal ?? 0) === 0 && !v.error;
         this.el.querySelector('.view-bar-chips')!.innerHTML =
