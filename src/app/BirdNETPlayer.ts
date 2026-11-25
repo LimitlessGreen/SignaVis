@@ -1442,6 +1442,15 @@ export class BirdNETPlayer {
         st._setPixelsPerSecond(st._getViewportWidth() / span, true, box.start, 0);
     }
 
+    /** Show this time span across the view (frequency zoom unchanged; no zoom-box history). */
+    zoomToTimeRange(start: number, end: number) {
+        const st = this._state;
+        if (!st?.audioBuffer || !(end > start)) return;
+        const dur = this.duration || st.audioBuffer.duration;
+        const a = Math.max(0, start), b = Math.min(dur, end);
+        st._setPixelsPerSecond(st._getViewportWidth() / Math.max(0.01, b - a), true, a, 0);
+    }
+
     /** Restore the view from before the last zoom-box step. */
     _zoomBoxBack() {
         const st = this._state;
@@ -1891,6 +1900,7 @@ export class BirdNETPlayer {
             // Time-only detections (BirdNET) keep their species colour in the waveform too
             fullBand: (l as any).fullBand === true,
             ...labelProps(l),   // channel, … (domain/labelFields.ts)
+            ...((l as any).review === 'rejected' || (l as any).review === 'unsure' ? { review: (l as any).review } : {}),
         };
     }
 
@@ -1916,6 +1926,8 @@ export class BirdNETPlayer {
             tags: l.tags || {},
             ...labelProps(l),
             ...((l as any).reviewing ? { reviewing: true } : {}),
+            // review state of a BirdNET suggestion (app/suggestions.ts): shown on the lane
+            ...((l as any)?.review === 'rejected' || (l as any)?.review === 'unsure' ? { review: (l as any).review } : {}),
         };
     }
 
@@ -1954,6 +1966,7 @@ export class BirdNETPlayer {
             ...labelProps(label),   // channel, … (domain/labelFields.ts)
             // A similar-call suggestion under review (similar-review.ts): highlighted on the spectrogram
             ...(((label as any)?.similar ? (label as any).similar.active === true : (label as any)?.reviewing === true) ? { reviewing: true } : {}),
+            ...((label as any)?.review === 'rejected' || (label as any)?.review === 'unsure' ? { review: (label as any).review } : {}),
             createdAt: (label as any)?.createdAt || new Date().toISOString(),
             ...((label as any)?.updatedAt ? { updatedAt: (label as any).updatedAt } : {}),
         };

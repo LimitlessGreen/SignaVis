@@ -3666,7 +3666,7 @@ const speciesGeo = createSpeciesGeoCache({
     const all = await birdnet.getAllSpecies();
     return new Map(all.filter((sp) => sp.geoscore != null).map((sp) => [sp.scientific, sp.geoscore]));
   },
-  onUpdate: () => speciesSearchWidgets.forEach((w) => w.refresh?.()),
+  onUpdate: () => { speciesSearchWidgets.forEach((w) => w.refresh?.()); labelViews.invalidate('suggestions'); },
   onError: (err) => console.warn('[species search] geo ranking unavailable:', err?.message || err),
 });
 const speciesGeoScore = (sci) => speciesGeo.score(sci);
@@ -5740,7 +5740,13 @@ async function refreshSuggestions() {
   if (_suggEntry !== state._labelsEntryId) { _suggEntry = state._labelsEntryId; _suggCurrent = null; suggPanel.clearThumbs(); }
   // adopted detections stay in state.labels (only hidden in the views); their copies name them
   const adopted = OWN_SOURCE_ID ? adoptedSourceIds(state.labels, OWN_SOURCE_ID) : new Set();
-  _suggGroups = buildSuggestions(dets, { join: suggPanel.join, minConfidence: suggPanel.minConfidence, adoptedIds: adopted });
+  // geo scores are keyed by the exact scientific name; the groups use it in lower case
+  const sciByKey = new Map(dets.filter((l) => l.scientificName).map((l) => [String(l.scientificName).toLowerCase(), l.scientificName]));
+  if (sciByKey.size) refreshSpeciesGeoScores();
+  _suggGroups = buildSuggestions(dets, {
+    join: suggPanel.join, minConfidence: suggPanel.minConfidence, adoptedIds: adopted,
+    geoScore: (k) => (sciByKey.has(k) ? speciesGeoScore(sciByKey.get(k)) : null),
+  });
   const order = _suggGroups.flatMap((g) => g.suggestions);
   // keep the current one across rebuilds (same key), else drop it
   _suggCurrent = _suggCurrent ? order.find((s) => s.key === _suggCurrent.key) || null : null;
@@ -5770,6 +5776,11 @@ function showSuggestion(s, { play = false } = {}) {
   if (!s) { labelViews.invalidate('suggestions'); return; }
   const best = [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
   if (best && state.labels.some((l) => l.id === best.id)) selectLabel(best.id);
+  // zoom to the suggestion with some context on both sides (option in the panel's ⋯)
+  if (suggPanel?.fit) {
+    const pad = Math.max(1, (s.end - s.start) * 0.5);
+    player.zoomToTimeRange?.(Math.max(0, s.start - pad), s.end + pad);
+  }
   if (play) player.playSegment(s.start, s.end);
   labelViews.invalidate('suggestions');
 }
@@ -5813,7 +5824,7 @@ async function decideSuggestions(list, d, { advance = false } = {}) {
   await refreshSuggestions();
   if (advance) {
     const next = nextOpen(_suggGroups, list[list.length - 1].key);
-    if (next) showSuggestion(next, { play: true });
+    if (next) showSuggestion(next, { play: suggPanel?.autoPlay !== false });
     else { _suggCurrent = null; updateReviewStrip(); selectionMeta.textContent = 'All suggestions reviewed – Mark done (D)'; }
   }
   return n;

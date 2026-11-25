@@ -8,6 +8,15 @@
 
 import type { Suggestion, SuggestionGroup, ReviewState } from '../../app/suggestions.ts';
 import type { SnapPatch } from '../../domain/snapToCall.ts';
+import { showContextMenu } from '../components/context-menu/context-menu.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
+
+const OPT_KEY = 'aw.suggestions.options';
+/** Review options in the ⋯ menu (mockup B6): kept across sessions. */
+function loadOptions(): { autoPlay: boolean; fit: boolean } {
+    const o = prefs.json<{ autoPlay?: boolean; fit?: boolean }>(OPT_KEY, {}) || {};
+    return { autoPlay: o.autoPlay !== false, fit: o.fit !== false };
+}
 
 export type Decision = 'accepted' | 'rejected' | 'unsure' | 'open';
 
@@ -72,6 +81,10 @@ export class SuggestionsPanel {
     join = true;
     minConfidence = 0.3;
     showDone = true;
+    /** After a decision: play the next suggestion (A / X / U jump on). */
+    autoPlay = loadOptions().autoPlay;
+    /** Zoom the editor to the suggestion when it is shown. */
+    fit = loadOptions().fit;
     /** Threshold per species key (dragged on its strip). */
     private thresholds = new Map<string, number>();
     private collapsed = new Set<string>();
@@ -117,7 +130,22 @@ export class SuggestionsPanel {
         min.append(num);
         const done = el('button', 'sugg-btn small', this.showDone ? 'Hide done' : 'Show done');
         done.onclick = () => { this.showDone = !this.showDone; this.render(this.data); };
-        row.append(join, min, done);
+        const more = el('button', 'sugg-btn small sugg-more', '⋯');
+        more.title = 'Review options';
+        more.onclick = () => {
+            const r = more.getBoundingClientRect();
+            const save = () => prefs.setJson(OPT_KEY, { autoPlay: this.autoPlay, fit: this.fit });
+            showContextMenu({
+                x: r.left, y: r.bottom,
+                items: [
+                    { heading: 'Review' },
+                    { label: 'Join runs', checked: this.join, hint: '3 s windows', action: () => { this.join = !this.join; this.opts.changed(); } },
+                    { label: 'Play next after a decision', checked: this.autoPlay, action: () => { this.autoPlay = !this.autoPlay; save(); } },
+                    { label: 'Zoom to the suggestion', checked: this.fit, action: () => { this.fit = !this.fit; save(); } },
+                ],
+            });
+        };
+        row.append(join, min, done, more);
         const p = d.progress;
         const prog = el('div', 'sugg-progress', `Reviewed ${p.reviewed} of ${p.total} suggestions (${p.windows} windows)`);
         const bar = el('div', 'sugg-bar');
