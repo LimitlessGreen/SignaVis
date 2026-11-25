@@ -2621,8 +2621,10 @@ const labelList = new LabelList({
   tagStore,
   accordion: true,
   onSync:  (opts) => opts?.structural ? syncToPlayer() : syncToPlayerSoft(),
+  enterEdits: isLite(),
   onEdit:  (id) => {
     selectLabel(id, {});
+    if (isLite()) { void openLabelModal(id); return; }   // label window (Annotate v2 M2)
     rightBar.setActive('properties');   // Properties is a tab of the right bar
     rightBar.flashTab('properties');
     // Delay so the panel is visible before scrolling + highlighting

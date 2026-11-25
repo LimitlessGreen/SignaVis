@@ -158,6 +158,8 @@ export const PROP_FIELDS: PropField[] = [
         normalize: (v) => (v === 'absent' ? 'absent' : undefined),
         display: (v) => (v === 'absent' ? 'absent' : ''),
         sortValue: (v) => (v === 'absent' ? 1 : 0),
+        // only written when a table has absent labels (see ravenSelectionTable.ts)
+        raven: { column: 'Presence', value: (v) => (v === 'absent' ? 'absent' : 'present') },
     },
 ];
 

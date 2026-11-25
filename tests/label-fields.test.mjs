@@ -6,7 +6,7 @@ import { ANNOTA_FIELDS, PROP_FIELDS, labelProps, annotaFieldValues, importAnnota
 import { AnnotationLayer, SpectrogramLabelLayer } from '../src/domain/annotations.ts';
 import { BirdNETPlayer } from '../src/app/BirdNETPlayer.ts';
 import { buildLabelsJson } from '../src/infrastructure/export/labelTableFormats.ts';
-import { buildRavenSelectionTable, RAVEN_COLUMNS } from '../src/infrastructure/export/ravenSelectionTable.ts';
+import { buildRavenSelectionTable, RAVEN_COLUMNS, RAVEN_OPTIONAL_COLUMNS } from '../src/infrastructure/export/ravenSelectionTable.ts';
 import { ANNOTA_ANNOTATION_FIELDS, buildAnnotaAnnotation } from '../src/infrastructure/xeno-canto/annotaPayload.ts';
 import { mapXenoCantoLabelsToSpectrogram } from '../src/infrastructure/xeno-canto/xenoCantoRecordingsApi.ts';
 import { LABEL_GRID_COLUMN_KEYS } from '../src/ui/panels/label-grid.ts';
@@ -55,7 +55,7 @@ test('property fields: JSON export, Raven export, table column', () => {
         assert.ok(LABEL_GRID_COLUMN_KEYS.includes(f.key), `${f.key}: label table column`);
         assert.ok(PROPERTIES_LABEL_KEYS.includes(f.key), `${f.key}: properties panel row`);
         if (f.raven) {
-            assert.ok(RAVEN_COLUMNS.includes(f.raven.column), `${f.key}: Raven column ${f.raven.column}`);
+            assert.ok([...RAVEN_COLUMNS, ...RAVEN_OPTIONAL_COLUMNS].includes(f.raven.column), `${f.key}: Raven column ${f.raven.column}`);
             const [head, row] = buildRavenSelectionTable([l]).trim().split('\n').map((r) => r.split('\t'));
             assert.equal(row[head.indexOf(f.raven.column)], f.raven.value(f.example), `${f.key}: Raven value`);
         }
@@ -76,4 +76,13 @@ test('tag (Annota) fields: table column, upload payload, XC import', () => {
         assert.equal(imported.tags?.[f.key], annotaExample(f), `${f.key}: XC import`);
         assert.deepEqual(importAnnotaTags({ [f.key]: annotaExample(f) })[f.key], annotaExample(f), `${f.key}: import by own key`);
     }
+});
+
+test('Raven table: Presence column only when a label is absent', () => {
+    const a = { id: 'a', start: 0, end: 1, label: 'X' };
+    assert.ok(!buildRavenSelectionTable([a]).includes('Presence'));
+    const t = buildRavenSelectionTable([a, { ...a, id: 'b', start: 2, end: 3, polarity: 'absent' }]).trim().split('\n');
+    const col = t[0].split('\t').indexOf('Presence');
+    assert.ok(col > 0);
+    assert.deepEqual(t.slice(1).map((r) => r.split('\t')[col]), ['present', 'absent']);
 });

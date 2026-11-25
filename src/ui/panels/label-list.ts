@@ -150,6 +150,7 @@ export class LabelList {
     _adoptedToggle: { get(): boolean; set(on: boolean): void; hiddenIn?(setId: string): number } | null = null;
     _onAdoptLabel: any;
     _onPlaySegment: any;
+    _enterEdits: boolean;
     _onToggleSetVisibility: any;
     _onToggleSpeciesVisibility: any;
     _hiddenSetIds: any;
@@ -224,6 +225,8 @@ export class LabelList {
     this._adoptedToggle = opts.adoptedToggle || null;
     this._onAdoptLabel = opts.onAdoptLabel || null;
     this._onPlaySegment = opts.onPlaySegment || null;
+    /** Enter opens the editor (`onEdit`) instead of playing. */
+    this._enterEdits = opts.enterEdits === true;
     this._canDeleteSet = opts.canDeleteSet || null;
     this._layers = opts.layers || null;
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
@@ -265,6 +268,11 @@ export class LabelList {
     };
     if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); pick(cur + 1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); pick(cur < 0 ? 0 : cur - 1); }
+    else if (e.key === 'Enter' && cur >= 0 && this._enterEdits && this._onEdit) {
+      // Lite: Enter opens the label window, Space plays
+      e.preventDefault(); e.stopPropagation();
+      this._onEdit(rows[cur].dataset.labelId);
+    }
     else if ((e.key === 'Enter' || e.key === ' ') && cur >= 0 && this._onPlaySegment) {
       e.preventDefault(); e.stopPropagation();
       const lbl = this._labels.find((l: any) => String(l.id) === rows[cur].dataset.labelId);

@@ -8,6 +8,7 @@
 // Channel is 1-based; labels without a channel (mono, or the mix) get 1.
 // With a known recording start, Begin Date / Begin Clock Time / End Clock
 // Time carry the recorder's wall-clock time (as Raven measures them).
+// Tables with absent labels (species checked and not there) get a Presence column.
 // ═══════════════════════════════════════════════════════════════════════
 
 import { ravenFieldValue } from '../../domain/labelFields.ts';
@@ -18,6 +19,9 @@ export const RAVEN_COLUMNS = [
     'Low Freq (Hz)', 'High Freq (Hz)', 'Species', 'Common Name', 'Sound Type',
     'Confidence', 'Annotator', 'Set', 'Remarks', 'Label ID',
 ];
+
+/** Columns written only when needed (Presence: a label is absent). */
+export const RAVEN_OPTIONAL_COLUMNS = ['Presence'];
 
 const clean = (v: unknown) => String(v ?? '').replace(/[\t\r\n]+/g, ' ').trim();
 const num = (v: unknown, digits: number) => {
@@ -38,6 +42,7 @@ export interface RavenOptions {
 export function buildRavenSelectionTable(labels: any[], opts: RavenOptions = {}): string {
     const nyquist = opts.sampleRate ? opts.sampleRate / 2 : null;
     const start = opts.recordingStart ?? null;
+    const presence = (labels || []).some((l) => l?.polarity === 'absent');
     const rows = [...(labels || [])]
         .filter((l) => Number.isFinite(Number(l?.start)) && Number.isFinite(Number(l?.end)))
         .sort((a, b) => Number(a.start) - Number(b.start) || Number(a.end) - Number(b.end))
@@ -54,9 +59,10 @@ export function buildRavenSelectionTable(labels: any[], opts: RavenOptions = {})
                 clean(l.author || l.annotator), clean(l.setId ? (opts.setName?.(l.setId) || l.setId) : ''),
                 clean(tags.remarks), clean(l.id),
                 ...(start ? ravenClock(start, Number(l.start), Number(l.end)) : []),
+                ...(presence ? [ravenFieldValue('Presence', l) ?? 'present'] : []),
             ].join('\t');
         });
-    const header = start ? [...RAVEN_COLUMNS, ...RAVEN_CLOCK_COLUMNS] : RAVEN_COLUMNS;
+    const header = [...RAVEN_COLUMNS, ...(start ? RAVEN_CLOCK_COLUMNS : []), ...(presence ? RAVEN_OPTIONAL_COLUMNS : [])];
     return [header.join('\t'), ...rows].join('\n') + '\n';
 }
 
