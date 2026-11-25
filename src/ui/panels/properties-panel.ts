@@ -80,6 +80,14 @@ const SET_SUMMARY_FIELDS = [
   { key: 'origin',  label: 'Origin' },
 ];
 
+/** Catalog fields of the open recording (subset of CatalogRow). */
+export interface CatalogFieldsRow { site: string | null; device: string | null; review?: 'open' | 'done' | null }
+
+/** Rows "Site / Recorder / Review" of the catalog block (review: null = new). */
+export function catalogFields(r: CatalogFieldsRow): [string, string][] {
+  return [['Site', r.site ?? ''], ['Recorder', r.device ?? ''], ['Review', r.review ?? 'new']];
+}
+
 export class PropertiesPanel {
     // TypeScript property declarations (migrated from JS)
     _audioInfo: any;
@@ -217,6 +225,19 @@ export class PropertiesPanel {
   setRecordingMeta(meta: any, audioInfo: any) {
     this._recordingMeta = meta || null;
     this._audioInfo = audioInfo || null;
+    this._renderRecording();
+  }
+
+  /**
+   * Lite: the open recording's catalog row (site, recorder, review state) – shown first in Recording.
+   * `editSites` opens "Sites & recorders" (Site ✎). null hides the rows (no catalog / not in the view).
+   */
+  setCatalogRow(row: CatalogFieldsRow | null, editSites?: () => void) {
+    (this as any)._editSites = editSites ?? null;
+    const key = row ? JSON.stringify(catalogFields(row)) : '';
+    if (key === (this as any)._catalogKey) return;   // called on every view change: keep the DOM (a click may be under way)
+    (this as any)._catalogKey = key;
+    (this as any)._catalogRow = row;
     this._renderRecording();
   }
 
@@ -400,6 +421,8 @@ export class PropertiesPanel {
       return;
     }
 
+    const cat = this._buildCatalogGrid();
+    if (cat) this._recBody.appendChild(cat);
     // Date, place, coordinates and device are in the context block above
     this._recBody.appendChild(this._buildReadonlyGrid(RECORDING_FIELDS, merged));
 
@@ -424,6 +447,40 @@ export class PropertiesPanel {
       box.appendChild(dl);
       this._recBody.appendChild(box);
     }
+  }
+
+  _buildCatalogGrid(): HTMLElement | null {
+    const row = (this as any)._catalogRow as CatalogFieldsRow | null;
+    if (!row) return null;
+    const dl = document.createElement('dl');
+    dl.className = 'props-grid props-catalog';
+    for (const [label, value] of catalogFields(row)) {
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      dd.classList.add('props-readonly');
+      if (label === 'Review') {
+        const st = document.createElement('span');
+        st.className = `vl-state vl-state--${value}`;
+        st.textContent = value;
+        dd.appendChild(st);
+      } else {
+        dd.textContent = value || '—';
+      }
+      const edit = (this as any)._editSites as (() => void) | null;
+      if (label === 'Site' && edit) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'props-site-edit';
+        b.textContent = '✎';
+        b.title = 'Sites & recorders…';
+        b.setAttribute('aria-label', 'Edit sites and recorders');
+        b.addEventListener('click', () => edit());
+        dd.appendChild(b);
+      }
+      dl.append(dt, dd);
+    }
+    return dl;
   }
 
   _renderSet() {

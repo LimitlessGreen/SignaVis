@@ -1375,3 +1375,14 @@ body.aw-overlays-peek .label-discard-btn { opacity: 0 !important; pointer-events
   border-top: 1px solid var(--color-border);
   summary { padding: 4px 0; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--color-text-secondary); }
 }
+
+// Lite: catalog fields of the open recording (Properties › Recording)
+.props-catalog {
+  dd { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .vl-state { align-self: auto; }
+  .props-site-edit {
+    margin-left: auto; padding: 0 4px; border: 1px solid transparent; border-radius: 3px;
+    background: none; color: var(--color-text-secondary); cursor: pointer; font-size: 11px; line-height: 16px;
+    &:hover, &:focus-visible { color: var(--color-text-primary); border-color: var(--color-border); }
+  }
+}

@@ -892,6 +892,8 @@ specPanel.relocate();
   specPanel.el.insertBefore(auto, sec);
 })();
 
+/** Opens "Sites & recorders" (set by installTopMenus). */
+let openSitesEditor = null;
 const propsPanel = new PropertiesPanel({
   getSetInfo: (setId) => (setId === OWN_SOURCE_ID ? null : state.labelSets?.get(setId) || null),
 });
@@ -5628,8 +5630,17 @@ async function installTopMenus(shell) {
       items: entries.map((e) => (e.id ? { ...e, action: () => act(e.id, e.more && lastPointer ? lastPointer : at) } : e)) });
   };
   /** Click a panel's button that lives in a library panel (built when the panel is first shown). */
-  const libraryAction = (act) => void shell.reveal('lib-recordings').then(() => requestAnimationFrame(() =>
-    libraryHosts.recordings.querySelector(`[data-act="${act}"]`)?.click()));
+  // The panel may be built on first reveal: wait up to ~1 s for the button.
+  const libraryAction = (act) => void shell.reveal('lib-recordings').then(() => {
+    let tries = 60;
+    const tick = () => {
+      const b = libraryHosts.recordings.querySelector(`[data-act="${act}"]`);
+      if (b && b.isConnected && b.offsetParent) b.click();
+      else if (--tries > 0) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  openSitesEditor = () => libraryAction('open-entities');
 
   const projectActions = {
     'add-file': () => openFile(),
@@ -5832,6 +5843,7 @@ async function refreshEditorPlace() {
   editorHead.setName(name);
   editorHead.setPlace(place, !!v);
   editorLabelBar.setPlace(place);
+  propsPanel.setCatalogRow(row, () => openSitesEditor?.());
 }
 // ── Lite: BirdNET suggestions to review (Annotate v2, mockup B4/B6) ──
 let suggPanel = null, reviewStrip = null, _suggCurrent = null, _suggGroups = [], _suggEntry = null;
