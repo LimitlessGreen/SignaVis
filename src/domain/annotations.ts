@@ -871,6 +871,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         if (region.origin === 'Similar') el.classList.add('annotation-region--similar');
         // A BirdNET suggestion already judged (app/suggestions.ts)
         if (region.review === 'rejected' || region.review === 'unsure') el.classList.add(`annotation-region--${region.review}`);
+        if ((region as any).polarity === 'absent') el.classList.add('annotation-region--absent');
         if (this._liveLinkedId && region.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -925,8 +926,10 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.addEventListener('dblclick', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (isBlocked) return;
             this._suppressClickUntil = performance.now() + 250;
+            // Lite: the label window (mockup M2), also for read-only labels
+            if (this.player?.getLabelPickerStyle?.() === 'quick' && this.player?.onLabelOpen?.(region.id)) return;
+            if (isBlocked) return;
             this._renameRegionPrompt(region.id);
         });
         el.addEventListener('pointerdown', (event) => {
@@ -1591,6 +1594,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         // A BirdNET suggestion already judged (app/suggestions.ts): rejected hatched, unsure dotted
         const review = (label as any).review;
         if (review === 'rejected' || review === 'unsure') el.classList.add(`spectrogram-label-region--${review}`);
+        // Marked absent (label window): the species is not in this box
+        if ((label as any).polarity === 'absent') el.classList.add('spectrogram-label-region--absent');
         const isLive = !!this._liveLinkedId && label.id === this._liveLinkedId;
         if (isLive) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
@@ -1789,8 +1794,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.addEventListener('dblclick', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (isBlocked) return;
             this._suppressClickUntil = performance.now() + 250;
+            // Lite: the label window (mockup M2), also for read-only labels
+            if (this.player?.getLabelPickerStyle?.() === 'quick' && this.player?.onLabelOpen?.(label.id)) return;
+            if (isBlocked) return;
             this._renameSpectrogramLabelPrompt(label.id);
         });
         el.addEventListener('pointerdown', (event) => {
@@ -2554,13 +2561,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             || ['song', 'call', 'alarm call', 'flight call', 'begging call', 'drumming'];
         const offerTemplate = typeof this.player?.setSpeciesBar === 'function';
         const save = (name: string, color: string, scientificName: string, tags: Record<string, string>, keep: boolean) => {
-            if (state?.loadGeneration !== generation) return;
+            if (state?.loadGeneration !== generation) return null;
             region.label = name;
             region.color = color || colorForName(name);
             region.scientificName = String(scientificName || '').trim();
             region.tags = tags;
-            this.add(region);
+            const id = this.add(region) as unknown as string;
             if (keep) this.player?.setSpeciesBar?.(region.label, { color: region.color, scientificName: region.scientificName, tags: { ...tags } });
+            return id;
         };
         // How often each name occurs here and its most frequent sound type (row hint "2× · song")
         const counts = new Map<string, { n: number; sounds: Map<string, number> }>();
@@ -2589,8 +2597,14 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             offerTemplate,
             onPick: (p) => { ghost.remove(); save(p.name, p.color, p.scientificName, { ...(initialTags || {}), ...p.tags }, p.keepAsTemplate); },
             onCancel: () => ghost.remove(),
-            onMore: (query, sound) => {
+            onMore: (query, sound, pick) => {
                 ghost.remove();
+                // Lite with the label window: keep the box with what was picked, then open M2 on it
+                if (pick && this.player?.onLabelOpen) {
+                    const id = save(pick.name, pick.color, pick.scientificName, { ...(initialTags || {}), ...pick.tags }, false);
+                    if (id) this.player.onLabelOpen(id);
+                    return;
+                }
                 const tags = { ...(initialTags || {}) };
                 if (sound) tags.soundType = sound;
                 void openLabelNameEditor({

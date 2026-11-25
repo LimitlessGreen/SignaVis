@@ -4500,6 +4500,7 @@ async function loadBirdnetTaxonomy() {
       createGeoAwareSpeciesSearch({ getSuggestions, onSelect });
     labelList.setSpeciesSearchFactory(speciesSearchFactory);
     propsPanel.setSpeciesSearchFactory(speciesSearchFactory);
+    _modalSearchFactory = speciesSearchFactory;
     labelTable?.setSpeciesSearchFactory(speciesSearchFactory);
     speciesListSearchFactory = (anchor, onSelect) =>
       createGeoAwareSpeciesSearch({ getSuggestions, onSelect, placeholder: 'Add a species…' });
@@ -5832,6 +5833,96 @@ async function decideSuggestions(list, d, { advance = false } = {}) {
   }
   return n;
 }
+
+// ── Lite: label window (Annotate v2 mockup M2) ──
+let labelModal = null;
+let _modalSearchFactory = null;
+async function openLabelModal(id) {
+  if (!state.labels.some((l) => l.id === id)) return false;
+  const { LabelModal } = await import('../../ui/components/label-modal/label-modal.ts');
+  const { selectedSamples } = await import('../../shared/channels.ts');
+  const { ravenClock } = await import('../../domain/recordingTime.ts');
+  labelModal?.close();
+  const start = player.recordingStart;
+  const ab = () => player._state?.audioBuffer;
+  let mono = null;
+  const entry = recordingManager.getActive?.();
+  labelModal = new LabelModal({
+    labels: () => _visibleLabels().filter((l) => l.end > l.start).sort((a, b) => a.start - b.start || a.end - b.end),
+    change: (lid, updates) => propsPanel.onChange(lid, updates),
+    snapshot: () => snapshotLabels(),
+    commitVisit: (l, restore) => showUndoToast(`Edited ${l.label || 'label'}`, restore),
+    remove: (lid) => {
+      const l = state.labels.find((x) => x.id === lid);
+      if (!l) return;
+      const undo = snapshotLabels();
+      touchOwnSet(l.setId);
+      labelStore.remove(lid);
+      showUndoToast(`Deleted ${l.label || 'label'}`, undo);
+    },
+    duplicate: (lid) => {
+      const l = state.labels.find((x) => x.id === lid);
+      if (!l || !OWN_SOURCE_ID) return null;
+      const undo = snapshotLabels();
+      const [copy] = adoptLabels([{ ...l, readonly: false }], OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+      delete copy.adoptedFrom;
+      labelStore.add([copy]);
+      touchOwnSet(OWN_SOURCE_ID);
+      showUndoToast(`Duplicated ${l.label || 'label'}`, undo);
+      return copy.id;
+    },
+    canFit: (l) => isFullBandOwn(l),
+    fitToCall: (lid) => { fitLabelToCall(lid, { undo: () => {}, toast: false }); },
+    similar: (lid) => { const l = state.labels.find((x) => x.id === lid); if (l && canFindSimilar(l)) findSimilarCalls(l); },
+    openInEditor: (lid) => {
+      const l = state.labels.find((x) => x.id === lid);
+      if (!l) return;
+      const pad = Math.max(1, (l.end - l.start) * 0.5);
+      player.zoomToTimeRange?.(Math.max(0, l.start - pad), l.end + pad);
+      selectLabel(lid);
+    },
+    keepAsTemplate: (l) => { if (l) useLabelAsTemplate(l); },
+    patch: (a, b) => { try { return player.computeSnapPatch?.((a + b) / 2, (b - a) / 2) ?? null; } catch { return null; } },
+    samples: () => {
+      const buf = ab();
+      if (!buf) return null;
+      mono ??= selectedSamples(buf);
+      return { data: mono, rate: buf.sampleRate };
+    },
+    play: (a, b, { loop, slow }) => {
+      const sel = player._state?.d?.slowdownSelect;
+      if (sel) { const want = slow ? '0.5' : '1'; if (sel.value !== want && [...sel.options].some((o) => o.value === want)) { sel.value = want; sel.dispatchEvent(new Event('change', { bubbles: true })); } }
+      player.playSegment(a, b, { loop });
+    },
+    stop: () => player.pause(),
+    currentTime: () => player.currentTime,
+    isPlaying: () => player.isPlaying,
+    colorScheme: () => player._state?.d?.colorSchemeSelect?.value || 'inferno',
+    maxFreq: () => (ab()?.sampleRate || 48000) / 2,
+    fileName: () => entry?.filename || entry?.name || '',
+    clock: start ? (sec) => ravenClock(start, sec, sec)[1].slice(0, 11) : null,
+    fields: {
+      speciesSearch: _modalSearchFactory ? (onSelect) => _modalSearchFactory(null, onSelect) : null,
+      tagPresets: player.getTagPresets?.() || [],
+      channels: ab()?.numberOfChannels || 1,
+      source: (l) => {
+        const set = l.setId && l.setId !== OWN_SOURCE_ID ? state.labelSets?.get(l.setId) : null;
+        const from = l.adoptedFrom
+          ? `${l.adoptedFrom.origin || 'detection'}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''} · accepted ${l.createdAt ? new Date(l.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}`
+          : set ? `${set.name || l.origin}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''}`
+          : l.origin && l.origin !== 'manual' ? `${l.origin}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''}` : 'drawn by hand';
+        const edited = l.updatedAt ? ` · edited ${new Date(l.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+        return { from, author: `${l.author || 'you'}${edited}` };
+      },
+    },
+  }, id);
+  labelModal.open();
+  labelModal.el.addEventListener('remove', () => {}, { once: true });
+  return true;
+}
+// label changes from elsewhere (undo, other panels) redraw an open label window
+labelStore.subscribe?.(() => { if (labelModal?.el.isConnected) labelModal.refresh(); });
+if (isLite()) player.onLabelOpen = (id) => { void openLabelModal(id); return true; };
 
 /** Sidebar id → dock panel id / title, where they differ. */
 const DOCK_ID = { project: 'files', spectrogram: 'display' };

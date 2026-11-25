@@ -107,7 +107,9 @@
 /* BirdNET suggestions already judged (Suggestions panel): rejected hatched + faded, unsure dotted.
    Doubled classes: win over the lane / selected styles. */
 .spectrogram-label-region.spectrogram-label-region--rejected.spectrogram-label-region--rejected,
-.annotation-region.annotation-region--rejected.annotation-region--rejected {
+.annotation-region.annotation-region--rejected.annotation-region--rejected,
+.spectrogram-label-region.spectrogram-label-region--absent.spectrogram-label-region--absent,
+.annotation-region.annotation-region--absent.annotation-region--absent {
     opacity: var(--label-dimmed);
     background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--label-c, currentColor) 50%, transparent) 0 2px, transparent 2px 6px);
 }
@@ -613,7 +615,8 @@
 
 /* Judged suggestions on a lane (after the lane block: wins over its background / border) */
 .spectrogram-label-region.spectrogram-label-region--lane.spectrogram-label-region--lane {
-    &.spectrogram-label-region--rejected {
+    &.spectrogram-label-region--rejected,
+    &.spectrogram-label-region--absent {
         opacity: var(--label-dimmed);
         background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--label-c) 50%, transparent) 0 2px, transparent 2px 6px);
     }

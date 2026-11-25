@@ -32,8 +32,8 @@ export interface QuickPickerOptions {
     initialSoundType?: string;
     offerTemplate?: boolean;
     onPick: (p: QuickPick) => void;
-    /** Tab / "more…": the full editor with what was typed so far. */
-    onMore: (query: string, soundType: string) => void;
+    /** Tab / "more…": the full editor with what was typed so far (`pick`: the highlighted row, or the typed text). */
+    onMore: (query: string, soundType: string, pick: QuickPick | null) => void;
     onCancel: () => void;
 }
 
@@ -244,28 +244,35 @@ export class QuickLabelPicker {
         }
     }
 
-    private pick(i: number) {
+    /** What row `i` (or the typed text) would save. */
+    private result(i: number): QuickPick | null {
         const r = this.rows[i];
         const free = this.input.value.trim();
-        if (!r && !free) return;
+        if (!r && !free) return null;
         const s = r?.s;
         const tags: Record<string, string> = { ...((s as any)?.tags || {}) };
         if (this.sound) tags.soundType = this.sound; else delete tags.soundType;
-        const res: QuickPick = {
+        return {
             name: s ? String(s.name) : free,
             scientificName: s ? String(s.scientificName || '') : '',
             color: s?.color || '',
             tags,
             keepAsTemplate: this.keep,
         };
+    }
+
+    private pick(i: number) {
+        const res = this.result(i);
+        if (!res) return;
         this.close();
         this.o.onPick(res);
     }
 
     private more() {
         const q = this.input.value;
+        const res = this.result(this.active);
         this.close();
-        this.o.onMore(q, this.sound);
+        this.o.onMore(q, this.sound, res);
     }
 
     cancel() {
