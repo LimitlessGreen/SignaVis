@@ -54,9 +54,60 @@ export interface EditorChromeOptions {
     prev: () => void;
     next: () => void;
     toggleDone: () => void;
+    /** Box | Time only for drawn labels. */
+    timeOnly?: { get: () => boolean; set: (on: boolean) => void };
+}
+
+/** Choices of the display preset select (skips separators); `current` is the selected value ('' = Custom). */
+export function presetChoices(sel: Pick<HTMLSelectElement, 'options' | 'value'>): { value: string; label: string; current: boolean }[] {
+    return Array.from(sel.options).filter((o) => !o.disabled)
+        .map((o) => ({ value: o.value, label: (o.textContent || o.value).trim(), current: o.value === sel.value }));
+}
+
+/** Button text of the quick choice: the selected preset's name, "Custom" when none fits. */
+export function presetButtonText(sel: Pick<HTMLSelectElement, 'options' | 'value'>): string {
+    const c = presetChoices(sel).find((x) => x.current);
+    return !c || c.value === '' ? 'Custom' : c.label.replace(/^⭐ /, '');
 }
 
 const ICON_DONE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+const ICON_BOX = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1.5"/></svg>';
+const ICON_PIN = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 4v16M17 4v16M7 12h10"/></svg>';
+
+/** "Display: <preset> ▾" in the editor head: picks a preset of the Display panel's select. */
+export class DisplayPresetButton {
+    readonly el: HTMLButtonElement;
+    #sel: () => HTMLSelectElement | null;
+
+    constructor(sel: () => HTMLSelectElement | null, openMenu: (at: { x: number; y: number }, items: { label: string; action: () => void }[]) => void) {
+        this.#sel = sel;
+        this.el = document.createElement('button');
+        this.el.type = 'button';
+        this.el.className = 'display-preset-btn';
+        this.el.title = 'Display preset (Display panel has all settings)';
+        this.el.addEventListener('click', () => {
+            const s = this.#sel();
+            if (!s) return;
+            const r = this.el.getBoundingClientRect();
+            openMenu({ x: r.left, y: r.bottom + 2 }, presetChoices(s).filter((c) => c.value !== '').map((c) => ({
+                // One of several: a check mark, not the menu's on/off switch
+                label: `${c.current ? '✓' : '\u2003'}\u2002${c.label}`,
+                action: () => { s.value = c.value; s.dispatchEvent(new Event('change', { bubbles: true })); this.refresh(); },
+            })));
+        });
+        this.refresh();
+    }
+
+    /** Re-read the select (a setting changed in the Display panel may make it "Custom"). */
+    refresh() {
+        const s = this.#sel();
+        this.el.hidden = !s;
+        this.el.innerHTML = `<span class="dpb-cap">Display:</span> <strong>${s ? escHtml(presetButtonText(s)) : ''}</strong> ▾`;
+    }
+}
+
+const escHtml = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 
 export class EditorHead {
     readonly el: HTMLElement;
@@ -119,12 +170,16 @@ export class EditorLabelBar {
     readonly toolsSlot: HTMLElement;
     #done: HTMLButtonElement;
 
-    constructor(o: Pick<EditorChromeOptions, 'toggleDone'>) {
+    constructor(o: Pick<EditorChromeOptions, 'toggleDone' | 'timeOnly'>) {
         this.el = document.createElement('div');
         this.el.className = 'editor-labelbar';
         this.el.innerHTML = `
           <span class="elb-caption">New labels</span>
           <span class="elb-template"></span>
+          <span class="elb-mode" role="radiogroup" aria-label="Shape of drawn labels"${o.timeOnly ? '' : ' hidden'}>
+            <button type="button" class="elb-seg" data-mode="box" role="radio" title="Drawn labels are boxes (time and frequency)">${ICON_BOX}<span>Box</span></button>
+            <button type="button" class="elb-seg" data-mode="time" role="radio" title="Drawn labels are time spans over the whole band (frequency is ignored)">${ICON_PIN}<span>Time only</span></button>
+          </span>
           <span class="elb-tools"></span>
           <span class="elb-spacer"></span>
           <button type="button" class="btn btn--sm elb-done" title="Mark the open recording done and go to the next of the view (D)" hidden>${ICON_DONE}<span>Mark done</span><kbd>D</kbd></button>`;
@@ -132,6 +187,23 @@ export class EditorLabelBar {
         this.toolsSlot = this.el.querySelector('.elb-tools')!;
         this.#done = this.el.querySelector('.elb-done')!;
         this.#done.addEventListener('click', () => o.toggleDone());
+        const t = o.timeOnly;
+        if (t) {
+            const sync = () => {
+                for (const b of this.el.querySelectorAll<HTMLButtonElement>('.elb-seg')) {
+                    const on = (b.dataset.mode === 'time') === t.get();
+                    b.classList.toggle('is-on', on);
+                    b.setAttribute('aria-checked', String(on));
+                }
+            };
+            this.el.querySelector('.elb-mode')!.addEventListener('click', (e) => {
+                const b = (e.target as Element).closest<HTMLButtonElement>('.elb-seg');
+                if (!b) return;
+                t.set(b.dataset.mode === 'time');
+                sync();
+            });
+            sync();
+        }
     }
 
     /** Mark done follows the open recording's row of the view (hidden without one). */

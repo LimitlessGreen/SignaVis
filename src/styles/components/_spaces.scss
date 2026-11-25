@@ -199,6 +199,24 @@ body.lite-editor-chrome .topbar .file-label { display: none; }   // the head sho
   .toolbar-btn { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; }
   .toolbar-btn .tb-label { display: inline; }
 }
+.elb-mode {
+  display: inline-flex; gap: 3px; flex: none;
+  &[hidden] { display: none; }
+}
+.elb-seg {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--color-border); background: none; color: var(--color-text-secondary); font-size: 11.5px;
+  &.is-on { color: var(--color-accent); border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+}
+.display-preset-btn {
+  flex: none; height: 24px; padding: 0 6px; border: 0; background: none; cursor: pointer;
+  font-size: 11px; color: var(--color-text-secondary); white-space: nowrap;
+  strong { color: var(--color-text-primary); font-weight: 600; }
+  &:hover { color: var(--color-text-primary); }
+  &[hidden] { display: none; }
+}
+.spectrogram-label-draft.is-time-only { border-top-style: dashed; border-bottom-style: dashed; }
 .elb-done {
   display: inline-flex; align-items: center; gap: 6px; flex: none;
   color: #15803d; border-color: color-mix(in srgb, #22c55e 50%, var(--color-border));

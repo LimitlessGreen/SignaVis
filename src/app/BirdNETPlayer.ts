@@ -584,6 +584,9 @@ export class BirdNETPlayer {
         this._labelEditorSuggestionMode = (m === 'custom-only') ? 'custom-only' : 'merge';
     }
     /** 'quick': a new box gets the quick picker beside it (Lite, mockup M1); 'dialog': the label editor. */
+    /** Draw labels as time spans (whole band) instead of boxes. */
+    setDrawTimeOnly(on: boolean) { this.spectrogramLabels.drawTimeOnly = !!on; }
+    getDrawTimeOnly(): boolean { return this.spectrogramLabels.drawTimeOnly; }
     setLabelPickerStyle(style: 'quick' | 'dialog' = 'dialog') { this._labelPickerStyle = style === 'quick' ? 'quick' : 'dialog'; }
     getLabelPickerStyle(): 'quick' | 'dialog' { return this._labelPickerStyle || 'dialog'; }
     getLabelEditorSuggestionMode() {

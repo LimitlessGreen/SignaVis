@@ -5884,11 +5884,22 @@ let editorHead = null;
 let editorLabelBar = null;
 let _editorViewUnsub = null;
 async function installEditorChrome() {
-  const { EditorHead, EditorLabelBar } = await import('../../ui/panels/editor-chrome.ts');
+  const { EditorHead, EditorLabelBar, DisplayPresetButton } = await import('../../ui/panels/editor-chrome.ts');
   const main = document.querySelector('#workspace > .main-area');
   if (!main) return;
   editorHead = new EditorHead({ prev: () => void viewList?.prev(), next: () => void viewList?.next() });
-  editorLabelBar = new EditorLabelBar({ toggleDone: () => void viewList?.toggleDone() });
+  player.setDrawTimeOnly(prefs.flag('aw.draw.timeOnly', false));
+  editorLabelBar = new EditorLabelBar({
+    toggleDone: () => void viewList?.toggleDone(),
+    timeOnly: { get: () => player.getDrawTimeOnly(), set: (on) => { player.setDrawTimeOnly(on); prefs.setFlag('aw.draw.timeOnly', on); } },
+  });
+  // "Display: <preset> ▾" in the editor head (mockup B1, legend 7; the player toolbar has no room)
+  const presetSel = () => player._state?.d?.presetSelect ?? null;
+  const presetBtn = new DisplayPresetButton(presetSel, (at, items) => showContextMenu({ ...at, items }));
+  editorHead.el.querySelector('.eh-spacer')?.after(presetBtn.el);
+  // Any change in the Display panel can turn the preset into "Custom"
+  for (const ev of ['change', 'input']) document.addEventListener(ev, () => presetBtn.refresh(), true);
+  setTimeout(() => presetBtn.refresh(), 0);
   main.prepend(editorHead.el);
   main.append(editorLabelBar.el);
   // The label template moves out of the top bar (placeholder, or the widget once the taxonomy built it).

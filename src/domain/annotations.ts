@@ -2247,8 +2247,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 const d = this._drawing;
                 this._updateEditLoupe(e.clientX, e.clientY, {
                     el: this._draftEl, mode: 'draw', fine: false,
-                    readout: this._fmtRange(Math.min(d.startTime, d.endTime), Math.max(d.startTime, d.endTime),
-                        Math.min(d.startFreq, d.endFreq), Math.max(d.startFreq, d.endFreq)),
+                    readout: this.drawTimeOnly
+                        ? `${Math.min(d.startTime, d.endTime).toFixed(3)}–${Math.max(d.startTime, d.endTime).toFixed(3)} s · time only`
+                        : this._fmtRange(Math.min(d.startTime, d.endTime), Math.max(d.startTime, d.endTime),
+                            Math.min(d.startFreq, d.endFreq), Math.max(d.startFreq, d.endFreq)),
                 });
                 e.preventDefault();
                 e.stopPropagation();
@@ -2424,14 +2426,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (!this._drawing || !this._draftEl || !this.overlay) return;
         const width = parseFloat(this.overlay.style.width) || 1;
         const height = parseFloat(this.overlay.style.height) || 1;
-        const preview = this._normalize({
-            start: this._drawing.startTime,
-            end: this._drawing.endTime,
-            freqMin: Math.min(this._drawing.startFreq, this._drawing.endFreq),
-            freqMax: Math.max(this._drawing.startFreq, this._drawing.endFreq),
-            label: 'New label',
-        });
-        const g = this._toGeometry(preview, width, height);
+        const preview = this._normalize(this._draftBounds('New label'));
+        const g = preview.fullBand
+            ? { ...this._toGeometry({ ...preview, fullBand: false }, width, height), top: 0, height }
+            : this._toGeometry(preview, width, height);
+        this._draftEl.classList.toggle('is-time-only', !!preview.fullBand);
         this._draftEl.style.left = `${g.left}px`;
         this._draftEl.style.top = `${g.top}px`;
         this._draftEl.style.width = `${g.width}px`;
@@ -2439,18 +2438,29 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._draftEl.dataset.dims = formatLabelDims(preview);
     }
 
+    /** Lite label bar „Time only“: drawn labels span the whole band (fullBand), only the drag's time counts. */
+    drawTimeOnly = false;
+
+    /** The draft's bounds; time only: the whole band. */
+    _draftBounds(label: string) {
+        const d = this._drawing!;
+        const timeOnly = this.drawTimeOnly;
+        return {
+            start: d.startTime,
+            end: d.endTime,
+            freqMin: timeOnly ? 0 : Math.min(d.startFreq, d.endFreq),
+            freqMax: timeOnly ? this._getMaxFreq() : Math.max(d.startFreq, d.endFreq),
+            ...(timeOnly ? { fullBand: true } : {}),
+            label,
+        };
+    }
+
     _finalizeDraft() {
         if (!this._drawing) return null;
-        const region = this._normalize({
-            start: this._drawing.startTime,
-            end: this._drawing.endTime,
-            freqMin: Math.min(this._drawing.startFreq, this._drawing.endFreq),
-            freqMax: Math.max(this._drawing.startFreq, this._drawing.endFreq),
-            label: `Label ${this._counter++}`,
-        });
+        const region = this._normalize(this._draftBounds(`Label ${this._counter++}`));
         const duration = Math.abs(region.end - region.start);
         const freqSpan = Math.abs(region.freqMax - region.freqMin);
-        if (duration < 0.02 || freqSpan < 20) return null;
+        if (duration < 0.02 || (!region.fullBand && freqSpan < 20)) return null;
         return region;
     }
 
