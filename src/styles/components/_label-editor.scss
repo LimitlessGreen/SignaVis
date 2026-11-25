@@ -1,7 +1,7 @@
 /* Modal and overlay rules moved to _overlays.scss */
 /* See src/styles/components/_overlays.scss for label-editor and popover styles. */
 
-/* ── Quick species pick beside a new box (Lite, mockup M1) ── */
+/* ── Quick species pick beside a new box (Lite, mockup M1: annotate-v2/label-modal.html .qp) ── */
 .quick-picker {
   position: fixed;
   z-index: 9000;
@@ -9,10 +9,11 @@
   max-width: calc(100vw - 16px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   font-size: 12px;
   color: var(--color-text-primary);
 }
@@ -20,7 +21,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  height: 40px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--color-border);
   input {
     flex: 1;
@@ -28,10 +30,11 @@
     border: none;
     background: transparent;
     color: inherit;
-    font-size: 14px;
+    font-size: 13px;
     outline: none;
   }
 }
+.qp-icon { display: flex; color: var(--color-text-secondary); }
 .qp-key {
   padding: 1px 5px;
   border: 1px solid var(--color-border);
@@ -41,85 +44,109 @@
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
-.qp-list { max-height: 300px; overflow-y: auto; padding: 2px 0 6px; }
+.qp-list { max-height: 300px; overflow-y: auto; padding-bottom: 4px; }
 .qp-group {
-  padding: 8px 10px 3px;
+  display: flex;
+  gap: 6px;
+  margin: 8px 12px 3px;
   color: var(--color-text-secondary);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+  .qp-group-r { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
 }
-.species-search-item--rich.qp-row {
-  grid-template-columns: 12px 10px minmax(0, 1fr) auto;
-  .qp-num { grid-row: 1 / span 2; color: var(--color-accent); font-size: 11px; font-variant-numeric: tabular-nums; }
-  .search-dot { grid-column: 2; }
-  .search-name, .search-sub { grid-column: 3; }
-  .search-meta { grid-column: 4; }
+.qp-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  &.active { background: color-mix(in srgb, var(--color-accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--color-accent); }
+  mark { background: none; color: inherit; font-weight: 700; }
 }
-.qp-none { padding: 10px; color: var(--color-text-secondary); }
+.qp-num { width: 12px; flex: none; font: 700 10px var(--font-mono, monospace); color: var(--color-accent); }
+.qp-sw { width: 10px; height: 10px; flex: none; border-radius: 3px; background: var(--color-text-secondary); opacity: 0.9; }
+.qp-name { white-space: nowrap; }
+.qp-sci { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); font-style: italic; font-size: 11px; }
+.qp-hint { margin-left: auto; flex: none; color: var(--color-text-secondary); font: 10.5px var(--font-mono, monospace); }
+.qp-none { padding: 10px 12px; color: var(--color-text-secondary); }
 .qp-chips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
-  padding: 8px 10px;
+  gap: 4px;
+  padding: 8px 12px;
   border-top: 1px solid var(--color-border);
 }
-.qp-chips-label { margin-right: 4px; color: var(--color-text-secondary); }
+.qp-chips-label { margin-right: 2px; color: var(--color-text-secondary); font-size: 11px; }
 .qp-chip {
-  padding: 2px 9px;
+  padding: 2px 8px;
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: 10px;
   background: transparent;
-  color: inherit;
-  font-size: 11.5px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
   cursor: pointer;
   &[aria-pressed='true'] {
-    border-color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
     color: var(--color-accent);
   }
-  &.qp-chip--more { color: var(--color-text-secondary); }
+  &.qp-chip--more { border-style: dashed; }
 }
 .qp-foot {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-top: 1px solid var(--color-border);
-  .qp-keep { display: flex; align-items: center; gap: 4px; color: var(--color-text-secondary); cursor: pointer; }
-  .qp-key { margin-right: auto; }
-  .qp-keep + .qp-key { margin-left: 4px; }
+  background: var(--color-bg-secondary, var(--color-bg-surface));
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  .qp-keep { display: flex; align-items: center; gap: 5px; cursor: pointer; }
 }
 .qp-save {
   margin-left: auto;
-  padding: 4px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
   border: none;
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--color-accent);
   color: #fff;
   font-weight: 600;
   cursor: pointer;
-  .qp-key { margin-left: 6px; border-color: rgba(255, 255, 255, 0.5); color: #fff; }
+  .qp-key { border-color: rgba(0, 0, 0, 0.3); color: inherit; }
 }
 .quick-picker-ghost {
   position: absolute;
   z-index: 15;
   box-sizing: border-box;
   border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 1px #000, inset 0 0 0 1px #000;
   pointer-events: none;
-  span {
+  .qpg-tag {
     position: absolute;
-    bottom: calc(100% + 2px);
+    bottom: calc(100% + 4px);
     left: -2px;
     padding: 1px 5px;
     border-radius: 3px;
     background: #fff;
     color: #111;
-    font-size: 10.5px;
-    font-weight: 600;
+    font-size: 10px;
+    font-weight: 700;
     white-space: nowrap;
   }
+  i { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #fff; border: 1.5px solid #111; }
+  .nw { left: -5px; top: -5px; } .ne { right: -5px; top: -5px; }
+  .sw { left: -5px; bottom: -5px; } .se { right: -5px; bottom: -5px; }
 }

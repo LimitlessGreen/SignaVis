@@ -20,5 +20,14 @@ test('quick picker: existing labels are filtered by the query, at most 9 rows', 
   const rows = groupQuickRows([{ name: 'Amsel' }], found, 'sper');
   assert.ok(!rows.some((r) => r.s.name === 'Amsel'));
   const many = Array.from({ length: 20 }, (_, i) => ({ name: `Art ${i}`, group: 'taxonomy' }));
-  assert.equal(groupQuickRows([], many, '').length, 9);
+  const r = groupQuickRows([], many, '');
+  assert.equal(r.length, 9);
+  assert.equal(r.more, 11);
+});
+
+test('quick picker: hints (count + sound here, unexpected only when the place is known)', () => {
+  const rows = groupQuickRows([{ name: 'Sperlingskauz', count: 2, tags: { soundType: 'song' } }],
+    [{ name: 'Sperbergrasmücke', group: 'taxonomy' }, { name: 'Sperber', group: 'taxonomy', local: true }], 'sper');
+  assert.deepEqual(rows.map((r) => r.hint), ['2× · song', 'unexpected here', '']);
+  assert.equal(groupQuickRows([], [{ name: 'Sperber', group: 'taxonomy' }], '')[0].hint, '');
 });

@@ -5,7 +5,7 @@
 // with what was typed. Results in three groups: in this recording, on the species list, all species.
 // Sound type as chips (the other tags live in the full editor). "Keep for next labels" sets the template.
 
-import { speciesRowHtml, type SpeciesSuggestion } from '../taxonomy-ui/taxonomy-ui.ts';
+import type { SpeciesSuggestion } from '../taxonomy-ui/taxonomy-ui.ts';
 import { normalizeSearch } from '../taxonomy-ui/species-ranking.ts';
 
 export interface QuickPick {
@@ -20,7 +20,11 @@ export interface QuickPickerOptions {
     /** Screen rectangle of the drawn box (the popover docks right of it, else left). */
     anchor: { left: number; top: number; right: number; bottom: number };
     /** Labels of this recording (name, colour, scientific name, tags). */
-    existing: { name: string; color?: string; scientificName?: string; tags?: Record<string, string> }[];
+    existing: { name: string; color?: string; scientificName?: string; tags?: Record<string, string>; count?: number }[];
+    /** Labels in this recording (group head "N labels"). */
+    labelCount?: number;
+    /** Name of the active species list (group head "Species list · name"). */
+    listName?: string;
     /** Species search (the same provider as the label editor). */
     search: (query: string, limit: number) => SpeciesSuggestion[];
     /** Sound type options (tag preset `soundType`). */
@@ -33,29 +37,38 @@ export interface QuickPickerOptions {
     onCancel: () => void;
 }
 
-interface Row { s: SpeciesSuggestion; group: string }
+interface Row { s: SpeciesSuggestion; group: string; hint: string }
 
 const MAX_ROWS = 9;
 const CHIP_COUNT = 4;
 
-export function groupQuickRows(existing: QuickPickerOptions['existing'], found: SpeciesSuggestion[], query: string): Row[] {
+/** Rows of the three groups (max 9) and how many further matches did not fit. */
+export function groupQuickRows(existing: QuickPickerOptions['existing'], found: SpeciesSuggestion[], query: string): Row[] & { more?: number } {
     const q = normalizeSearch(query).trim();
     const seen = new Set<string>();
     const key = (s: { name?: string; scientificName?: string }) => String(s.scientificName || s.name || '').trim().toLowerCase();
-    const rows: Row[] = [];
-    const push = (s: SpeciesSuggestion, group: string) => {
+    const rows: Row[] & { more?: number } = [];
+    let more = 0;
+    // "unexpected here" only when the geo model knows the place (some match is local)
+    const geoKnown = found.some((s) => s.local);
+    const push = (s: SpeciesSuggestion, group: string, hint = '') => {
         const k = key(s);
-        if (!k || seen.has(k) || rows.length >= MAX_ROWS) return;
+        if (!k || seen.has(k)) return;
         seen.add(k);
-        rows.push({ s, group });
+        if (rows.length >= MAX_ROWS) { more += 1; return; }
+        rows.push({ s, group, hint });
     };
     for (const e of existing) {
         if (q && !normalizeSearch(`${e.name} ${e.scientificName || ''}`).includes(q)) continue;
-        push({ name: e.name, scientificName: e.scientificName || '', color: e.color || '', tags: e.tags || {} } as SpeciesSuggestion, 'recording');
+        const hint = [e.count ? `${e.count}×` : '', e.tags?.soundType || ''].filter(Boolean).join(' · ');
+        push({ name: e.name, scientificName: e.scientificName || '', color: e.color || '', tags: e.tags || {} } as SpeciesSuggestion, 'recording', hint);
     }
-    for (const s of found) if (s.group === 'project' || s.group === 'recent') push(s, 'recording');
+    for (const s of found) if (s.group === 'project' || s.group === 'recent') push(s, 'recording', s.count ? `${s.count}× in project` : '');
     for (const s of found) if (s.listed && s.group !== 'project' && s.group !== 'recent') push(s, 'list');
-    for (const s of found) push(s, 'all');
+    for (const s of found) {
+        push(s, 'all', s.group === 'extra' ? 'not in BirdNET' : geoKnown && !s.local ? 'unexpected here' : '');
+    }
+    rows.more = more;
     return rows;
 }
 
@@ -89,7 +102,10 @@ export class QuickLabelPicker {
         const tab = document.createElement('span');
         tab.className = 'qp-key';
         tab.textContent = 'Tab = more fields';
-        head.append(this.input, tab);
+        const icon = document.createElement('span');
+        icon.className = 'qp-icon';
+        icon.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+        head.append(icon, this.input, tab);
         this.list.className = 'qp-list';
         this.list.setAttribute('role', 'listbox');
         el.append(head, this.list, this.chips(), this.foot());
@@ -149,35 +165,48 @@ export class QuickLabelPicker {
         }
         const hint = document.createElement('span');
         hint.className = 'qp-key';
-        hint.textContent = '↑↓ 1–9 · Esc';
+        hint.textContent = '↑↓ 1–9';
+        const esc = document.createElement('span');
+        esc.className = 'qp-key';
+        esc.textContent = 'Esc';
         const save = document.createElement('button');
         save.type = 'button';
         save.className = 'qp-save';
         save.innerHTML = 'Save <span class="qp-key">Enter</span>';
         save.onclick = () => this.pick(this.active);
-        f.append(hint, save);
+        f.append(hint, esc, save);
         return f;
     }
 
     private render() {
         const q = this.input.value;
-        this.rows = groupQuickRows(this.o.existing, this.o.search(q, 14), q);
+        this.rows = groupQuickRows(this.o.existing, this.o.search(q, 24), q);
+        const more = (this.rows as any).more || 0;
         this.list.replaceChildren();
         let last = '';
+        const lastGroup = this.rows.length ? this.rows[this.rows.length - 1].group : '';
         this.rows.forEach((r, i) => {
             if (r.group !== last) {
                 last = r.group;
                 const h = document.createElement('div');
                 h.className = 'qp-group';
-                h.textContent = GROUP_TITLE[r.group];
+                const title = r.group === 'list' && this.o.listName ? `Species list · ${this.o.listName}` : GROUP_TITLE[r.group];
+                const right = r.group === 'recording' && this.o.labelCount ? `${this.o.labelCount} label${this.o.labelCount === 1 ? '' : 's'}`
+                    : r.group === lastGroup && more ? `${more} more` : '';
+                h.append(text('span', title), text('span', right, 'qp-group-r'));
                 this.list.append(h);
             }
             const b = document.createElement('button');
             b.type = 'button';
-            b.className = 'qp-row species-search-item species-search-item--rich' + (i === this.active ? ' active' : '');
+            b.className = 'qp-row' + (i === this.active ? ' active' : '');
             b.setAttribute('role', 'option');
             b.setAttribute('aria-selected', String(i === this.active));
-            b.innerHTML = `<span class="qp-num">${i + 1}</span>${speciesRowHtml(r.s, q)}`;
+            const sw = document.createElement('span');
+            sw.className = 'qp-sw';
+            if (r.s.color && r.group === 'recording') sw.style.background = r.s.color;
+            b.append(text('span', String(i + 1), 'qp-num'), sw, mark(String(r.s.name), q, 'qp-name'));
+            if (r.s.scientificName) b.append(text('small', String(r.s.scientificName), 'qp-sci'));
+            b.append(text('span', r.hint, 'qp-hint'));
             b.onclick = () => this.pick(i);
             b.onpointerenter = () => this.highlight(i);
             this.list.append(b);
@@ -266,4 +295,23 @@ export class QuickLabelPicker {
         this.el.style.left = `${Math.round(x)}px`;
         this.el.style.top = `${Math.round(y)}px`;
     }
+}
+
+function text(tag: string, t: string, cls = '') {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    e.textContent = t;
+    return e;
+}
+
+/** The name with the typed part marked (first match, accents ignored by position only when lengths agree). */
+function mark(name: string, q: string, cls: string) {
+    const e = text('span', '', cls);
+    const n = normalizeSearch(name), nq = normalizeSearch(q).trim();
+    const i = nq && n.length === name.length ? n.indexOf(nq) : -1;
+    if (i < 0) { e.textContent = name; return e; }
+    const m = document.createElement('mark');
+    m.textContent = name.slice(i, i + nq.length);
+    e.append(name.slice(0, i), m, name.slice(i + nq.length));
+    return e;
 }

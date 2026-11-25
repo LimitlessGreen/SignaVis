@@ -2545,7 +2545,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const dur = Math.max(0, region.end - region.start);
         const tag = document.createElement('span');
         tag.textContent = `new · ${dur.toFixed(1)} s · ${(region.freqMin / 1000).toFixed(1)}–${(region.freqMax / 1000).toFixed(1)} kHz`;
+        tag.className = 'qpg-tag';
         ghost.append(tag);
+        for (const c of ['nw', 'ne', 'sw', 'se']) { const h = document.createElement('i'); h.className = c; ghost.append(h); }
         this.overlay.append(ghost);
         const presets = this.player?.getTagPresets?.() || [];
         const soundTypes = presets.find((p: any) => p.key === 'soundType')?.options
@@ -2560,9 +2562,27 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             this.add(region);
             if (keep) this.player?.setSpeciesBar?.(region.label, { color: region.color, scientificName: region.scientificName, tags: { ...tags } });
         };
+        // How often each name occurs here and its most frequent sound type (row hint "2× · song")
+        const counts = new Map<string, { n: number; sounds: Map<string, number> }>();
+        for (const l of this._items) {
+            const k = String(l.label || '').trim().toLowerCase();
+            if (!k) continue;
+            const c = counts.get(k) || { n: 0, sounds: new Map() };
+            c.n += 1;
+            const st = l.tags?.soundType;
+            if (st) c.sounds.set(st, (c.sounds.get(st) || 0) + 1);
+            counts.set(k, c);
+        }
+        const existing = existingLabels.map((e: any) => {
+            const c = counts.get(String(e.name).trim().toLowerCase());
+            const top = c ? [...c.sounds].sort((a, b) => b[1] - a[1])[0]?.[0] : '';
+            return { ...e, count: c?.n || 0, tags: { ...(e.tags || {}), ...(top ? { soundType: top } : {}) } };
+        });
         const picker = new QuickLabelPicker({
             anchor,
-            existing: existingLabels,
+            existing,
+            labelCount: this._items.length,
+            listName: this.player?.getSpeciesListName?.() || '',
             search: (q, n) => this.player?.getLabelEditorSuggestions?.(q, n) || [],
             soundTypes,
             initialSoundType: initialTags?.soundType || '',
