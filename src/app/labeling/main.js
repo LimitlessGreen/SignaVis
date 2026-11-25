@@ -3751,6 +3751,9 @@ if (isLite()) {
         reveal: () => { _embedMapOpened = true; void spaces?.reveal('embeddings'); },
       } : undefined;
     },
+    markHits: (hits, polarity) => markSimilarHits(hits, polarity),
+    markOf: (hit) => similarMarkOf(hit),
+    hitsToView: (paths) => similarHitsToView(paths),
     onInfo: (info) => {
       if (info?.windows) spaces?.setAvailable('embeddings');
       // New or removed windows: the hosted map reloads the next time it is shown.
@@ -3759,10 +3762,80 @@ if (isLite()) {
       _embedStoreKey = key;
     },
   });
+  labelStore.subscribe(() => similarPanel?.refreshMarks());
   sidebar.addPanel('similar', {
     icon: AudioLines, label: 'Similar', element: similarPanel.el,
     onActivate: () => similarPanel.refresh(),
   });
+}
+/** Similar → ✓ present / ✕ absent: time-only labels of the New labels species in the hits' recordings. */
+async function markSimilarHits(hits, polarity) {
+  const tpl = adoptTemplate();
+  if (!tpl?.name) return 'Pick a species under “New labels” first – the hits get that name.';
+  const { hitLabels } = await import('../../app/similar-marks.ts');
+  const { newLabelId } = await import('../../app/annotation-sets.ts');
+  saveCurrentAnnotationsIfNeeded();
+  const entryOf = (path) => recordingManager.getAll().find((e) => e.path === path) || null;
+  const active = recordingManager.activeId;
+  const byPath = hitLabels(hits, tpl, polarity, {
+    setId: OWN_SOURCE_ID, layer: activeLayerId(state.labelSets), id: newLabelId,
+    existing: (path) => { const e = entryOf(path); return !e ? [] : e.id === active ? state.labels : (e.annotations || []); },
+  });
+  const made = [];   // [entryId, ids]
+  let n = 0;
+  for (const [path, labels] of byPath) {
+    let entry = entryOf(path);
+    if (!entry) { entry = recordingManager.add(folderFileEntry(path, { pinned: false })); }
+    if (entry.id === active) labelStore.add(labels);
+    else recordingManager.update(entry.id, { annotations: [...(entry.annotations || []), ...labels] });
+    made.push([entry.id, new Set(labels.map((l) => l.id))]);
+    n += labels.length;
+  }
+  if (!n) return `Already marked ${polarity} as ${tpl.name}.`;
+  renderProjectLocation();
+  touchOwnSet(OWN_SOURCE_ID);
+  syncToPlayer();
+  scheduleProjectAutosave();
+  const recs = byPath.size;
+  const msg = `${n} window${n === 1 ? '' : 's'} labelled ${polarity === 'absent' ? 'absent: ' : ''}${tpl.name} in ${recs} recording${recs === 1 ? '' : 's'}`;
+  showUndoToast(msg, () => {
+    for (const [id, ids] of made) {
+      if (id === recordingManager.activeId) labelStore.remove((l) => ids.has(l.id));
+      else {
+        const e = recordingManager.getAll().find((x) => x.id === id);
+        if (e) recordingManager.update(id, { annotations: (e.annotations || []).filter((l) => !ids.has(l.id)) });
+      }
+    }
+    syncToPlayer();
+    scheduleProjectAutosave();
+  });
+  return msg + '.';
+}
+
+/** Own label on a hit window (most of the window covered), for the tile badge. */
+function similarMarkOf(hit) {
+  const e = recordingManager.getAll().find((x) => x.path === hit.path);
+  if (!e) return null;
+  const all = e.id === recordingManager.activeId ? state.labels : (e.annotations || []);
+  const own = all.find((l) => l.setId === OWN_SOURCE_ID
+    && Math.min(l.end, hit.end) - Math.max(l.start, hit.start) >= 0.5 * (hit.end - hit.start));
+  return own ? { name: own.label || own.scientificName || '?', absent: own.polarity === 'absent' } : null;
+}
+
+/** Similar → View: the hits' recordings become a static dataset, opened as the view. */
+async function similarHitsToView(paths) {
+  const root = projectKind === 'folder' && projectStore?.rootPath;
+  if (!root || !catalogView) return 'Hits become a view in projects with a catalog (Browse).';
+  const abs = paths.map((p) => `${root.replace(/[\\/]+$/, '')}/${p}`);
+  const ids = await catalogApi.idsForPaths(root, abs);
+  if (!ids.length) return 'None of these recordings is in the catalog – import the folder in Browse first.';
+  const t = new Date();
+  const name = `Similar ${t.toLocaleDateString()} ${t.toLocaleTimeString()}`;
+  const id = await catalogApi.createDataset(root, 'static', { name, description: `${ids.length} recordings with similar windows`, color: null, filter: null });
+  await catalogApi.datasetAdd(root, id, { ids });
+  catalogView.datasetsChanged();
+  await catalogView.setFilter({ datasetId: id }, { activeDs: id });
+  return `View: ${ids.length} recording${ids.length === 1 ? '' : 's'} (dataset “${name}”)${ids.length < paths.length ? ` · ${paths.length - ids.length} not in the catalog` : ''}.`;
 }
 // ── Library (project catalog, Lite + folder project only) ─────────
 if (isLite()) {

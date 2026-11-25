@@ -72,6 +72,7 @@ export const catalogApi = {
     clearThumbs: (projectRoot: string) => call<number>('catalog_thumbs_clear', { projectRoot }),
     recordingPath: (projectRoot: string, recordingId: number) =>
         call<string | null>('catalog_recording_path', { projectRoot, recordingId }),
+    idsForPaths: (projectRoot: string, paths: string[]) => call<number[]>('catalog_ids_for_paths', { projectRoot, paths }),
     datasets: (projectRoot: string) => call<DatasetInfo[]>('catalog_datasets', { projectRoot }),
     createDataset: (projectRoot: string, kind: 'static' | 'filter', dataset: DatasetEdit) =>
         call<number>('catalog_create_dataset', { projectRoot, kind, dataset }),

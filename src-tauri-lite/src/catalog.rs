@@ -581,3 +581,10 @@ pub async fn catalog_dataset_remove_range(state: tauri::State<'_, CatalogState>,
     let cat = state.get(&project_root)?;
     blocking(move || ds::remove_range(&*cat.lock().map_err(err)?, id, recording_id, range[0], range[1]).map_err(err)).await
 }
+
+/// Recording ids of absolute file paths (Similar → View); files not in the catalog are left out.
+#[tauri::command]
+pub async fn catalog_ids_for_paths(state: tauri::State<'_, CatalogState>, project_root: String, paths: Vec<String>) -> Result<Vec<i64>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::recordings_by_paths(&*cat.lock().map_err(err)?, &paths, &machine_name()).map_err(err)).await
+}

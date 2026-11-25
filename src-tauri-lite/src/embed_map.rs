@@ -1180,3 +1180,33 @@ mod tests {
         eprintln!("{} Punkte, {} Dateien -> {}", m.x.len(), m.files.len(), map_path(&root).display());
     }
 }
+
+// ── Spectrogram tiles of similarity hits (Similar panel) ─────────────────
+
+#[derive(Debug, serde::Deserialize)]
+pub struct TileWindow { pub path: String, pub start: f64, pub end: f64 }
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tile { pub w: u32, pub h: u32, pub max_hz: f64, pub data: Vec<u8>, pub error: Option<String> }
+
+/// Small spectrograms of hit windows (paths relative to the project), rendered in parallel.
+#[tauri::command]
+pub async fn similar_tiles(root: String, windows: Vec<TileWindow>, spec: aw_catalog::thumb::ThumbSpec) -> Result<Vec<Tile>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let one = |w: &TileWindow| -> Tile {
+            let r = safe_join(&root, &w.path).ok_or_else(|| "path outside the project".to_string())
+                .and_then(|p| aw_catalog::thumb::render_window(&p, w.start, w.end, spec).map_err(|e| e.to_string()));
+            match r {
+                Ok((data, max_hz)) => Tile { w: spec.w, h: spec.h, max_hz, data, error: None },
+                Err(e) => Tile { w: 0, h: 0, max_hz: 0.0, data: Vec::new(), error: Some(e) },
+            }
+        };
+        let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8).max(1);
+        let chunk = windows.len().div_ceil(threads).max(1);
+        std::thread::scope(|s| {
+            let hs: Vec<_> = windows.chunks(chunk).map(|c| s.spawn(move || c.iter().map(one).collect::<Vec<_>>())).collect();
+            hs.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+        })
+    }).await.map_err(|e| e.to_string())
+}

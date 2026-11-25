@@ -29,7 +29,7 @@ export function setStatusFromValidation(set: any, validation: { ok: boolean }) {
 }
 
 let _adoptCounter = 0;
-function newLabelId() {
+export function newLabelId() {
     _adoptCounter += 1;
     return `slabel_${Date.now().toString(36)}${_adoptCounter.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }

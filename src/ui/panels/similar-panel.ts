@@ -19,6 +19,8 @@
 import { appConfirm, appPrompt } from '../components/modal/dialogs.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { formatMinSecTenths } from '../../shared/utils.ts';
+import { clickTile } from '../../app/similar-marks.ts';
+import { heatLut, thumbPixels } from '../../domain/catalog/thumb-grid.ts';
 import { EmbeddingMap, type EmbeddingMapHost, type Clusters, type MapData, type Suspect } from './embedding-map.ts';
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -54,7 +56,18 @@ export interface SimilarPanelOptions {
     mapHost?: EmbeddingMapHost;
     /** The store was (re)read: e.g. offer the Embeddings space once there are windows. */
     onInfo?: (info: { windows: number } | null) => void;
+    /** Keep the picked hits as labels (template species, time only); returns a status line. */
+    markHits?: (hits: SimilarHit[], polarity: 'present' | 'absent') => Promise<string> | string;
+    /** Own label already on a hit window (shown on the tile). */
+    markOf?: (hit: SimilarHit) => { name: string; absent: boolean } | null;
+    /** Make the hits' recordings the view (Browse/Annotate); returns a status line. */
+    hitsToView?: (paths: string[]) => Promise<string> | string;
 }
+
+interface Tile { w: number; h: number; maxHz: number; data: number[]; error: string | null }
+/** Tile spectrogram size (drawn scaled to the tile width). */
+const TILE_SPEC = { w: 160, h: 54, maxHz: 12_000 };
+const tileKey = (h: { path: string; start: number }) => `${h.path}@${h.start.toFixed(3)}`;
 
 const WINDOW_S = 5;
 const LABEL_ICON: Record<Label, string> = { pos: '✓', neg: '✗', unsure: '?' };
@@ -97,6 +110,8 @@ export class SimilarPanel {
     #query: SimilarQuery | null = null;
     #listKind: 'similar' | 'rank' = 'similar';
     #status = '';
+    /** Result of the last ✓ / ✕ / → View, shown in the action bar. */
+    #barMsg = '';
     #busy = '';
     #listening = false;
     // agile modelling
@@ -109,6 +124,11 @@ export class SimilarPanel {
     #threshold = 0.5;
     #k = 50;
     #map: EmbeddingMap | null = null;
+    // tile grid: picked hits, spectrogram tiles (by path@start)
+    #sel = { sel: new Set<number>(), anchor: -1 };
+    #tiles = new Map<string, ImageData | null>();
+    #tilesLoading = false;
+    #lut = heatLut();
 
     constructor(opts: SimilarPanelOptions) {
         this.#opts = opts;
@@ -240,7 +260,7 @@ export class SimilarPanel {
             return;
         }
         await this.#run('Searching…', async () => {
-            this.#hits = await this.#call<SimilarHit[]>('embed_similar', { root, path: q.path, start: this.#windowStart(q), k: this.#k });
+            this.#setHits(await this.#call<SimilarHit[]>('embed_similar', { root, path: q.path, start: this.#windowStart(q), k: this.#k }));
             this.#query = q;
             this.#listKind = 'similar';
         });
@@ -271,6 +291,75 @@ export class SimilarPanel {
             host: this.#opts.mapHost,
         });
         this.#map.open();
+    }
+
+    // ── Tiles + picking ───────────────────────────────────────────────
+
+    #marksQueued = false;
+    /** Labels changed (own marks on the tiles): redraw the grid once per frame, only when hits are shown. */
+    refreshMarks() {
+        if (!this.#hits.length || this.#marksQueued || !this.el.isConnected) return;
+        this.#marksQueued = true;
+        requestAnimationFrame(() => { this.#marksQueued = false; this.#render(); });
+    }
+
+    #setHits(hits: SimilarHit[]) {
+        this.#hits = hits;
+        this.#sel = { sel: new Set(), anchor: -1 };
+        this.#barMsg = '';
+        if (this.#tiles.size > 2000) this.#tiles.clear();
+    }
+
+    #picked(): SimilarHit[] {
+        return [...this.#sel.sel].sort((a, b) => a - b).map((i) => this.#hits[i]).filter(Boolean);
+    }
+
+    /** Spectrogram tiles of the hits not drawn yet, then draw them into the grid. */
+    async #loadTiles() {
+        const root = this.#opts.getRoot();
+        const missing = this.#hits.filter((h) => !this.#tiles.has(tileKey(h)));
+        if (!root || !missing.length || this.#tilesLoading) { this.#drawTiles(); return; }
+        this.#tilesLoading = true;
+        try {
+            const res = await this.#call<Tile[]>('similar_tiles', {
+                root, windows: missing.map((h) => ({ path: h.path, start: h.start, end: h.end })), spec: TILE_SPEC,
+            });
+            missing.forEach((h, k) => {
+                const t = res[k];
+                this.#tiles.set(tileKey(h), t && !t.error && t.w ? new ImageData(thumbPixels(t, this.#lut), t.w, t.h) : null);
+            });
+        } catch {
+            for (const h of missing) this.#tiles.set(tileKey(h), null);
+        } finally {
+            this.#tilesLoading = false;
+        }
+        this.#drawTiles();
+        if (this.#hits.some((h) => !this.#tiles.has(tileKey(h)))) void this.#loadTiles();   // hits changed meanwhile
+    }
+
+    #drawTiles() {
+        for (const c of this.el.querySelectorAll<HTMLCanvasElement>('canvas.sim-spec')) {
+            const img = this.#tiles.get(c.dataset.k || '');
+            if (!img) { c.classList.toggle('is-missing', img === null); continue; }
+            c.width = img.width; c.height = img.height;
+            c.getContext('2d')?.putImageData(img, 0, 0);
+        }
+    }
+
+    async #mark(polarity: 'present' | 'absent') {
+        const hits = this.#picked();
+        if (!hits.length || !this.#opts.markHits) return;
+        this.#barMsg = await this.#opts.markHits(hits, polarity);
+        this.#render();
+    }
+
+    async #classMark(label: Label) {
+        const root = this.#opts.getRoot();
+        if (!root || !this.#cls) return;
+        for (const h of this.#picked()) {
+            this.#labels = await this.#call<LabelsFile>('agile_label_set', { root, class: this.#cls, path: h.path, start: h.start, label });
+        }
+        this.#render();
     }
 
     // ── Agile modelling ───────────────────────────────────────────────
@@ -314,7 +403,7 @@ export class SimilarPanel {
         this.#cls = name;
         this.#train = null;
         this.#rank = null;
-        if (this.#listKind === 'rank') this.#hits = [];
+        if (this.#listKind === 'rank') this.#setHits([]);
         this.#map?.refresh();   // at once: the map drops results of the old class before anything async
         this.refresh();
     }
@@ -346,7 +435,7 @@ export class SimilarPanel {
         this.#rank = await this.#call<RankResult>('agile_rank', {
             root, class: this.#cls, mode: this.#rankMode, k: this.#k, threshold: this.#threshold, skipLabeled: true,
         });
-        this.#hits = this.#rank.hits;
+        this.#setHits(this.#rank.hits);
         this.#listKind = 'rank';
     }
 
@@ -373,6 +462,22 @@ export class SimilarPanel {
     // ── Events ────────────────────────────────────────────────────────
 
     #onClick(e: MouseEvent) {
+        const tile = (e.target as Element).closest<HTMLElement>('.sim-tile');
+        if (tile && !(e.target as Element).closest('[data-act]')) {
+            const i = Number(tile.dataset.i);
+            // Second click of a double-click (the grid was rebuilt in between, so no dblclick event):
+            // undo the first click's pick and open the hit.
+            if (e.detail === 2 && !e.shiftKey) {
+                this.#sel = clickTile(this.#sel, i);
+                this.#render();
+                const h = this.#hits[i];
+                if (h) void Promise.resolve(this.#opts.openHit(h, false)).catch(() => {});
+                return;
+            }
+            this.#sel = clickTile(this.#sel, i, { shift: e.shiftKey });
+            this.#render();
+            return;
+        }
         const btn = (e.target as Element).closest<HTMLElement>('[data-act]');
         if (!btn || (btn as HTMLButtonElement).disabled) return;
         const act = btn.dataset.act;
@@ -393,6 +498,17 @@ export class SimilarPanel {
             case 'train': this.#trainNow(); break;
             case 'rank': this.#run('Scoring…', () => this.#fetchRank()); break;
             case 'export': this.#export(btn.dataset.f as 'raven' | 'csv').catch(fail); break;
+            case 'mark': this.#mark(btn.dataset.p as 'present' | 'absent').catch(fail); break;
+            case 'cmark': this.#classMark(btn.dataset.l as Label).catch(fail); break;
+            case 'sel-all':
+                this.#sel = this.#sel.sel.size === this.#hits.length
+                    ? { sel: new Set(), anchor: -1 } : { sel: new Set(this.#hits.map((_, i) => i)), anchor: 0 };
+                this.#render();
+                break;
+            case 'to-view':
+                Promise.resolve(this.#opts.hitsToView?.([...new Set((this.#sel.sel.size ? this.#picked() : this.#hits).map((h) => h.path))]))
+                    .then((m) => { if (m) { this.#barMsg = m; this.#render(); } }).catch((err) => { this.#barMsg = errText(err); this.#render(); });
+                break;
             case 'label': {
                 const h = hit();
                 if (h) this.#setLabel(h.path, h.start, btn.dataset.l as Label).catch(fail);
@@ -408,7 +524,7 @@ export class SimilarPanel {
     }
 
     #onContextMenu(e: MouseEvent) {
-        const li = (e.target as Element).closest<HTMLElement>('.sim-hit');
+        const li = (e.target as Element).closest<HTMLElement>('.sim-hit, .sim-tile');
         const h = li ? this.#hits[Number(li.dataset.i)] : null;
         if (!h) return;
         e.preventDefault();
@@ -451,6 +567,7 @@ export class SimilarPanel {
         const scroll = this.el.scrollTop;
         this.el.innerHTML = parts.join('');
         this.el.scrollTop = scroll;
+        if (this.#hits.length) void this.#loadTiles();
     }
 
     #renderModel(): string {
@@ -584,26 +701,36 @@ export class SimilarPanel {
         const head = this.#listKind === 'rank'
             ? `Review “${esc(this.#cls)}”: ${modeName[this.#rankMode] || this.#rankMode}, unlabeled windows`
             : q ? `Similar to ${esc(q.path)} @ ${fmtTime(q.start)}` : '';
-        const labelButtons = (h: SimilarHit, i: number) => {
-            if (!this.#cls) return '';
-            const cur = this.#labelOf(h.path, h.start);
-            return (['pos', 'neg', 'unsure'] as Label[]).map((l) =>
-                `<button class="sim-lbl ${l}${cur === l ? ' on' : ''}" data-act="label" data-l="${l}" data-i="${i}" type="button" title="${LABEL_TITLE[l]}">${LABEL_ICON[l]}</button>`).join('');
-        };
         const scoreTitle = this.#listKind === 'rank' ? 'Classifier score' : 'Cosine similarity';
+        const n = this.#sel.sel.size;
+        const mark = !!this.#opts.markHits;
+        const classTag = (h: SimilarHit) => {
+            const cur = this.#cls ? this.#labelOf(h.path, h.start) : null;
+            const own = this.#opts.markOf?.(h);
+            return (own ? `<span class="sim-own${own.absent ? ' absent' : ''}" title="My label: ${own.absent ? 'absent – ' : ''}${esc(own.name)}">${own.absent ? '✕' : '✓'}</span>` : '')
+                + (cur ? `<span class="sim-cls ${cur}" title="${esc(this.#cls)}: ${LABEL_TITLE[cur]}">${LABEL_ICON[cur]}</span>` : '');
+        };
         return `<div class="panel-section sim-results">
             <p class="field-hint">${head}</p>
-            <ol class="sim-list">${this.#hits.map((h, i) => `
-                <li class="sim-hit" data-i="${i}">
-                    <button class="sim-play" data-act="play" data-i="${i}" type="button" title="Play">▶</button>
-                    <button class="sim-open" data-act="open" data-i="${i}" type="button" title="${esc(h.path)} — open in spectrogram">
-                        <span class="sim-file">${esc(h.path.split('/').pop() || h.path)}</span>
-                        <span class="sim-time">${fmtTime(h.start)}</span>
-                    </button>
-                    <span class="sim-score" title="${scoreTitle}">${h.score.toFixed(3)}</span>
-                    ${labelButtons(h, i)}
-                </li>`).join('')}
-            </ol>
+            <div class="sim-grid">${this.#hits.map((h, i) => `
+                <div class="sim-tile${this.#sel.sel.has(i) ? ' sel' : ''}${((o) => (o ? (o.absent ? ' own-absent' : ' own-present') : ''))(this.#opts.markOf?.(h))}" data-i="${i}"
+                     title="${esc(h.path.split('/').pop() || h.path)} @ ${fmtTime(h.start)} · click: pick, Shift: range, double-click: open">
+                    <canvas class="sim-spec" data-k="${esc(tileKey(h))}" width="${TILE_SPEC.w}" height="${TILE_SPEC.h}"></canvas>
+                    <button class="sim-tplay" data-act="play" data-i="${i}" type="button" title="Play" aria-label="Play">▶</button>
+                    <span class="sim-plq tr"><span>${esc((h.path.split('/').pop() || h.path).replace(/\.[^.]+$/, ''))}</span></span>
+                    <span class="sim-plq bl"><span title="${scoreTitle}">${h.score.toFixed(2)}</span><span>${fmtTime(h.start)}</span></span>
+                    <span class="sim-plq br">${classTag(h)}</span>
+                </div>`).join('')}
+            </div>
+            <div class="sim-actbar">
+                <button class="sim-abtn" data-act="sel-all" type="button">${n === this.#hits.length ? 'None' : 'All'}</button>
+                ${mark ? `<button class="sim-abtn ok" data-act="mark" data-p="present" type="button"${n ? '' : ' disabled'} title="Label the picked windows with the New labels species">✓ present${n ? ` (${n})` : ''}</button>
+                <button class="sim-abtn no" data-act="mark" data-p="absent" type="button"${n ? '' : ' disabled'} title="Keep the picked windows as absent labels (not this species)">✕ absent</button>` : ''}
+                ${this.#cls ? (['pos', 'neg', 'unsure'] as Label[]).map((l) => `<button class="sim-lbl ${l}" data-act="cmark" data-l="${l}" type="button"${n ? '' : ' disabled'} title="${esc(this.#cls)}: ${LABEL_TITLE[l]}">${LABEL_ICON[l]}</button>`).join('') : ''}
+                <span class="sim-spacer"></span>
+                ${this.#opts.hitsToView ? `<button class="sim-abtn" data-act="to-view" type="button" title="Show the recordings of ${n ? 'the picked' : 'all'} hits as the view">→ View</button>` : ''}
+                ${this.#barMsg ? `<p class="sim-barmsg">${esc(this.#barMsg)}</p>` : ''}
+            </div>
         </div>`;
     }
 }

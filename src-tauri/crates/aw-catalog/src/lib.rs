@@ -418,6 +418,20 @@ mod tests {
     }
 
     #[test]
+    fn recordings_are_found_by_absolute_path() {
+        let mut cat = Catalog::open_in_memory().unwrap();
+        let root = cat.add_root("sk", "referenced", "m", "/disk/sk").unwrap();
+        let files: Vec<_> = ["a/one.wav", "b/two.wav"].iter()
+            .map(|p| scan::ScannedFile { rel_path: p.to_string(), size: 1, mtime_ms: 0 }).collect();
+        let opts = ImportProfile { name: "t".into(), patterns: PatternSet::parse(&["{x}"]).unwrap(), mappings: vec![], utc_offset_min: 0, tz: None };
+        import_scanned(&mut cat, root, &files, &opts).unwrap();
+        let ids = recordings_by_paths(&cat, &["/disk/sk/b/two.wav".into(), "/disk/sk/b/two.wav".into(), "/elsewhere/a/one.wav".into(),
+            "/disk/sk/a/one.wav".into(), "/disk/skx/a/one.wav".into()], "m").unwrap();
+        assert_eq!(ids.len(), 2, "duplicates and foreign paths left out: {ids:?}");
+        assert!(recordings_by_paths(&cat, &["/disk/sk/a/one.wav".into()], "other").unwrap().is_empty(), "other machine");
+    }
+
+    #[test]
     fn a_root_name_is_not_repointed_to_another_folder() {
         let cat = Catalog::open_in_memory().unwrap();
         let a = cat.add_root("Woche_1", "referenced", "m", "/disk/A/Woche_1").unwrap();
@@ -463,6 +477,28 @@ pub fn recording_path(cat: &Catalog, recording_id: i64, machine: &str) -> Result
          JOIN root_location l ON l.root_id = a.root_id AND l.machine = ?2 WHERE r.id = ?1",
         params![recording_id, machine], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
     Ok(row.map(|(base, rel)| Path::new(&base).join(rel)))
+}
+
+/// Recording ids of files given by absolute path (e.g. similarity hits in the project folder),
+/// matched through this machine's root locations; paths not in the catalog are left out.
+pub fn recordings_by_paths(cat: &Catalog, paths: &[String], machine: &str) -> Result<Vec<i64>> {
+    let mut st = cat.conn.prepare("SELECT root_id, path FROM root_location WHERE machine = ?1")?;
+    let locs: Vec<(i64, String)> = st.query_map([machine], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<_, _>>()?;
+    let mut find = cat.conn.prepare(
+        "SELECT r.id FROM recording r JOIN asset a ON a.id = r.asset_id WHERE a.root_id = ?1 AND a.rel_path = ?2")?;
+    let mut out = Vec::new();
+    for p in paths {
+        let p = p.replace('\\', "/");
+        for (root, base) in &locs {
+            let base = base.replace('\\', "/");
+            let Some(rel) = p.strip_prefix(base.trim_end_matches('/')).and_then(|r| r.strip_prefix('/')) else { continue };
+            if let Some(id) = find.query_row(params![root, rel], |r| r.get::<_, i64>(0)).optional()? {
+                if !out.contains(&id) { out.push(id); }
+                break;
+            }
+        }
+    }
+    Ok(out)
 }
 
 #[derive(Debug, serde::Serialize)]
