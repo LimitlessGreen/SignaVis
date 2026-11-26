@@ -555,7 +555,7 @@ export class LabelGrid {
       if (tagCols.length) {
         if (items.length) items.push({ separator: true });
         for (const tc of tagCols) {
-          items.push({ label: `Set ${tc.title}`, more: true, action: () => this.showTagValueMenu(x, y, editable, tc) });
+          items.push({ label: `Set ${tc.title}`, submenu: () => this.tagValueItems(editable, tc) });
         }
       }
     }
@@ -575,16 +575,16 @@ export class LabelGrid {
     showContextMenu({ x, y, items: items.filter((it, i, a) => !(it.separator && (i === 0 || a[i - 1].separator || i === a.length - 1))) });
   }
 
-  private showTagValueMenu(x: number, y: number, ids: string[], c: Column) {
+  private tagValueItems(ids: string[], c: Column) {
     const key = c.key.slice(4);
     const store = this.opts.tagStore;
     const values: string[] = (store ? store.getMerged(key, tagPreset(key)) : tagPreset(key).map((v) => ({ value: v }))).map((it: any) => it.value);
     const cur = new Set(ids.map((t) => String(this.byId.get(t)?.tags?.[key] ?? '')));
     const one = cur.size === 1 ? [...cur][0] : null;
-    const items: any[] = [{ heading: `${c.title}${ids.length > 1 ? ` — ${ids.length} labels` : ''}` }];
-    for (const v of values) items.push({ label: v, checked: one === v ? true : undefined, action: () => { this.applyValue(ids[0], c, v, ids); this.queueRender(true); } });
-    items.push({ separator: true }, { label: 'Not specified', disabled: one === '', action: () => { this.applyValue(ids[0], c, '', ids); this.queueRender(true); } });
-    showContextMenu({ x, y, items });
+    const set = (v: string) => { this.applyValue(ids[0], c, v, ids); this.queueRender(true); };
+    const items: any[] = values.map((v) => ({ label: v, hint: one === v ? '✓' : undefined, action: () => set(v) }));
+    items.push({ separator: true }, { label: 'Not specified', disabled: one === '', action: () => set('') });
+    return items;
   }
 
   private toggleSource(k: SourceKey) {

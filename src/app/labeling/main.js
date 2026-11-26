@@ -3010,18 +3010,15 @@ function labelTableRowMenu(ids, lbl) {
   const own = labels.filter((l) => l.setId === OWN_SOURCE_ID);
   const layers = ownLayers(state.labelSets);
   if (own.length && layers.length > 1) {
-    items.push({ label: own.length > 1 ? `Move ${own.length} to layer` : 'Move to layer', more: true, action: () => {
-      const at = document.querySelector('.ctx-menu')?.getBoundingClientRect();
-      const cur = new Set(own.map((l) => l.layer || DEFAULT_LAYER_ID));
-      showContextMenu({ x: at?.left ?? 100, y: at?.top ?? 100, items: layers.map((ly) => ({
-        label: ly.name, checked: cur.size === 1 && cur.has(ly.id) ? true : undefined,
+    const cur = new Set(own.map((l) => l.layer || DEFAULT_LAYER_ID));
+    items.push({ label: own.length > 1 ? `Move ${own.length} to layer` : 'Move to layer', submenu: layers.map((ly) => ({
+        label: ly.name, hint: cur.size === 1 && cur.has(ly.id) ? '✓' : undefined,
         action: () => {
           const undo = snapshotLabels();
           labelList._layers?.onMove(own.map((l) => l.id), ly.id);
           showUndoToast(`${own.length} label${own.length > 1 ? 's' : ''} → layer “${ly.name}”`, undo);
         },
       })) });
-    } });
   }
   return items;
 }
