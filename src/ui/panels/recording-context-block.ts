@@ -69,7 +69,6 @@ export class RecordingContextBlock {
     onChange: RecordingContextBlockOptions['onChange'];
     sunCharts = new SunCharts({
         storage: prefs,
-        moon: true,
         // A picked clock zone is kept with the recording (null = back to local time).
         onZoneChange: ({ utcOffset }) => this.onChange('utcOffset', utcOffset),
     });
