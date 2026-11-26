@@ -487,3 +487,17 @@
 .sun-spans-bar {
   box-shadow: inset 0 0 0 1px var(--color-border, rgba(128, 128, 128, .35));
 }
+/* Moon (day dial, optional) */
+.sun-moon-curve {
+  fill: none;
+  stroke: #d7deef;
+  stroke-width: 1.3;
+  stroke-dasharray: 3 2;
+  stroke-linejoin: round;
+  opacity: .85;
+}
+.sun-moon-tick { stroke: #d7deef; stroke-width: 1.6; }
+.sun-moon-dark { fill: #2a3557; }
+.sun-moon-lit { fill: #f3f1e4; }
+.sun-moon-rim { fill: none; stroke: #f3f1e4; stroke-width: .8; }
+.sun-moon--down { opacity: .55; }

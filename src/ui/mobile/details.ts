@@ -95,7 +95,7 @@ const SOURCE_KEY: Record<string, MKey> = { manual: 'det.src.manual', xc: 'det.sr
 export class MobileDetailsView {
   readonly body: HTMLElement;
   private h: DetailsHost;
-  private sun = new SunCharts({ storage: prefs });
+  private sun = new SunCharts({ storage: prefs, moon: true });
 
   constructor(host: DetailsHost) {
     this.h = host;

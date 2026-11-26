@@ -67,7 +67,7 @@ export class RecordingContextBlock {
     el: HTMLElement;
     mapEl: HTMLElement | null;
     onChange: RecordingContextBlockOptions['onChange'];
-    sunCharts = new SunCharts({ storage: prefs });
+    sunCharts = new SunCharts({ storage: prefs, moon: true });
 
     constructor(opts: RecordingContextBlockOptions) {
         this.el = opts.el;

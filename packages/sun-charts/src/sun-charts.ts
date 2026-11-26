@@ -14,6 +14,7 @@ import {
     type Coords,
 } from './sun.ts';
 import { buildDayChart, buildYearChart } from './sun-linear-charts.ts';
+import { moonAltitude, moonEvents, moonIllumination, MOON_HORIZON, type MoonIllumination } from './moon.ts';
 
 export type LightView = 'chart' | 'dial';
 
@@ -28,6 +29,8 @@ export interface SunChartsOptions {
     storage?: ViewStorage;
     /** Storage key for the view choice. */
     storageKey?: string;
+    /** Draw the moon in the day dial (default false). */
+    moon?: boolean;
 }
 
 const DEFAULT_VIEW_KEY = 'aw.props.lightView';
@@ -168,9 +171,39 @@ export const fmtOffset = (h: number) => {
     return `UTC${h < 0 ? '−' : '+'}${Math.floor(m / 60)}${m % 60 ? `:${String(m % 60).padStart(2, '0')}` : ''}`;
 };
 
+// ── Moon disc ────────────────────────────────────────────────────────
+
+/**
+ * SVG path of the lit part of a moon disc. The terminator is a half-ellipse; north of the equator
+ * a waxing moon is lit on the right, south of it on the left.
+ */
+export function moonLitPath(cx: number, cy: number, r: number, m: MoonIllumination, southern = false): string {
+    const litRight = m.waxing !== southern;
+    const rx = Math.abs(Math.cos(m.phase * TAU)) * r;
+    const gibbous = m.fraction > 0.5;
+    const outer = litRight ? 1 : 0;
+    const inner = litRight === gibbous ? 1 : 0;
+    const f = (v: number) => v.toFixed(2);
+    return `M${f(cx)},${f(cy - r)} A${f(r)},${f(r)} 0 0 ${outer} ${f(cx)},${f(cy + r)} A${f(rx)},${f(r)} 0 0 ${inner} ${f(cx)},${f(cy - r)} Z`;
+}
+
+function moonDisc(parent: Element, x: number, y: number, r: number, m: MoonIllumination, southern: boolean, up: boolean) {
+    const g = el('g', { class: up ? 'sun-moon' : 'sun-moon sun-moon--down' }, parent);
+    el('circle', { cx: x, cy: y, r, class: 'sun-moon-dark' }, g);
+    if (m.fraction > 0.01) el('path', { d: moonLitPath(x, y, r, m, southern), class: 'sun-moon-lit' }, g);
+    el('circle', { cx: x, cy: y, r, class: 'sun-moon-rim' }, g);
+    el('title', {}, g).textContent = `Moon: ${m.name}, ${Math.round(m.fraction * 100)} % lit`;
+    return g;
+}
+
 // ── Day dial ─────────────────────────────────────────────────────────
 
-export function buildDayDial(c: Coords, date: string, time: string | null, utcOffsetH: number, durationMin = 0) {
+export interface DayDialOptions {
+    /** Draw the moon: its altitude over the day, rise/set marks and a disc in its current phase. */
+    moon?: boolean;
+}
+
+export function buildDayDial(c: Coords, date: string, time: string | null, utcOffsetH: number, durationMin = 0, opts: DayDialOptions = {}) {
     const s = sunDay(c.lat, c.lon, date, utcOffsetH);
     const alt = (min: number) => sunAltitude(c.lat, c.lon, s.doy, min, utcOffsetH, s.yearDays);
     const phiOf = (min: number) => (min / 1440) * TAU;
@@ -178,14 +211,18 @@ export function buildDayDial(c: Coords, date: string, time: string | null, utcOf
     const STEP = 4;
     const samples: number[] = [];
     for (let m = 0; m < 1440; m += STEP) samples.push(alt(m));
-    const lo = Math.min(...samples) - 4;
-    const hi = Math.max(10, ...samples) + 4;
+    const moonAlt = (min: number) => moonAltitude(c.lat, c.lon, date, min, utcOffsetH);
+    const moonSamples: number[] = [];
+    if (opts.moon) for (let m = 0; m <= 1440; m += STEP) moonSamples.push(moonAlt(m));
+    const lo = Math.min(...samples, ...moonSamples) - 4;
+    const hi = Math.max(10, ...samples, ...moonSamples) + 4;
     const rAlt = (a: number) => R_CORE + 2 + ((a - lo) / (hi - lo)) * (R_IN - R_CORE - 4);
 
     const { wrap, svg } = dial('Sun altitude and twilight over the day', (phi, r) => {
         const m = minOf(phi);
         const a = alt(m);
-        return `${formatClock(m)} · ${SUN_PHASE_TEXT[phaseOf(a)]} · ${a >= 0 ? '+' : ''}${a.toFixed(1)}°`;
+        const moon = opts.moon ? ` · ☾ ${moonAlt(m) >= 0 ? '+' : ''}${moonAlt(m).toFixed(1)}°` : '';
+        return `${formatClock(m)} · ${SUN_PHASE_TEXT[phaseOf(a)]} · ${a >= 0 ? '+' : ''}${a.toFixed(1)}°${moon}`;
     });
 
     // Sky disc; the area the sun sweeps above the horizon glows, below it is masked by the earth disc
@@ -218,6 +255,20 @@ export function buildDayDial(c: Coords, date: string, time: string | null, utcOf
     el('circle', { cx: C, cy: C, r: rAlt(0), class: 'sun-horizon' }, svg);
     for (const a of [-18, -12, -6]) if (a > lo) el('circle', { cx: C, cy: C, r: rAlt(a), class: 'sun-twl' }, svg);
     el('path', { d: curve, class: 'sun-curve' }, svg);
+
+    // Moon: altitude curve (open: the moon is ~50 min later each day), rise/set marks
+    const southern = c.lat < 0;
+    if (opts.moon) {
+        const pts = moonSamples.map((a, i) => P(rAlt(a), phiOf(i * STEP)));
+        el('path', { d: `M${pts.join(' L')}`, class: 'sun-moon-curve' }, svg);
+        for (const ev of moonEvents(c.lat, c.lon, date, utcOffsetH)) {
+            const phi = phiOf(ev.minutes);
+            const [x1, y1] = pol(R_IN - 1, phi);
+            const [x2, y2] = pol(R_IN - 7, phi);
+            const tick = el('line', { x1, y1, x2, y2, class: 'sun-moon-tick' }, svg);
+            el('title', {}, tick).textContent = `Moon${ev.kind} ${formatClock(ev.minutes)}`;
+        }
+    }
 
     // Event times at their place, outside the ring
     const events: [number, string, boolean][] = [];
@@ -276,6 +327,22 @@ export function buildDayDial(c: Coords, date: string, time: string | null, utcOf
     } else {
         el('circle', { cx: C, cy: C, r: R_CORE, class: 'sun-core' }, svg);
         lines = [['no time', 'sun-c-mid'], [`day ${formatDuration(s.dayLengthH * 60).replace(' min', 'm').replace(' h ', 'h ')}`, 'sun-c-small']];
+    }
+    if (opts.moon) {
+        // Disc at the recording time, else where the moon stands highest that day
+        let at = rec;
+        if (at == null) {
+            const iMax = moonSamples.indexOf(Math.max(...moonSamples));
+            if (moonSamples[iMax] > MOON_HORIZON) at = iMax * STEP;
+        }
+        const ill = moonIllumination(date, at ?? 720, utcOffsetH);
+        if (at != null) {
+            const a = moonAlt(at);
+            const [mx, my] = pol(rAlt(a), phiOf(at));
+            moonDisc(svg, mx, my, 6, ill, southern, a >= MOON_HORIZON);
+        }
+        const up = rec == null ? '' : moonAlt(rec) >= MOON_HORIZON ? ' · up' : ' · down';
+        lines.push([`☾ ${Math.round(ill.fraction * 100)} %${up}`, 'sun-c-small']);
     }
     centre(svg, lines);
     return wrap;
@@ -370,10 +437,12 @@ export class SunCharts {
 
     _storage: ViewStorage;
     _viewKey: string;
+    _moon: boolean;
 
     constructor(opts: SunChartsOptions = {}) {
         this._storage = opts.storage ?? defaultStorage();
         this._viewKey = opts.storageKey ?? DEFAULT_VIEW_KEY;
+        this._moon = opts.moon ?? false;
         this.el = document.createElement('div');
         this.el.className = 'sun-charts';
     }
@@ -441,7 +510,7 @@ export class SunCharts {
         const body = document.createElement('div');
         if (view === 'dial') {
             body.className = 'sun-dials';
-            body.append(buildDayDial(coords, date, time, off, durationMin), buildYearDial(coords, date));
+            body.append(buildDayDial(coords, date, time, off, durationMin, { moon: this._moon }), buildYearDial(coords, date));
         } else {
             body.className = 'sun-lines';
             body.append(buildDayChart(coords, date, time, off, durationMin), buildYearChart(coords, date));

@@ -4,14 +4,33 @@
   <meta charset="utf-8">
   <title>@signavis/sun-charts demo</title>
   <link rel="stylesheet" href="../src/sun-charts.css">
-  <style>body { font-family: system-ui, sans-serif; max-width: 420px; margin: 24px auto; }</style>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    #host { max-width: 420px; }
+    #phases { display: grid; grid-template-columns: repeat(4, 220px); gap: 8px; margin-top: 24px; }
+    figcaption { font-size: 12px; text-align: center; }
+  </style>
 </head>
 <body>
   <div id="host"></div>
+  <div id="phases"></div>
   <script type="module">
-    import { SunCharts } from '../src/index.ts';
-    const charts = new SunCharts();
+    import { SunCharts, buildDayDial } from '../src/index.ts';
+    const charts = new SunCharts({ moon: true });
     document.getElementById('host').append(charts.render({ lat: 51.34, lon: 12.37 }, '2026-06-21', '04:10', 3 * 3600));
+    // A month of moon phases at one place, plus one southern-hemisphere dial
+    const cases = [
+      ['Leipzig', { lat: 51.34, lon: 12.37 }, '2026-11-12', '06:00', 1], ['Leipzig', { lat: 51.34, lon: 12.37 }, '2026-11-17', '18:00', 1],
+      ['Leipzig', { lat: 51.34, lon: 12.37 }, '2026-11-24', '22:00', 1], ['Leipzig', { lat: 51.34, lon: 12.37 }, '2026-11-28', null, 1],
+      ['Leipzig', { lat: 51.34, lon: 12.37 }, '2026-12-02', '03:00', 1], ['Leipzig', { lat: 51.34, lon: 12.37 }, '2026-12-06', '05:00', 1],
+      ['Sydney', { lat: -33.87, lon: 151.21 }, '2026-11-20', '21:00', 11], ['Sydney', { lat: -33.87, lon: 151.21 }, '2026-12-04', '04:00', 11],
+    ];
+    for (const [name, c, date, time, off] of cases) {
+      const fig = document.createElement('figure');
+      fig.append(buildDayDial(c, date, time, off, 0, { moon: true }));
+      fig.append(Object.assign(document.createElement('figcaption'), { textContent: `${name} ${date} ${time ?? '(no time)'}` }));
+      document.getElementById('phases').append(fig);
+    }
   </script>
 </body>
 </html>
