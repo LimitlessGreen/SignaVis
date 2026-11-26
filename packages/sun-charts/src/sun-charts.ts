@@ -71,15 +71,22 @@ export interface SunChartsOptions extends SunChartConfig {
 
 const DEFAULT_VIEW_KEY = 'aw.props.lightView';
 
-function defaultStorage(): ViewStorage {
+export function defaultStorage(): ViewStorage {
     const mem = new Map<string, string>();
+    // Keys whose last write did not reach localStorage: the value in memory is the newer one.
+    const unsaved = new Set<string>();
     return {
         get(key) {
+            if (unsaved.has(key)) return mem.get(key) ?? null;
             try { return globalThis.localStorage?.getItem(key) ?? mem.get(key) ?? null; } catch { return mem.get(key) ?? null; }
         },
         set(key, value) {
             mem.set(key, value);
-            try { globalThis.localStorage?.setItem(key, value); } catch { /* private mode, quota */ }
+            try {
+                if (!globalThis.localStorage) throw new Error('no localStorage');
+                globalThis.localStorage.setItem(key, value);
+                unsaved.delete(key);
+            } catch { unsaved.add(key); /* private mode, quota */ }
         },
     };
 }
@@ -486,6 +493,8 @@ export class SunCharts {
     el: HTMLElement;
     _key = '';
     _offset: number | null = null;
+    /** Zone the caller passed last; a different one (next recording) replaces a picked zone. */
+    _given: number | null = null;
     _last: RenderArgs = [null, null, null, 0, undefined];
     _opts: SunChartsOptions;
     _cfg: ResolvedConfig;
@@ -535,7 +544,8 @@ export class SunCharts {
         if (!coords || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { this.el.hidden = true; return this.el; }
         this.el.hidden = false;
         const key = `${coords.lat},${coords.lon},${date}`;
-        if (key !== this._key) { this._key = key; this._offset = null; }
+        const given = utcOffset ?? null;
+        if (key !== this._key || given !== this._given) { this._key = key; this._given = given; this._offset = null; }
         const local = guessUtcOffset(coords.lat, coords.lon, date, time || undefined);
         const off = this._offset ?? utcOffset ?? local;
         const view = this.view;
@@ -618,6 +628,7 @@ export class SunCharts {
             const chosen = h === local ? null : h;
             this._offset = h;
             this._last[4] = chosen;
+            this._given = chosen; // our own choice coming back, not a new recording
             this.render(...this._last);
             this._opts.onZoneChange?.({ utcOffset: chosen, effective: h, coords, date });
         });

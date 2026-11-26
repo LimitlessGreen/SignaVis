@@ -5,13 +5,13 @@ import { moonEvents, moonIllumination, moonAltitude, phaseName } from '../src/mo
 
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg}: ${a} vs ${b}`);
 
-// Reference values: PyEphem 4.2.1 (pressure 0), local clock minutes; see packages/sun-charts/README.md.
+// Reference values: PyEphem 4.2.1 (default refraction, upper limb on the horizon), local clock minutes.
 const CASES = [
     // name, lat, lon, date, utc offset, rise, set, illumination at noon, altitude at 22:00, phase name, rise/set tolerance
-    ['Berlin', 52.52, 13.405, '2024-06-21', 2, 1322.2, 195.0, 0.994, -0.46, 'full moon', 10],
-    ['Leipzig', 51.34, 12.37, '2026-11-20', 1, 843.8, 122.9, 0.785, 41.24, 'waxing gibbous', 10],
-    ['Sydney', -33.87, 151.21, '2025-03-10', 11, 1043.2, 141.5, 0.83, 32.47, 'waxing gibbous', 10],
-    ['Tromsø', 69.65, 18.96, '2025-01-15', 1, 894.6, 718.9, 0.973, 28.33, 'waning gibbous', 20],
+    ['Berlin', 52.52, 13.405, '2024-06-21', 2, 1315.3, 201.5, 0.994, 0.08, 'full moon', 10],
+    ['Leipzig', 51.34, 12.37, '2026-11-20', 1, 839.8, 127.1, 0.785, 41.26, 'waxing gibbous', 10],
+    ['Sydney', -33.87, 151.21, '2025-03-10', 11, 1039.7, 145.2, 0.83, 32.5, 'waxing gibbous', 10],
+    ['Tromsø', 69.65, 18.96, '2025-01-15', 1, 869.5, 743.9, 0.973, 28.35, 'waning gibbous', 15],
 ];
 
 for (const [name, lat, lon, date, off, rise, set, illum, alt22, phase, tol] of CASES) {

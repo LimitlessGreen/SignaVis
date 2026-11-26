@@ -10,7 +10,7 @@ light context of a recording – many animals time their activity by light.
   (via `@photostructure/tz-lookup`). Accurate to a few minutes between the polar circles.
 - **Moon** (also in `core`): moon altitude, moonrise/moonset and phase (lit fraction, waxing or
   waning, eight named phases). Low precision: about a degree in altitude, a few minutes for
-  rise/set (more near the polar circles); checked against PyEphem in `tests/moon.test.mjs`.
+  rise/set (up to ~15 min near the polar circles); checked against PyEphem in `tests/moon.test.mjs`.
 - **Charts** (`@signavis/sun-charts`): linear charts (default) or astronomical dials, with a
   zone picker and a strip of the light phases a long recording passes through.
 
@@ -66,7 +66,7 @@ day.events.horizon;      // { rise: 282.7, set: 1293.0 } – minutes after local
 day.events.astronomical; // 'always-above' – no astronomical night at midsummer
 
 moonIllumination('2024-06-21', 720, off); // { fraction: 0.99, phase: 0.47, waxing: true, name: 'full moon' }
-moonEvents(52.52, 13.405, '2024-06-21', off); // [{ kind: 'set', minutes: 186.5 }, { kind: 'rise', minutes: 1325.2 }]
+moonEvents(52.52, 13.405, '2024-06-21', off); // [{ kind: 'set', minutes: 196.7 }, { kind: 'rise', minutes: 1314.3 }]
 ```
 
 ## Options

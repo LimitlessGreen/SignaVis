@@ -8,8 +8,11 @@ const RAD = Math.PI / 180;
 const DAY_MS = 86_400_000;
 const J2000 = Date.UTC(2000, 0, 1, 12);
 const OBLIQUITY = 23.4397 * RAD;
-/** Altitude of the moon's centre at rise/set: parallax minus semi-diameter and refraction. */
-export const MOON_HORIZON = 0.125;
+/**
+ * Topocentric altitude of the moon's centre at rise/set: upper limb on the horizon, with
+ * refraction (semi-diameter 0.27° + refraction 0.57°). Parallax is already in moonAltitudeAt.
+ */
+export const MOON_HORIZON = -0.833;
 
 export type MoonPhaseName =
     | 'new moon' | 'waxing crescent' | 'first quarter' | 'waxing gibbous'

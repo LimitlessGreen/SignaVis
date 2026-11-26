@@ -123,3 +123,32 @@ test('moon disc moves aside when it would cover the sun', () => {
     const noon = buildDayDial(LEIPZIG, '2026-11-20', '22:00', 1, 0, { moon: true });
     assert.equal(find(noon, (n) => n.attrs?.class === 'sun-moon-leader'), null);
 });
+
+test('a different saved zone from the caller replaces an earlier pick (same place and date)', () => {
+    const sc = new SunCharts({ storage: mem() });
+    sc.render(LEIPZIG, '2026-11-20', '07:30', 0, null);
+    const sel = find(sc.el, (n) => n.className === 'sun-charts-zone');
+    sel.value = '3';
+    sel.listeners.change[0]();
+    // Caller saved nothing (no onZoneChange) and now shows another recording saved as UTC
+    sc.render(LEIPZIG, '2026-11-20', '07:30', 0, 0);
+    assert.equal(selected(find(sc.el, (n) => n.className === 'sun-charts-zone')), '0');
+    // Redraws with the same caller value keep a new pick
+    const sel2 = find(sc.el, (n) => n.className === 'sun-charts-zone');
+    sel2.value = '-2';
+    sel2.listeners.change[0]();
+    sc.update({ moon: true });
+    assert.equal(selected(find(sc.el, (n) => n.className === 'sun-charts-zone')), '-2');
+});
+
+test('default storage: a failed localStorage write does not undo the choice', async () => {
+    const { defaultStorage } = await import('../src/sun-charts.ts');
+    const saved = globalThis.localStorage;
+    globalThis.localStorage = { getItem: () => 'chart', setItem: () => { throw new Error('QuotaExceededError'); } };
+    try {
+        const st = defaultStorage();
+        assert.equal(st.get('k'), 'chart');
+        st.set('k', 'dial');
+        assert.equal(st.get('k'), 'dial');
+    } finally { globalThis.localStorage = saved; }
+});
