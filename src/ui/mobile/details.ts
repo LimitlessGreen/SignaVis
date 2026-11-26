@@ -96,7 +96,7 @@ export class MobileDetailsView {
   readonly body: HTMLElement;
   private h: DetailsHost;
   private sun = new SunCharts({
-    storage: prefs, moon: true, labels: getLang(),
+    storage: prefs, labels: getLang(),
     onZoneChange: ({ utcOffset }) => this.h.setContext?.('utcOffset', utcOffset),
   });
   private sunLang = getLang();
