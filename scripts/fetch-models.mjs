@@ -11,7 +11,8 @@
  *                      (Zenodo 15050749; CC BY-NC-SA 4.0)
  *   birdbox-just-bird  scripts/birdbox/fetch-model.mjs
  *   birdnet-v3.0-12k   scripts/fetch-birdnet-12k.mjs
- *   anurapam           scripts/fetch-anurapam.sh (needs curl, unzip, uv)
+ *   anurapam           scripts/fetch-anurapam.sh (needs curl, unzip, uv): classifier head
+ *                      run on birdnet-v2.4
  *
  * Downloads are cached in .cache/models/ by SHA-256, so repeated runs are offline.
  * A folder whose files already match is left alone.
@@ -166,13 +167,12 @@ async function fetchArchive(name, force) {
   console.log(`✓ ${name}`);
 }
 
-/** model.json, every weight shard it names and labels.json: an interrupted install is not complete. */
+/** Head manifest, its weights and labels.json: an interrupted install is not complete. */
 function anurapamComplete() {
   const dir = join(ROOT, 'models/anurapam');
   try {
     const model = JSON.parse(readFileSync(join(dir, 'model.json'), 'utf8'));
-    const shards = model.weightsManifest.flatMap((g) => g.paths);
-    return shards.length > 0 && [...shards, 'labels.json'].every((f) => existsSync(join(dir, f)));
+    return model.format === 'signavis-head' && ['labels.json', model.weightsFile].every((f) => existsSync(join(dir, f)));
   } catch {
     return false;
   }
