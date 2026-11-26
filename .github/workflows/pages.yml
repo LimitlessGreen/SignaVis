@@ -73,7 +73,7 @@ jobs:
           key: models-${{ hashFiles('scripts/fetch-models.mjs', 'scripts/birdbox/**', 'scripts/fetch-birdnet-12k.mjs', 'scripts/fetch-anurapam.sh') }}
 
       - name: Setup uv (AnuraPAM conversion)
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d  # v10.4.0 (no major tag published)
 
       - name: Fetch models
         run: npm run models:fetch
