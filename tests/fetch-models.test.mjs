@@ -24,3 +24,15 @@ test('pinned downloads carry a SHA-256 each', () => {
     ];
     for (const h of hashes) assert.match(h, /^[0-9a-f]{64}$/);
 });
+
+test('a model is fetched after the models it runs on', async () => {
+    const { withDependencies, DEPENDS } = await import('../scripts/fetch-models.mjs');
+    assert.deepEqual(withDependencies(['anurapam']), ['birdnet-v2.4', 'anurapam']);
+    assert.deepEqual(withDependencies(['birdnet-v2.4', 'anurapam']), ['birdnet-v2.4', 'anurapam']);
+    for (const [name, deps] of Object.entries(DEPENDS)) for (const d of [name, ...deps]) assert.ok(MODELS.includes(d), d);
+});
+
+test('the AnuraPAM head names birdnet-v2.4 as its base', () => {
+    const src = readFileSync(new URL('../scripts/anurapam-head.mjs', import.meta.url), 'utf8');
+    assert.match(src, /base: '\.\.\/birdnet-v2\.4\/'/);
+});
