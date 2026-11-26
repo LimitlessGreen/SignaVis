@@ -94,6 +94,17 @@ const SCRIPTS = {
 };
 
 export const MODELS = [...Object.keys(FILES), ...Object.keys(ARCHIVES), ...Object.keys(SCRIPTS)];
+
+/** Models another model loads at run time: fetched first (skipped when already complete). */
+export const DEPENDS = { anurapam: ['birdnet-v2.4'] };  // the head runs on the v2.4 model
+
+/** Requested names with their dependencies in front, each once. */
+export function withDependencies(names) {
+  const out = [];
+  const add = (n) => { for (const d of DEPENDS[n] || []) add(d); if (!out.includes(n)) out.push(n); };
+  names.forEach(add);
+  return out;
+}
 export { FILES, ARCHIVES };
 
 /** Download url, verify its SHA-256 and keep it in the cache. */
@@ -198,7 +209,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.error(`unknown model(s): ${unknown.join(', ')}; known: ${MODELS.join(', ')}`);
     process.exit(2);
   }
-  for (const name of names.length ? names : MODELS) {
+  for (const name of withDependencies(names.length ? names : MODELS)) {
     if (FILES[name]) await fetchFiles(name, force);
     else if (ARCHIVES[name]) await fetchArchive(name, force);
     else runScript(name, force);
