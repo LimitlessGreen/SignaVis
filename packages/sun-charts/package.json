@@ -1,6 +1,6 @@
 {
   "name": "@signavis/sun-charts",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Sun altitude, twilight phases and day length for a place and date, with small SVG charts and dials (from SignaVis)",
   "type": "module",
   "license": "AGPL-3.0-only",

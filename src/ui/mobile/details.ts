@@ -95,7 +95,8 @@ const SOURCE_KEY: Record<string, MKey> = { manual: 'det.src.manual', xc: 'det.sr
 export class MobileDetailsView {
   readonly body: HTMLElement;
   private h: DetailsHost;
-  private sun = new SunCharts({ storage: prefs, moon: true });
+  private sun = new SunCharts({ storage: prefs, moon: true, labels: getLang() });
+  private sunLang = getLang();
 
   constructor(host: DetailsHost) {
     this.h = host;
@@ -109,6 +110,7 @@ export class MobileDetailsView {
     if (!d) { b.appendChild(el('p', 'm-empty', t('det.none'))); return; }
     b.append(this.hero(d), this.whenWhere(d));
     const ctx = d.context;
+    if (this.sunLang !== getLang()) { this.sunLang = getLang(); this.sun.update({ labels: this.sunLang }); }
     const light = this.sun.render(ctx.coords.value, ctx.date.value, ctx.time.value, d.file.duration || 0);
     if (!light.hidden) {
       // The charts bring their own heading (with the view and zone pickers).

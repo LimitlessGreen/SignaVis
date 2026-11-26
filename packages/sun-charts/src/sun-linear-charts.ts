@@ -7,26 +7,18 @@
  */
 
 import {
-    SUN_PHASE_TEXT, dayLengthHours, clockDiff, formatClock, formatDuration, phaseOf, seasonOf, seasonPart,
-    sunAltitude, sunDay, type SunPhase,
-    type Coords,
+    dayLengthHours, clockDiff, phaseOf, seasonOf, seasonPart, sunAltitude, sunDay, type SunPhase, type Coords,
 } from './sun.ts';
+import { resolveConfig, type ResolvedConfig, type SunChartConfig } from './config.ts';
+
+export interface DayChartOptions extends SunChartConfig {
+    /** Table of dawn/dusk times under the chart (default true). */
+    events?: boolean;
+}
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const W = 300;
 
-/** Sequential night → day ramp, one hue family; low sun is the only warm step. */
-const PHASE_COLOR: Record<SunPhase, string> = {
-    night: '#0d1733',
-    astronomical: '#1f3163',
-    nautical: '#3a5796',
-    civil: '#7395cc',
-    golden: '#f1cf94',
-    day: '#c4dcf2',
-};
-const SEASON_COLOR = { winter: '#7fa7d9', spring: '#8cc68a', summer: '#e8c25c', autumn: '#d9915a' } as const;
-const SUN_LINE = '#d9822b';
-const MONTHS = 'JFMAMJJASOND';
 
 function svg(tag: string, attrs: Record<string, string | number>, parent?: Element) {
     const el = document.createElementNS(SVG_NS, tag);
@@ -87,13 +79,15 @@ function hover(plot: HTMLElement, root: SVGElement, height: number, read: (x: nu
 
 // ── Year ─────────────────────────────────────────────────────────────
 
-export function buildYearChart(c: Coords, date: string) {
+export function buildYearChart(c: Coords, date: string, opts: SunChartConfig = {}, resolved?: ResolvedConfig) {
+    const cfg = resolved ?? resolveConfig(opts);
+    const { t } = cfg;
     const H = 70;
     const plotH = 58;
     const year = Number(date.slice(0, 4));
     const month = Number(date.slice(5, 7));
     const yearDays = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 366 : 365;
-    const f = frame('Season & day length', H);
+    const f = frame(t.yearChartTitle, H);
     const xOf = (doy: number) => ((doy - 1) / (yearDays - 1)) * W;
     const yOf = (hours: number) => plotH - (hours / 24) * (plotH - 4);
     const monthStart = (m: number) => Math.round((Date.UTC(year, m, 1) - Date.UTC(year, 0, 1)) / 86400000) + 1;
@@ -103,8 +97,8 @@ export function buildYearChart(c: Coords, date: string) {
         const s = seasonOf(m + 1, c.lat);
         const x0 = xOf(monthStart(m));
         const x1 = m === 11 ? W : xOf(monthStart(m + 1));
-        svg('rect', { x: x0, y: 0, width: x1 - x0, height: plotH, fill: SEASON_COLOR[s], 'fill-opacity': 0.22 }, f.root);
-        svg('text', { x: (x0 + x1) / 2, y: H - 2, class: 'sun-chart-axis', 'text-anchor': 'middle' }, f.root).textContent = MONTHS[m];
+        svg('rect', { x: x0, y: 0, width: x1 - x0, height: plotH, style: `fill: ${cfg.seasonFill(s)}`, 'fill-opacity': 0.22 }, f.root);
+        svg('text', { x: (x0 + x1) / 2, y: H - 2, class: 'sun-chart-axis', 'text-anchor': 'middle' }, f.root).textContent = t.months[m];
     }
     // 12 h reference
     svg('line', { x1: 0, x2: W, y1: yOf(12), y2: yOf(12), class: 'sun-chart-ref' }, f.root);
@@ -112,8 +106,8 @@ export function buildYearChart(c: Coords, date: string) {
     const lengths: number[] = [];
     for (let d = 1; d <= yearDays; d++) lengths.push(dayLengthHours(c.lat, d, yearDays));
     const pts = lengths.map((h, i) => `${xOf(i + 1).toFixed(1)},${yOf(h).toFixed(1)}`);
-    svg('path', { d: `M0,${plotH} L${pts.join(' L')} L${W},${plotH} Z`, fill: '#f1cf94', 'fill-opacity': 0.45 }, f.root);
-    svg('path', { d: `M${pts.join(' L')}`, fill: 'none', stroke: SUN_LINE, 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' }, f.root);
+    svg('path', { d: `M0,${plotH} L${pts.join(' L')} L${W},${plotH} Z`, class: 'sun-chart-daylight' }, f.root);
+    svg('path', { d: `M${pts.join(' L')}`, class: 'sun-chart-line' }, f.root);
 
     const doy = Math.round((Date.UTC(year, month - 1, Number(date.slice(8, 10))) - Date.UTC(year, 0, 1)) / 86400000) + 1;
     const here = lengths[doy - 1];
@@ -123,8 +117,8 @@ export function buildYearChart(c: Coords, date: string) {
     hover(f.plot, f.root, plotH, (x) => {
         const d = Math.round((x / W) * (yearDays - 1)) + 1;
         const dt = new Date(Date.UTC(year, 0, d));
-        const label = dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
-        return `${label} · ${formatDuration(lengths[d - 1] * 60)} daylight`;
+        const label = dt.toLocaleDateString(t.locale, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+        return `${label} · ${t.daylight(t.duration(lengths[d - 1] * 60))}`;
     });
 
     // Summary: season, day length and its trend, distance to the next solstice
@@ -133,22 +127,25 @@ export function buildYearChart(c: Coords, date: string) {
     const next = solstices.find((s) => s >= doy)!;
     const nextIsLong = (next % yearDays === 172) === c.lat >= 0;
     const season = seasonOf(month, c.lat);
-    const trendText = Math.abs(trend) < 0.5 ? 'about steady' : `${trend > 0 ? '+' : '−'}${Math.abs(trend).toFixed(1)} min/day`;
+    const trendText = Math.abs(trend) < 0.5 ? t.trendSteady : t.trendPerDay(`${trend > 0 ? '+' : '−'}${Math.abs(trend).toFixed(1)}`);
     f.summary.innerHTML = '';
     const strong = document.createElement('strong');
-    strong.textContent = `${seasonPart(month)[0].toUpperCase()}${seasonPart(month).slice(1)} ${season}`;
+    strong.textContent = t.seasonHeading(seasonPart(month), season);
     f.summary.append(strong,
-        ` · ${formatDuration(here * 60)} daylight (${trendText}) · `
-        + `${next - doy === 0 ? 'solstice today' : `${next - doy} d to ${nextIsLong ? 'longest' : 'shortest'} day`}`);
+        ` · ${t.daylight(t.duration(here * 60))} (${trendText}) · `
+        + `${next - doy === 0 ? t.solsticeToday : t.daysToSolstice(next - doy, nextIsLong ? 'longest' : 'shortest')}`);
     return f.box;
 }
 
 // ── Day ──────────────────────────────────────────────────────────────
 
-export function buildDayChart(c: Coords, date: string, time: string | null, utcOffsetH: number, durationMin = 0) {
+export function buildDayChart(c: Coords, date: string, time: string | null, utcOffsetH: number, durationMin = 0,
+    opts: DayChartOptions = {}, resolved?: ResolvedConfig) {
+    const cfg = resolved ?? resolveConfig(opts);
+    const { t } = cfg;
     const H = 86;
     const plotH = 72;
-    const f = frame('Sun & twilight', H);
+    const f = frame(t.dayChartTitle, H);
     const s = sunDay(c.lat, c.lon, date, utcOffsetH);
     const alt = (min: number) => sunAltitude(c.lat, c.lon, s.doy, min, utcOffsetH, s.yearDays);
     const xOf = (min: number) => (min / 1440) * W;
@@ -160,7 +157,7 @@ export function buildDayChart(c: Coords, date: string, time: string | null, utcO
     for (let i = 1; i <= samples.length; i++) {
         const p = phaseOf(samples[runStart]);
         if (i < samples.length && phaseOf(samples[i]) === p) continue;
-        svg('rect', { x: xOf(runStart * 5), y: 0, width: xOf((i - runStart) * 5) + 0.5, height: plotH, fill: PHASE_COLOR[p] }, f.root);
+        svg('rect', { x: xOf(runStart * 5), y: 0, width: xOf((i - runStart) * 5) + 0.5, height: plotH, style: `fill: ${cfg.phaseFill(p)}` }, f.root);
         runStart = i;
     }
     const lo = Math.min(-20, ...samples);
@@ -168,10 +165,10 @@ export function buildDayChart(c: Coords, date: string, time: string | null, utcO
     const yOf = (a: number) => 4 + (1 - (a - lo) / (hi - lo)) * (plotH - 8);
     svg('line', { x1: 0, x2: W, y1: yOf(0), y2: yOf(0), class: 'sun-chart-horizon' }, f.root);
     const pts = samples.map((a, i) => `${xOf(i * 5).toFixed(1)},${yOf(a).toFixed(1)}`);
-    svg('path', { d: `M${pts.join(' L')}`, fill: 'none', stroke: SUN_LINE, 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' }, f.root);
+    svg('path', { d: `M${pts.join(' L')}`, class: 'sun-chart-line' }, f.root);
     for (let h = 0; h <= 24; h += 6) {
         svg('text', { x: Math.min(Math.max(xOf(h * 60), 6), W - 6), y: H - 2, class: 'sun-chart-axis', 'text-anchor': 'middle' }, f.root)
-            .textContent = String(h).padStart(2, '0');
+            .textContent = cfg.hour(h);
     }
 
     const rec = parseTime(time);
@@ -197,7 +194,7 @@ export function buildDayChart(c: Coords, date: string, time: string | null, utcO
     hover(f.plot, f.root, plotH, (x) => {
         const m = Math.round((x / W) * 1440);
         const a = alt(m);
-        return `${formatClock(m)} · ${SUN_PHASE_TEXT[phaseOf(a)]} · ${a.toFixed(1)}°`;
+        return `${cfg.time(m)} · ${t.phases[phaseOf(a)]} · ${a.toFixed(1)}°`;
     });
 
     // Summary: recording position + event times
@@ -206,42 +203,43 @@ export function buildDayChart(c: Coords, date: string, time: string | null, utcO
     if (rec != null) {
         const a = alt(rec);
         const strong = document.createElement('strong');
-        strong.textContent = `${formatClock(rec)}${durationMin >= 1 ? `–${formatClock(rec + durationMin)}` : ''} · ${SUN_PHASE_TEXT[phaseOf(a)]}`;
+        strong.textContent = `${cfg.time(rec)}${durationMin >= 1 ? `–${cfg.time(rec + durationMin)}` : ''} · ${t.phases[phaseOf(a)]}`;
         let rel = '';
         if (typeof sr === 'object') {
             const toRise = clockDiff(rec, sr.rise);
             const toSet = clockDiff(rec, sr.set);
-            const [d, name] = Math.abs(toRise) <= Math.abs(toSet) ? [toRise, 'sunrise'] : [toSet, 'sunset'];
-            rel = ` · ${formatDuration(d)} ${d < 0 ? 'before' : 'after'} ${name}`;
+            const [d, name] = Math.abs(toRise) <= Math.abs(toSet) ? [toRise, 'sunrise' as const] : [toSet, 'sunset' as const];
+            rel = ` · ${t.relToSunEvent(t.duration(d), d < 0, name)}`;
         }
-        f.summary.append(strong, ` · ${durationMin >= 1 ? 'starts at ' : ''}sun ${a.toFixed(1)}°${rel}`);
+        f.summary.append(strong, ` · ${t.sunAt(a.toFixed(1), durationMin >= 1)}${rel}`);
     } else {
-        f.summary.append('No recording time — set one to place it in the day.');
+        f.summary.append(t.noTimeHint);
     }
+    if (opts.events === false) return f.box;
     // Event table: columns = thresholds, rows = morning / evening
     const ev = document.createElement('div');
     ev.className = 'sun-chart-events';
     const cols: [string, SunPhase, typeof sr, string][] = [
-        ['Astro', 'astronomical', s.events.astronomical, 'Astronomical twilight (sun at −18°)'],
-        ['Naut.', 'nautical', s.events.nautical, 'Nautical twilight (sun at −12°)'],
-        ['Civil', 'civil', s.events.civil, 'Civil twilight (sun at −6°)'],
-        ['Sun', 'golden', sr, 'Sunrise / sunset'],
+        [t.eventCols.astronomical, 'astronomical', s.events.astronomical, t.eventColTips.astronomical],
+        [t.eventCols.nautical, 'nautical', s.events.nautical, t.eventColTips.nautical],
+        [t.eventCols.civil, 'civil', s.events.civil, t.eventColTips.civil],
+        [t.eventCols.sun, 'golden', sr, t.eventColTips.sun],
     ];
     const cell = (text: string, cls = '') => { const d = document.createElement('span'); d.textContent = text; if (cls) d.className = cls; return d; };
     ev.appendChild(cell(''));
     for (const [label, key, , title] of cols) {
         const h = cell(label, 'sun-ev-head');
         const sw = document.createElement('i');
-        sw.style.background = PHASE_COLOR[key];
+        sw.style.background = cfg.phaseFill(key);
         h.prepend(sw);
         h.title = title;
         ev.appendChild(h);
     }
-    for (const [row, side] of [['Dawn', 'rise'], ['Dusk', 'set']] as const) {
+    for (const [row, side] of [[t.dawn, 'rise'], [t.dusk, 'set']] as const) {
         ev.appendChild(cell(row, 'sun-ev-row'));
         for (const [, , e] of cols) {
-            const c = cell(typeof e === 'object' ? formatClock(e[side]) : '—');
-            if (typeof e !== 'object') c.title = e === 'always-above' ? 'The sun never sinks this low today' : 'The sun never rises this high today';
+            const c = cell(typeof e === 'object' ? cfg.time(e[side]) : '—');
+            if (typeof e !== 'object') c.title = e === 'always-above' ? t.neverBelow : t.neverAbove;
             ev.appendChild(c);
         }
     }

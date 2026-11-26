@@ -69,11 +69,61 @@ moonIllumination('2024-06-21', 720, off); // { fraction: 0.99, phase: 0.47, waxi
 moonEvents(52.52, 13.405, '2024-06-21', off); // [{ kind: 'set', minutes: 186.5 }, { kind: 'rise', minutes: 1325.2 }]
 ```
 
+## Options
+
+All options are optional. `SunCharts` takes them in the constructor; `update(options)` changes
+them later and redraws (e.g. after a language switch).
+
+```js
+const charts = new SunCharts({
+    labels: 'de',            // 'en' (default), 'de', or your own (partial) label set
+    clock: '12h',            // '24h' (default) or '12h'
+    colors: { phases: { civil: '#7f8fd0' }, seasons: { summer: '#ff8c42' } },
+    moon: true,              // moon in the day dial
+    view: 'dial',            // default view when nothing is stored; fixed view without switch
+    show: {                  // parts, all true by default
+        title: true, viewSwitch: true, zone: true,
+        day: true, year: true, spans: true, events: true,
+    },
+    storage: myPrefs,        // { get(key), set(key, value) }; default localStorage
+    storageKey: 'myapp.lightView',
+    onViewChange: (view) => {},
+    onZoneChange: ({ utcOffset, effective, coords, date }) => {},
+});
+```
+
+**Texts.** `LABELS_EN` and `LABELS_DE` are exported. For another language pass an object; missing
+keys fall back to English. Some labels are functions (`daylight(duration)`,
+`relToSunEvent(duration, before, event)`, …) so word order can follow the language:
+
+```js
+import { LABELS_EN } from '@signavis/sun-charts';
+new SunCharts({ labels: { ...LABELS_EN, title: 'Daylight', dawn: 'Morning', dusk: 'Evening' } });
+```
+
+**Clock zone.** The picker defaults to the local time at the place (with summer time). When the
+user picks another zone, `onZoneChange` reports it; `utcOffset` is `null` when they went back to
+local time. Pass a saved offset as the fifth argument of `render()`:
+
+```js
+charts.render(place, date, time, durationSec, savedOffset ?? null);
+```
+
+**Single charts.** `buildDayChart`, `buildYearChart`, `buildDayDial` and `buildYearDial` take the
+same `labels`, `clock` and `colors` options (the day builders also `moon`/`events`).
+
 ## Styling
 
-The stylesheet uses these custom properties, each with a light-theme fallback:
-`--color-text-primary`, `--color-text-secondary`, `--color-text-muted`, `--color-border`,
-`--color-bg-surface`, `--color-accent`. Set them on a parent for a dark theme.
+Colours of the light phases and seasons are CSS custom properties with the configured colour as
+fallback, so a theme can change them without code: `--sun-phase-night`, `-astronomical`,
+`-nautical`, `-civil`, `-golden`, `-day`; `--sun-season-winter`, `-spring`, `-summer`, `-autumn`.
+Marks: `--sun-color-sun`, `--sun-color-sun-disc`, `--sun-color-daylight`, `--sun-color-line`,
+`--sun-color-span`, `--sun-color-sky`, `--sun-color-sky-night`, `--sun-color-earth`,
+`--sun-color-moon`, `--sun-color-moon-lit`.
+
+The surroundings use `--color-text-primary`, `--color-text-secondary`, `--color-text-muted`,
+`--color-border`, `--color-bg-surface`, `--color-accent` (each with a light-theme fallback). Set
+them on a parent for a dark theme.
 
 ## Develop
 
