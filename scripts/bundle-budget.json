@@ -1,11 +1,11 @@
 {
   "_comment": "gzip bytes per published entry (ESM: entry + statically imported chunks); checked in CI after the build (scripts/check-bundle-size.mjs)",
   "gzip": {
-    "birdnet-player.esm.js": 186031,
-    "core.esm.js": 153459,
+    "birdnet-player.esm.js": 182386,
+    "core.esm.js": 153329,
     "label-table.esm.js": 16669,
-    "birdnet-player.iife.js": 188556,
-    "birdnet-player.css": 19007,
+    "birdnet-player.iife.js": 185092,
+    "birdnet-player.css": 18819,
     "core.css": 17809,
     "label-table.css": 2189
   }
