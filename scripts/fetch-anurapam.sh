@@ -10,8 +10,8 @@
 # Licenses: AnuraPAM release CC BY 4.0; the BirdNET v2.4 base model CC BY-NC-SA 4.0
 # (https://github.com/birdnet-team/BirdNET-Analyzer). See the README written below.
 #
-# Needs: curl, unzip, uv. Tested on Linux x86_64; on Linux ARM64 the TensorFlow
-# converter dependencies do not resolve. Usage: npm run models:anurapam
+# Needs: curl, unzip, uv, node. Tested on Linux x86_64; on Linux ARM64 the TensorFlow
+# dependencies may not resolve. Usage: npm run models:fetch -- anurapam
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/models/anurapam"
@@ -22,16 +22,14 @@ py=(uv run -q --no-project --python 3.11)
 curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$work/raw.zip" "https://zenodo.org/records/24119698/files/AnuraPAM_Raw.zip?download=1"
 unzip -q "$work/raw.zip" -d "$work"
 src="$work/AnuraPAM_Raw"
-graph="$work/graph"      # full converted graph, only read for the head weights
 stage="$work/anurapam"   # private per run; published only when complete
 mkdir -p "$stage"
 
-"${py[@]}" \
-  --with "tensorflowjs==4.22.0" --with "tensorflow==2.18.0" --with "tf-keras==2.18.0" \
-  --with "ydf==0.9.0" --with "protobuf==5.29.6" --with "setuptools<81" \
-  tensorflowjs_converter --input_format=tf_saved_model --output_format=tfjs_graph_model \
-  --signature_name=basic "$src/AnuraPAM_Raw" "$graph"
-node "$root/scripts/anurapam-head.mjs" "$graph" "$stage"
+# Head weights straight from the SavedModel (the TF.js converter is not needed and, depending on
+# the CPU, fails on fused ops TensorFlow introduces while optimizing the full graph).
+"${py[@]}" --with "tensorflow==2.18.0" --with "tf-keras==2.18.0" \
+  python -I "$root/scripts/anurapam_head.py" "$src/AnuraPAM_Raw" "$stage/head.bin"
+node "$root/scripts/anurapam-head.mjs" "$stage"
 
 # labels.json: same order as the model output; the taxonomy spells the hybrid without "kl."
 "${py[@]}" python -I - "$src/AnuraPAM_Raw_Labels.txt" "$stage/labels.json" <<'EOF'
@@ -51,7 +49,7 @@ cat > "$stage/README.md" <<'README'
   https://github.com/birdnet-team/BirdNET-Analyzer), whose models are licensed CC BY-NC-SA 4.0.
   The combined model therefore carries the BirdNET terms: non-commercial use, share alike.
 - Changes: only the classifier head (two dense layers on the v2.4 embeddings) is kept, extracted by
-  scripts/fetch-anurapam.sh and scripts/anurapam-head.mjs; SignaVis runs it on models/birdnet-v2.4. labels.json writes
+  scripts/anurapam_head.py; SignaVis runs it on models/birdnet-v2.4. labels.json writes
   "Pelophylax kl. esculentus" as "Pelophylax esculentus".
 - Outputs: 6,522 BirdNET v2.4 classes (unchanged) + 14 anurans, sigmoid scores for 3 s of 48 kHz audio.
 README
