@@ -5,12 +5,12 @@
 // Esc or a click outside closes. What is found and what runs comes from the app
 // (`find`, `run`); this file only shows and steers. Recordings may arrive later (async).
 
-import { Search, AudioLines, PanelsTopLeft, LayoutGrid, Sparkles, Check, Folder, Settings, Keyboard, Filter } from 'lucide-static';
+import { Search, AudioLines, PanelsTopLeft, LayoutGrid, Sparkles, Check, Folder, Settings, Keyboard, Filter, Library } from 'lucide-static';
 import { paletteSections, flatItems, type PaletteItem, type PaletteSection } from '../../../app/lite/command-search.ts';
 
 const ICONS: Record<string, string> = {
     wave: AudioLines, panel: PanelsTopLeft, space: LayoutGrid, run: Sparkles, check: Check,
-    folder: Folder, gear: Settings, keyboard: Keyboard, filter: Filter,
+    folder: Folder, gear: Settings, keyboard: Keyboard, filter: Filter, xc: Library,
 };
 
 export interface CommandPaletteOptions {

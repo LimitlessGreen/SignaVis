@@ -100,7 +100,7 @@ export function flatItems(sections: PaletteSection[]): PaletteItem[] {
 
 /** Species found by the taxonomy as palette items (Enter = label template, Alt+Enter = filter when `filterable`). */
 export function speciesItems(found: { name: string; scientificName?: string; color?: string; count?: number; group?: string; listed?: boolean }[],
-    filterable: (scientificName: string, name: string) => boolean): PaletteItem[] {
+    filterable: (scientificName: string, name: string) => boolean, opts: { xc?: boolean; xcFirst?: boolean } = {}): PaletteItem[] {
     const seen = new Set<string>();
     const out: PaletteItem[] = [];
     for (const s of found) {
@@ -119,6 +119,13 @@ export function speciesItems(found: { name: string; scientificName?: string; col
         out.splice(1, 0, { id: out[0].altId, group: 'species', label: `Filter view: detected ${out[0].label}`, sub: '→ chip', color: out[0].color, icon: 'filter' });
     }
     if (out[0]) out[0].hint = 'Enter = label template';
+    // Xeno-canto references of the first match (panel Reference); first when the query starts with "xc ".
+    const top = out.find((x) => x.id.startsWith('species:'));
+    if (opts.xc && top) {
+        const row: PaletteItem = { id: `xc-species:${top.id.slice(8)}`, group: 'species', label: `Xeno-canto: ${top.label}`,
+            sub: '→ Reference', color: top.color, icon: 'xc', keywords: 'xc xeno-canto reference compare' };
+        if (opts.xcFirst) out.unshift(row); else out.splice(Math.min(out.length, top.altId ? 2 : 1), 0, row);
+    }
     return out;
 }
 

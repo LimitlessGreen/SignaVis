@@ -28,6 +28,8 @@ export interface SuggestionsPanelOptions {
     changed: () => void;
     /** dB patch for a tile (null: not ready yet, the tile stays plain). */
     patch?: (s: Suggestion) => SnapPatch | null;
+    /** Xeno-canto references of a species (panel Reference); without it no button. */
+    reference?: (g: SuggestionGroup) => void;
 }
 
 export interface SuggestionsData {
@@ -171,6 +173,12 @@ export class SuggestionsPanel {
         const n = el('span', 'sugg-count', `${g.suggestions.length} · ${g.windows} win.`);
         hd.append(tw, name, n);
         if (g.unexpected) hd.append(el('span', 'sugg-unexpected', 'check first'));
+        if (this.opts.reference) {
+            const x = el('button', 'sugg-btn small', '⌕ XC');
+            x.title = `Compare with Xeno-canto recordings of ${g.species}`;
+            x.onclick = () => this.opts.reference?.(g);
+            hd.append(x);
+        }
         const openOnes = g.suggestions.filter((s) => s.state === 'open');
         if (openOnes.length) {
             const hi = openOnes.filter((s) => s.confidence >= t), lo = openOnes.filter((s) => s.confidence < t);

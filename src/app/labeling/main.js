@@ -2953,6 +2953,7 @@ function labelTableRowMenu(ids, lbl) {
   if (ids.length === 1) {
     items.push({ label: 'Play segment', action: () => toggleSegmentPlay(lbl) });
     items.push({ label: 'Reference Calls', icon: ICON_REFS, action: () => openRefCalls(lbl) });
+    if (refPanel && lbl.scientificName) items.push({ label: 'Compare with Xeno-canto', hint: 'R', icon: ICON_REFS, action: () => void revealReference(labelRefTarget(lbl)) });
     items.push({ label: 'Use as template', icon: ICON_TEMPLATE, action: () => useLabelAsTemplate(lbl) });
     if (canFindSimilar(lbl)) items.push({ label: 'Find similar calls', hint: 'F', icon: ICON_REFS, action: () => findSimilarCalls(lbl) });
   }
@@ -5155,6 +5156,8 @@ function showLabelContextMenu(e, id) {
         action: () => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id) },
       { label: 'Reference Calls', icon: ICON_REFS,
         action: () => openRefCalls(lbl) },
+      ...(refPanel && lbl.scientificName ? [{ label: 'Compare with Xeno-canto (R)', icon: ICON_REFS,
+        action: () => void revealReference(labelRefTarget(lbl)) }] : []),
       { label: 'Use as template', icon: ICON_TEMPLATE,
         action: () => useLabelAsTemplate(lbl) },
       ...(canFindSimilar(lbl) ? [{ label: 'Find similar calls (F)', icon: ICON_REFS,
@@ -5842,8 +5845,13 @@ async function installCommandPalette(shell, beforeEl, menus) {
   };
   const ebirdCode = (sci) => (sci && taxonomy.data ? taxonomy.resolve(sci)?.ebird : '') || '';
   const classOf = (sci, name) => cs.detectionClassFor(classes, sci, name, ebirdCode(sci));
-  const speciesFound = (q) => cs.speciesItems((player.getLabelEditorSuggestions?.(q, 8) || []).map((sp) => ({ ...sp, color: sp.color || colorForName(sp.name) })),
-    (sci, name) => !!catalogView && !!classOf(sci, name));
+  const speciesFound = (q) => {
+    // "xc waldkauz": Xeno-canto references first
+    const xcq = /^xc\s+/i.test(q);
+    const term = xcq ? q.replace(/^xc\s+/i, '') : q;
+    return cs.speciesItems((player.getLabelEditorSuggestions?.(term, 8) || []).map((sp) => ({ ...sp, color: sp.color || colorForName(sp.name) })),
+      (sci, name) => !!catalogView && !!classOf(sci, name), { xc: !!refPanel, xcFirst: xcq });
+  };
   const recordingsFound = async (q) => {
     const own = recordingManager.getAll()
       .map((r) => ({ r, s: cs.matchScore(q, r.filename || '') }))
@@ -5898,6 +5906,12 @@ async function installCommandPalette(shell, beforeEl, menus) {
         const found = (player.getLabelEditorSuggestions?.(item.label, 8) || []).find((s) => (s.scientificName || s.name) === arg);
         player.setSpeciesBar(item.label, { color: item.color || found?.color, scientificName: found?.scientificName || (arg !== item.label ? arg : '') });
         selectionMeta.textContent = `Label template: ${item.label}`;
+        return;
+      }
+      if (kind === 'xc-species') {
+        const found = (player.getLabelEditorSuggestions?.(arg, 8) || []).find((s) => (s.scientificName || s.name) === arg);
+        const name = item.label.replace(/^Xeno-canto: /, '');
+        void revealReference({ sci: found?.scientificName || arg, name, color: item.color || found?.color });
         return;
       }
       if (kind === 'filter-species') {
@@ -5995,6 +6009,11 @@ async function installSuggestions() {
     pick: (s) => showSuggestion(s, { play: false }),
     decide: (list, d) => decideSuggestions(list, d),
     changed: () => labelViews.invalidate('suggestions'),
+    reference: isLite() ? (g) => {
+      const s = g.suggestions.find((x) => x.state === 'open') || g.suggestions[0];
+      if (s) showSuggestion(s);
+      void revealReference(s ? suggTarget(s) : { sci: g.scientificName || g.species, name: g.species });
+    } : undefined,
     patch: (s) => {
       const half = Math.min(6, (s.end - s.start) / 2);
       try { return player.computeSnapPatch?.((s.start + s.end) / 2, half) ?? null; } catch { return null; }
@@ -6041,10 +6060,13 @@ function stopRefAudio() {
   _refAudio = null;
 }
 /** A selected label with a species (not the BirdNET window of the suggestion shown) becomes the reference target. */
+function labelRefTarget(lbl) {
+  return { id: lbl.id, sci: lbl.scientificName, name: lbl.label || lbl.scientificName, color: lbl.color,
+    start: Number(lbl.start), end: Number(lbl.end), source: 'label' };
+}
 function refTargetFromLabel(lbl) {
   if (!refPanel || !lbl?.scientificName || lbl.origin === SUGG_ORIGIN) return;
-  refPanel.setTarget({ id: lbl.id, sci: lbl.scientificName, name: lbl.label || lbl.scientificName, color: lbl.color,
-    start: Number(lbl.start), end: Number(lbl.end), source: 'label' });
+  refPanel.setTarget(labelRefTarget(lbl));
 }
 /** The suggestion under review as a reference target. */
 function suggTarget(s) {
@@ -6133,9 +6155,11 @@ async function openRefCompare(t, ref, list) {
   if (player.isPlaying) player.pause();
   refCompare.open(t, ref, list);
 }
-async function revealReference() {
+/** Show the Reference panel: for `target`, else the suggestion under review (else what it shows already). */
+async function revealReference(target = null) {
   if (!refPanel || !spaces) return;
-  if (_suggCurrent) showSuggestion(_suggCurrent);
+  if (target) refPanel.setTarget(target, { force: true });
+  else if (_suggCurrent) refPanel.setTarget(suggTarget(_suggCurrent), { force: true });
   await spaces.reveal('reference');
   refPanel.el.focus();
 }

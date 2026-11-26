@@ -96,3 +96,10 @@ test('command search: an action starting with the query comes before unfamiliar 
   const items = speciesItems([{ name: 'A', scientificName: 'a a', group: 'project' }, { name: 'B', scientificName: 'b b', listed: true }, { name: 'C', scientificName: 'c c' }], () => false);
   assert.deepEqual(items.map((i) => !!i.familiar), [true, true, false]);
 });
+test('Xeno-canto row after the first species, first for "xc …"', () => {
+    const found = [{ name: 'Waldkauz', scientificName: 'Strix aluco' }, { name: 'Habichtskauz', scientificName: 'Strix uralensis' }];
+    const items = speciesItems(found, () => false, { xc: true });
+    assert.deepEqual(items.map((i) => i.id).slice(0, 3), ['species:Strix aluco', 'xc-species:Strix aluco', 'species:Strix uralensis']);
+    assert.equal(speciesItems(found, () => false, { xc: true, xcFirst: true })[0].id, 'xc-species:Strix aluco');
+    assert.ok(!speciesItems(found, () => false).some((i) => i.id.startsWith('xc-')));
+});
