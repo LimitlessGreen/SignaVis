@@ -166,14 +166,27 @@ async function fetchArchive(name, force) {
   console.log(`✓ ${name}`);
 }
 
+/** model.json, every weight shard it names and labels.json: an interrupted install is not complete. */
+function anurapamComplete() {
+  const dir = join(ROOT, 'models/anurapam');
+  try {
+    const model = JSON.parse(readFileSync(join(dir, 'model.json'), 'utf8'));
+    const shards = model.weightsManifest.flatMap((g) => g.paths);
+    return shards.length > 0 && [...shards, 'labels.json'].every((f) => existsSync(join(dir, f)));
+  } catch {
+    return false;
+  }
+}
+
 function runScript(name, force) {
   const [cmd, args] = SCRIPTS[name];
   // The AnuraPAM conversion takes minutes and is not cached by its script.
-  if (name === 'anurapam' && !force && existsSync(join(ROOT, 'models/anurapam/model.json'))) {
+  if (name === 'anurapam' && !force && anurapamComplete()) {
     return console.log(`✓ ${name} (present; --force converts it again)`);
   }
   console.log(`→ ${name}: ${cmd} ${args.join(' ')}`);
-  execFileSync(cmd, [...args, ...(force && name === 'birdbox-just-bird' ? ['--force'] : [])], { cwd: ROOT, stdio: 'inherit' });
+  const forceArg = force && (name === 'birdbox-just-bird' || name === 'birdnet-v3.0-12k') ? ['--force'] : [];
+  execFileSync(cmd, [...args, ...forceArg], { cwd: ROOT, stdio: 'inherit' });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

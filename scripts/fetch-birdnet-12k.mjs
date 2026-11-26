@@ -12,7 +12,7 @@
  *   audio model + labels: Zenodo record 24162518 (Apache-2.0)
  *   geo model:            github.com/birdnet-team/geomodel release v3.0.4
  *
- * Usage: node scripts/fetch-birdnet-12k.mjs [--pruned]
+ * Usage: node scripts/fetch-birdnet-12k.mjs [--pruned] [--force]
  *   --pruned  72 MB model with one of three classifier heads (mobile/edge build)
  */
 import { createHash } from 'node:crypto';
@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const out = resolve(root, 'models', 'birdnet-v3.0-12k');
 const pruned = process.argv.includes('--pruned');
+const force = process.argv.includes('--force');  // download again even if a matching file is present
 
 const RECORD = '24162518';
 const NAME = 'BirdNET+_V3.0_Global_12K';
@@ -38,7 +39,7 @@ const GEO_URL = (f) => `https://github.com/birdnet-team/geomodel/releases/downlo
 const HEADERS = { 'user-agent': 'signavis-model-fetch/1.0', accept: '*/*' };
 
 async function download(url, dest, md5) {
-  if (existsSync(dest) && (!md5 || createHash('md5').update(readFileSync(dest)).digest('hex') === md5)) {
+  if (!force && existsSync(dest) && (!md5 || createHash('md5').update(readFileSync(dest)).digest('hex') === md5)) {
     console.log(`✓ ${dest.split('/').pop()} (cached)`);
     return;
   }
