@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>@signavis/sun-charts demo</title>
+  <link rel="stylesheet" href="../src/sun-charts.css">
+  <style>body { font-family: system-ui, sans-serif; max-width: 420px; margin: 24px auto; }</style>
+</head>
+<body>
+  <div id="host"></div>
+  <script type="module">
+    import { SunCharts } from '../src/index.ts';
+    const charts = new SunCharts();
+    document.getElementById('host').append(charts.render({ lat: 51.34, lon: 12.37 }, '2026-06-21', '04:10', 3 * 3600));
+  </script>
+</body>
+</html>

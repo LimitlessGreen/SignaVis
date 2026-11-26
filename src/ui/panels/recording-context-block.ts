@@ -8,7 +8,8 @@ import {
     type ContextField, type ContextValues, type Coords, type ResolvedContext,
 } from '../../app/recording-context.ts';
 import { openMapModal } from '../components/geo-map-modal/geo-map-modal.ts';
-import { SunCharts } from './sun-charts.ts';
+import { SunCharts } from '../../../packages/sun-charts/src/index.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 const MINI_MAP_ZOOM = 10;
 const TILE = 256;
@@ -66,7 +67,7 @@ export class RecordingContextBlock {
     el: HTMLElement;
     mapEl: HTMLElement | null;
     onChange: RecordingContextBlockOptions['onChange'];
-    sunCharts = new SunCharts();
+    sunCharts = new SunCharts({ storage: prefs });
 
     constructor(opts: RecordingContextBlockOptions) {
         this.el = opts.el;

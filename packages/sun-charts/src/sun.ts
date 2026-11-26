@@ -12,6 +12,9 @@ import tzLookup from '@photostructure/tz-lookup';
 const RAD = Math.PI / 180;
 
 /** Sun altitude thresholds in degrees (upper limb with refraction for sunrise/sunset). */
+/** Geographic position in decimal degrees (north and east positive). */
+export interface Coords { lat: number; lon: number }
+
 export const SUN_ALT = { horizon: -0.833, civil: -6, nautical: -12, astronomical: -18, golden: 6 } as const;
 
 export type SunPhase = 'night' | 'astronomical' | 'nautical' | 'civil' | 'golden' | 'day';

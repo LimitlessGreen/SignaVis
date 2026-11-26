@@ -7,7 +7,8 @@
 
 import { formatCoords, type ContextField, type ContextValues, type Coords, type ResolvedContext } from '../../app/recording-context.ts';
 import { buildMiniMap } from '../panels/recording-context-block.ts';
-import { SunCharts } from '../panels/sun-charts.ts';
+import { SunCharts } from '../../../packages/sun-charts/src/index.ts';
+import { prefs } from '../../infrastructure/storage/prefs.ts';
 import { openMapModal } from '../components/geo-map-modal/geo-map-modal.ts';
 import type { MetadataGroup } from '../../domain/fileMetadata.ts';
 import { speciesImageUrl } from '../../infrastructure/tauri/runtime.ts';
@@ -94,7 +95,7 @@ const SOURCE_KEY: Record<string, MKey> = { manual: 'det.src.manual', xc: 'det.sr
 export class MobileDetailsView {
   readonly body: HTMLElement;
   private h: DetailsHost;
-  private sun = new SunCharts();
+  private sun = new SunCharts({ storage: prefs });
 
   constructor(host: DetailsHost) {
     this.h = host;

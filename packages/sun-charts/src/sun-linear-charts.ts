@@ -9,8 +9,8 @@
 import {
     SUN_PHASE_TEXT, dayLengthHours, clockDiff, formatClock, formatDuration, phaseOf, seasonOf, seasonPart,
     sunAltitude, sunDay, type SunPhase,
-} from '../../domain/sun.ts';
-import type { Coords } from '../../app/recording-context.ts';
+    type Coords,
+} from './sun.ts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const W = 300;

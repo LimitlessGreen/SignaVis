@@ -11,13 +11,39 @@
 import {
     SUN_PHASE_TEXT, dayLengthHours, clockDiff, formatClock, formatDuration, guessUtcOffset, phaseOf, seasonOf, seasonPart,
     phaseSpans, sunAltitude, sunDay, timeZoneAt, UTC_OFFSETS, type Season, type SunPhase,
-} from '../../domain/sun.ts';
-import type { Coords } from '../../app/recording-context.ts';
+    type Coords,
+} from './sun.ts';
 import { buildDayChart, buildYearChart } from './sun-linear-charts.ts';
-import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 export type LightView = 'chart' | 'dial';
-const VIEW_KEY = 'aw.props.lightView';
+
+/** Where the chosen view (chart or dial) is remembered. Any `localStorage`-like object works. */
+export interface ViewStorage {
+    get(key: string): string | null | undefined;
+    set(key: string, value: string): void;
+}
+
+export interface SunChartsOptions {
+    /** Remembers the chart/dial choice. Default: `localStorage` when available, else memory. */
+    storage?: ViewStorage;
+    /** Storage key for the view choice. */
+    storageKey?: string;
+}
+
+const DEFAULT_VIEW_KEY = 'aw.props.lightView';
+
+function defaultStorage(): ViewStorage {
+    const mem = new Map<string, string>();
+    return {
+        get(key) {
+            try { return globalThis.localStorage?.getItem(key) ?? mem.get(key) ?? null; } catch { return mem.get(key) ?? null; }
+        },
+        set(key, value) {
+            mem.set(key, value);
+            try { globalThis.localStorage?.setItem(key, value); } catch { /* private mode, quota */ }
+        },
+    };
+}
 /** Recordings shorter than this are shown as a moment, not a span. */
 export const SPAN_MIN_MINUTES = 10;
 
@@ -342,7 +368,12 @@ export class SunCharts {
     _offset: number | null = null;
     _last: [Coords | null, string | null, string | null, number] = [null, null, null, 0];
 
-    constructor() {
+    _storage: ViewStorage;
+    _viewKey: string;
+
+    constructor(opts: SunChartsOptions = {}) {
+        this._storage = opts.storage ?? defaultStorage();
+        this._viewKey = opts.storageKey ?? DEFAULT_VIEW_KEY;
         this.el = document.createElement('div');
         this.el.className = 'sun-charts';
     }
@@ -385,7 +416,7 @@ export class SunCharts {
         sel.addEventListener('change', () => { this._offset = Number(sel.value); this.render(...this._last); });
         // View switch: charts (default) or dials, remembered
         let view: LightView = 'chart';
-        if (prefs.get(VIEW_KEY) === 'dial') view = 'dial';
+        if (this._storage.get(this._viewKey) === 'dial') view = 'dial';
         const seg = document.createElement('div');
         seg.className = 'sun-view-switch';
         seg.setAttribute('role', 'group');
@@ -397,7 +428,7 @@ export class SunCharts {
             b.title = tip;
             b.setAttribute('aria-pressed', String(v === view));
             b.addEventListener('click', () => {
-                prefs.set(VIEW_KEY, v);
+                this._storage.set(this._viewKey, v);
                 this.render(...this._last);
             });
             seg.appendChild(b);
