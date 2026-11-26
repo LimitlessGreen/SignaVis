@@ -2595,6 +2595,7 @@ function selectLabel(labelId, opts = {}) {
     }
   }
 
+  refTargetFromLabel(lbl);
   // Highlight list/table rows
   try { labelList.highlightRow(labelId); } catch (e) {}
   if (typeof labelTable !== 'undefined' && labelTable && typeof labelTable.highlightRow === 'function') {
@@ -5623,6 +5624,7 @@ async function installLiteSpaces() {
   }
   await installEditorChrome();
   await installSuggestions();
+  await installReference();
   // The sidebar tabs become panels of Annotate (mockup Annotate v2, B6); the sidebars themselves go.
   const sidePanels = [...sidebar.dock(dockHost()), ...rightBar.dock(dockHost())]
     .filter((p) => p.id !== 'library')   // the library is the Browse space
@@ -5649,13 +5651,14 @@ async function installLiteSpaces() {
             'lib-calendar': { ref: 'lib-map', dir: 'below', size: 330 },
           },
           front: ['lib-map'] },
-        { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor', 'view-list', 'suggestions', ...sideIds],
+        { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor', 'view-list', 'suggestions', ...withReference(sideIds)],
           // Left: View | Files; right: Labels | Properties | Display | Audio, below them Analyse | Similar | Species | Upload.
           arrange: {
             'view-list': { ref: 'editor', dir: 'left', size: 290 },
             files: { ref: 'view-list', dir: 'within' },
             suggestions: { ref: 'editor', dir: 'right', size: 400 },
             labels: { ref: 'suggestions', dir: 'within' },
+            reference: { ref: 'labels', dir: 'within' },
             properties: { ref: 'labels', dir: 'within' },
             display: { ref: 'labels', dir: 'within' },
             audio: { ref: 'labels', dir: 'within' },
@@ -5674,6 +5677,7 @@ async function installLiteSpaces() {
       panels: [
         { id: 'editor', title: 'Editor', mount: (host) => { host.appendChild(workspace); } },
         { id: 'suggestions', title: 'Suggestions', mount: (host) => { host.appendChild(suggPanel.el); labelViews.invalidate('suggestions'); } },
+        { id: 'reference', title: 'Reference', mount: (host) => { host.appendChild(refPanel.el); }, onShow: () => refPanel.onShow() },
         { id: 'view-list', title: 'View', mount: (host) => { host.appendChild(viewListHost); void mountViewList(); } },
         ...sidePanels.map((p) => ({
           id: DOCK_ID[p.id] || p.id, title: DOCK_TITLE[p.id] || p.label,
@@ -5980,6 +5984,7 @@ async function refreshEditorPlace() {
   editorHead.setPlace(place, !!v);
   editorLabelBar.setPlace(place);
   propsPanel.setCatalogRow(row, () => openSitesEditor?.());
+  _refRow = row;
 }
 // ── Lite: BirdNET suggestions to review (Annotate v2, mockup B4/B6) ──
 let suggPanel = null, reviewStrip = null, _suggCurrent = null, _suggGroups = [], _suggEntry = null;
@@ -5999,6 +6004,7 @@ async function installSuggestions() {
     decide: (d) => { if (_suggCurrent) decideSuggestions([_suggCurrent], d, { advance: true }); },
     step: (dir) => stepSuggestion(dir),
     play: () => { if (_suggCurrent) player.playSegment(_suggCurrent.start, _suggCurrent.end); },
+    reference: () => revealReference(),
   });
   editorHead?.el.after(reviewStrip.el);
   // A / X / U while a suggestion is under review (before the player's X = delete and the app's U = upload)
@@ -6016,12 +6022,115 @@ async function installSuggestions() {
   labelViews.invalidate('suggestions');
 }
 
+// ── Reference panel: Xeno-canto recordings of the species under review (Lite, mockup R1) ──
+let refPanel = null, _refAudio = null, _refRow = null;
+const XC_SEARCH_API = 'https://xeno-canto.org/api/3/recordings';
+function refCoords() {
+  const c = birdnetPanel?.getCoords?.();
+  return c && Number.isFinite(c.lat) && Number.isFinite(c.lon) ? c : null;
+}
+/** Month of the open recording (catalog start), for "same season". */
+function refMonth() {
+  const ms = _refRow?.startMs;
+  return ms != null ? new Date(ms + (_refRow.localOffsetMin ?? 0) * 60_000).getUTCMonth() + 1 : null;
+}
+function stopRefAudio() {
+  if (!_refAudio) return;
+  _refAudio.pause();
+  URL.revokeObjectURL(_refAudio.src);
+  _refAudio = null;
+}
+/** A selected label with a species (not the BirdNET window of the suggestion shown) becomes the reference target. */
+function refTargetFromLabel(lbl) {
+  if (!refPanel || !lbl?.scientificName || lbl.origin === SUGG_ORIGIN) return;
+  refPanel.setTarget({ sci: lbl.scientificName, name: lbl.label || lbl.scientificName, color: lbl.color,
+    start: Number(lbl.start), end: Number(lbl.end), source: 'label' });
+}
+async function revealReference() {
+  if (!refPanel || !spaces) return;
+  if (_suggCurrent) showSuggestion(_suggCurrent);
+  await spaces.reveal('reference');
+  refPanel.el.focus();
+}
+async function installReference() {
+  if (!isLite()) return;
+  const { ReferencePanel } = await import('../../ui/panels/reference-panel.ts');
+  const { searchXcRefs, refineRefs } = await import('../../app/xc-reference.ts');
+  const { xcSearchNames } = await import('../../domain/speciesLinks.ts');
+  const pages = new Map();
+  const fetchPage = async (q, page) => {
+    const key = xcPanel.apiKey;
+    if (!key) throw new Error('Xeno-canto API key needed – add it under ⚙ › Xeno-canto API key.');
+    const k = `${q}&page=${page}`;
+    if (!pages.has(k)) {
+      const res = await fetch(`${XC_SEARCH_API}?query=${q}&page=${page}&key=${encodeURIComponent(key)}`);
+      if (!res.ok) throw new Error(`Xeno-canto: HTTP ${res.status}`);
+      const d = await res.json();
+      pages.set(k, { recordings: Array.isArray(d.recordings) ? d.recordings : [],
+        numRecordings: parseInt(d.numRecordings || '0', 10) || 0, numPages: parseInt(d.numPages || '0', 10) || 0 });
+      while (pages.size > 60) pages.delete(pages.keys().next().value);
+    }
+    return pages.get(k);
+  };
+  refPanel = new ReferencePanel({
+    hasLocation: () => !!refCoords(),
+    search: async (sci, f, sort, page) => {
+      const names = xcSearchNames(taxonomy.data ? taxonomy.resolve(sci) : null, sci);
+      const res = await searchXcRefs(names, f, refCoords(), fetchPage, page);
+      return { total: res.total, pages: res.pages, refs: refineRefs(res.refs, f, { month: refMonth(), sort }) };
+    },
+    play: async (ref) => {
+      stopRefAudio();
+      if (player.isPlaying) player.pause();
+      try {
+        const audio = await xcPanel.fetchAudio(ref.id);
+        const a = new Audio(URL.createObjectURL(new Blob([audio.buffer], { type: 'audio/mpeg' })));
+        _refAudio = a;
+        a.onended = () => { if (_refAudio === a) { stopRefAudio(); refPanel.stopped(); } };
+        await a.play();
+      } catch (err) {
+        stopRefAudio();
+        refPanel.stopped();
+        selectionMeta.textContent = `Xeno-canto: ${err?.message || err}`;
+      }
+    },
+    stop: () => stopRefAudio(),
+    playClip: (t) => { stopRefAudio(); refPanel.stopped(); player.playSegment(t.start, t.end); },
+    patch: (t) => {
+      const half = Math.min(6, (t.end - t.start) / 2);
+      try { return player.computeSnapPatch?.((t.start + t.end) / 2, half) ?? null; } catch { return null; }
+    },
+    tile: async (t) => {
+      const root = (projectKind === 'folder' && projectStore?.rootPath) || null;
+      const path = recordingManager.getActive()?.path;
+      if (!root || !path) return null;
+      const [{ invoke }, { heatLut, thumbPixels }] = await Promise.all([import('@tauri-apps/api/core'), import('../../domain/catalog/thumb-grid.ts')]);
+      const [tile] = await invoke('similar_tiles', { root, windows: [{ path, start: t.start, end: t.end }], spec: { w: 240, h: 64, maxHz: 12_000 } });
+      return tile && !tile.error && tile.w ? new ImageData(thumbPixels(tile, heatLut()), tile.w, tile.h) : null;
+    },
+    addToProject: (ref) => { stopRefAudio(); refPanel.stopped(); void loadXenoCanto(String(ref.id)); },
+    openExternal: (ref) => window.open(`https://xeno-canto.org/${encodeURIComponent(ref.id)}`, '_blank', 'noopener'),
+  });
+  // R: Xeno-canto references for the suggestion / label under review
+  window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() !== 'r' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    if (!spaces || spaces.active !== 'annotate') return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (!_suggCurrent && !refPanel.species) return;
+    e.preventDefault();
+    void revealReference();
+  });
+  // the editor plays: XC audio stops
+  player.on?.('play', () => { if (_refAudio) { stopRefAudio(); refPanel.stopped(); } });
+}
+
 async function refreshSuggestions() {
   if (!suggPanel) return;
   const { buildSuggestions, reviewProgress } = await import('../../app/suggestions.ts');
   const dets = state.labels.filter((l) => l.origin === SUGG_ORIGIN);
   // another recording: drop its tiles and the suggestion under review
-  if (_suggEntry !== state._labelsEntryId) { _suggEntry = state._labelsEntryId; _suggCurrent = null; suggPanel.clearThumbs(); }
+  if (_suggEntry !== state._labelsEntryId) { _suggEntry = state._labelsEntryId; _suggCurrent = null; suggPanel.clearThumbs(); refPanel?.clearClip(); }
   // adopted detections stay in state.labels (only hidden in the views); their copies name them
   const adopted = OWN_SOURCE_ID ? adoptedSourceIds(state.labels, OWN_SOURCE_ID) : new Set();
   // geo scores are keyed by the exact scientific name; the groups use it in lower case
@@ -6060,6 +6169,8 @@ function showSuggestion(s, { play = false } = {}) {
   if (!s) { labelViews.invalidate('suggestions'); return; }
   const best = [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
   if (best && state.labels.some((l) => l.id === best.id)) selectLabel(best.id);
+  refPanel?.setTarget({ sci: s.scientificName || s.species, name: s.species, color: best?.color,
+    start: s.start, end: s.end, source: `suggestion ${s.confidence.toFixed(2)}` });
   // zoom to the suggestion with some context on both sides (option in the panel's ⋯)
   if (suggPanel?.fit) {
     const pad = Math.max(1, (s.end - s.start) * 0.5);
@@ -6253,6 +6364,8 @@ const DOCK_TITLE = { project: 'Files' };
 /** Tab order in Annotate (mockup B6); unknown panels last. */
 const DOCK_ORDER = ['project', 'labels', 'properties', 'spectrogram', 'audio', 'analyse', 'similar', 'species', 'upload'];
 const dockRank = (id) => { const i = DOCK_ORDER.indexOf(id); return i < 0 ? DOCK_ORDER.length : i; };
+/** The Reference panel comes right after Labels (mockup R1); placed by its arrange entry once Labels is. */
+const withReference = (ids) => { const i = ids.indexOf('labels'); return i < 0 ? [...ids, 'reference'] : [...ids.slice(0, i + 1), 'reference', ...ids.slice(i + 1)]; };
 /** Badges set while the spaces are being built (spaces not assigned yet). */
 const pendingBadges = new Map();
 /** What a docked sidebar forwards to: its tabs are panels of the spaces now. */

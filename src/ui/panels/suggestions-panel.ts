@@ -279,6 +279,8 @@ export interface ReviewStripOptions {
     decide: (d: Decision) => void;
     step: (dir: 1 | -1) => void;
     play: () => void;
+    /** Xeno-canto references for this species (panel Reference, R). */
+    reference?: () => void;
 }
 
 /** "Suggestion 4 / 11 · Sperlingskauz 0.71 · also Waldkauz 0.12" + Accept / Reject / Unsure (editor, B6 ②). */
@@ -303,6 +305,10 @@ export class ReviewStrip {
             btn('no', '✕ Reject ', 'X', 'Not this species', () => opts.decide('rejected')),
             btn('maybe', '? Unsure ', 'U', 'Decide later', () => opts.decide('unsure')),
             prev, next);
+        if (opts.reference) {
+            const r = btn('xc', '⌕ XC ', 'R', 'Compare with Xeno-canto recordings of this species', opts.reference);
+            this.el.insertBefore(r, this.el.children[2]);
+        }
         this.el.hidden = true;
     }
 
