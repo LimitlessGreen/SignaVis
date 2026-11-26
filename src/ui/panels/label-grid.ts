@@ -9,7 +9,10 @@
  *   move on · Esc cancels · Delete removes the selected (editable) labels · in a number cell
  *   ↑/↓ step the value (Shift = ×10) and commit right away, so the box moves live.
  *   Mouse: click selects row + cell · Ctrl/Shift click extends the selection · double click edits.
- *   An edit while several rows are selected applies to all editable selected rows.
+ *   An edit while several rows are selected applies to all editable selected rows (also a
+ *   double click into a selected row: the click keeps the selection for its second press).
+ *   Right click: row menu (edit / fill / clear the column under the mouse, set a tag, delete,
+ *   plus the host's label actions); with several rows selected a bar in the toolbar offers it too.
  *
  * The grid never owns label data: it renders what `render(labels)` passes and reports edits
  * through `onChange(id, updates)` (same path as the properties panel).
@@ -64,6 +67,10 @@ export interface LabelGridOptions {
   onHover?: (id: string | null) => void;
   onMultiSelectionChange?: (ids: string[]) => void;
   onDelete?: (ids: string[]) => void;
+  /** Host actions for the row menu (play, adopt, template, …) for the rows it applies to. */
+  rowMenu?: (ids: string[], focus: Lbl) => any[];
+  /** Runs an edit of several labels as one step (host: one undo toast). */
+  onBatch?: (summary: string, run: () => void) => void;
   /** Called after an edit was refused (e.g. locked label) with a short reason. */
   onNotice?: (msg: string) => void;
   /** Space outside a checkbox cell (the player hotkeys are off while the table has focus). */
@@ -232,6 +239,9 @@ export class LabelGrid {
   private renderQueued = false;
   private fullRepaint = false;
   private lastDown: { id: string; col: number; t: number } | null = null;
+  /** Selection a plain click collapsed — a double click on one of its rows edits them all. */
+  private lastMulti: { ids: Set<string>; t: number } | null = null;
+  private selBar: HTMLElement | null = null;
   private viewPoll = 0;
 
   constructor(opts: LabelGridOptions) {
@@ -280,7 +290,12 @@ export class LabelGrid {
     });
     this.root.addEventListener('keydown', (e) => this.onKey(e));
     this.root.addEventListener('contextmenu', (e) => {
-      if ((e.target as HTMLElement).closest('.lgrid-head')) { e.preventDefault(); this.showColumnMenu(e.clientX, e.clientY); }
+      if ((e.target as HTMLElement).closest('.lgrid-head')) { e.preventDefault(); this.showColumnMenu(e.clientX, e.clientY); return; }
+      if ((e.target as HTMLElement).closest('.lgrid-editor')) return;
+      const hit = this.hitCell(e.target);
+      if (!hit) return;
+      e.preventDefault();
+      this.showRowMenu(e.clientX, e.clientY, hit.id, hit.col);
     });
     this.setInView(this.prefs.inView);
   }
@@ -395,7 +410,11 @@ export class LabelGrid {
       this.showExportMenu(r.left, r.bottom + 2);
     });
     if (!this.opts.onExport) exportBtn.hidden = true;
-    t.append(chips, search, this.inViewBtn, this.counter, this.followBtn, colsBtn, exportBtn);
+    const bar = document.createElement('span');
+    bar.className = 'lgrid-selbar';
+    bar.hidden = true;
+    this.selBar = bar;
+    t.append(chips, search, this.inViewBtn, this.counter, bar, this.followBtn, colsBtn, exportBtn);
     slot.appendChild(t);
     this.toolsEl = t;
     this.syncTools();
@@ -445,6 +464,127 @@ export class LabelGrid {
         : `${this.rows.length} / ${this.labels.length}`;
       this.counter.title = `${this.rows.length} of ${this.labels.length} labels shown`;
     }
+    this.syncSelBar();
+  }
+
+  /** "N selected · Edit ▾ · ✕" while several rows are selected. */
+  private syncSelBar() {
+    const bar = this.selBar;
+    if (!bar) return;
+    const n = this.multi.size;
+    bar.hidden = n < 2;
+    if (n < 2) { bar.replaceChildren(); bar.dataset.n = ''; return; }
+    if (bar.dataset.n === String(n)) return;
+    bar.dataset.n = String(n);
+    const info = document.createElement('span');
+    info.className = 'lgrid-selbar-n';
+    info.textContent = `${n} selected`;
+    const edit = this.toggleBtn('Edit ▾', 'Change, fill or clear a field of all selected labels (also: right click on a row)', () => {
+      const r = edit.getBoundingClientRect();
+      const id = this.cursor && this.multi.has(this.cursor.id) ? this.cursor.id : this.rows.find((l) => this.multi.has(l.id))?.id;
+      if (id) this.showRowMenu(r.left, r.bottom + 2, id, this.cursor?.id === id ? this.cursor!.col : -1);
+    });
+    const clear = this.toggleBtn('✕', 'Deselect (Esc)', () => this.setMulti([]));
+    bar.replaceChildren(info, edit, clear);
+  }
+
+  private setMulti(ids: string[]) {
+    this.multi = new Set(ids);
+    this.opts.onMultiSelectionChange?.([...this.multi]);
+    this.queueRender();
+  }
+
+  /** Several labels in one step (one undo) when the host offers it. */
+  private batch(summary: string, n: number, run: () => void) {
+    if (n > 1 && this.opts.onBatch) this.opts.onBatch(summary, run);
+    else run();
+  }
+
+  /** Raw value of a cell as applyValue() takes it (fill: copy one row's value to the others). */
+  private rawValue(l: Lbl, c: Column): string | null {
+    switch (c.edit) {
+      case 'tag': return String(l.tags?.[c.key.slice(4)] ?? '');
+      case 'text': return c.key === 'author' ? String(l.author || '') : String(l.tags?.[c.tagKey!] ?? '');
+      case 'yn': case 'date': return String(l.tags?.[c.tagKey!] ?? '');
+      case 'freq': return Number.isFinite(num(l[c.key])) ? String(num(l[c.key]) / 1000) : '';
+      case 'dur': return String(num(l.end) - num(l.start));
+      default: return null;
+    }
+  }
+
+  /** Right click on a row (or Edit ▾): actions for the row, or for the selection it is part of. */
+  private showRowMenu(x: number, y: number, id: string, col: number) {
+    const l = this.byId.get(id);
+    if (!l) return;
+    if (!this.multi.has(id)) {
+      // like a plain click: the row under the mouse becomes the selection
+      if (this.multi.size) this.setMulti([]);
+      if (this.selectedId !== id) { this.selectedId = id; this.anchorId = id; this.opts.onFocus(id); }
+    }
+    if (col >= 0) this.cursor = { id, col };
+    this.queueRender();
+    const ids = this.targetIds(id);
+    const editable = this.editableTargets(id);
+    const n = ids.length;
+    const many = n > 1;
+    const locked = ids.length - editable.length;
+    const items: any[] = [];
+    if (many) items.push({ heading: `${n} labels${locked ? ` (${locked} read-only)` : ''}` });
+
+    const c = col >= 0 ? COLUMNS[col] : null;
+    if (c?.edit && editable.length) {
+      const scope = editable.length > 1 ? ` for ${editable.length}` : '';
+      items.push({ label: `Edit ${c.title}${scope}…`, hint: 'Enter', action: () => this.startEdit(editable.includes(id) ? id : editable[0], col) });
+      const raw = this.opts.isLocked(l) ? null : this.rawValue(l, c);
+      if (many && c.edit === 'species' && !this.opts.isLocked(l)) {
+        const name = this.opts.resolveName(l).display;
+        const others = editable.filter((t) => t !== id);
+        if (name && others.length) items.push({ label: `Name all “${name}”`, action: () => this.batch(`${others.length + 1} labels: ${name}`, others.length, () => {
+          for (const t of others) this.opts.onChange(t, { label: l.label, scientificName: l.scientificName || '', commonName: l.commonName || '' });
+        }) });
+      } else if (many && raw && c.edit !== 'dur') {
+        items.push({ label: `Fill “${c.text(l, this)}” into all ${editable.length}`, action: () => { this.applyValue(id, c, raw); this.queueRender(true); } });
+      }
+      if (this.isClearable(col) && editable.some((t) => this.rawValue(this.byId.get(t), c))) {
+        items.push({ label: `Clear ${c.title}${scope}`, hint: 'Backspace', action: () => { this.applyValue(editable.includes(id) ? id : editable[0], c, ''); this.queueRender(true); } });
+      }
+    }
+    // Set one of the tag fields (shown or not) to a value from its list
+    if (editable.length) {
+      const tagCols = COLUMNS.filter((tc) => tc.edit === 'tag' && tc !== c);
+      if (tagCols.length) {
+        if (items.length) items.push({ separator: true });
+        for (const tc of tagCols) {
+          items.push({ label: `Set ${tc.title}`, more: true, action: () => this.showTagValueMenu(x, y, editable, tc) });
+        }
+      }
+    }
+    const host = this.opts.rowMenu?.(ids, l) || [];
+    if (host.length) { items.push({ separator: true }); items.push(...host); }
+    items.push({ separator: true });
+    if (this.rows.length > 1) items.push({ label: 'Select all', hint: 'Ctrl A', action: () => this.setMulti(this.rows.map((r) => r.id)) });
+    if (many) items.push({ label: 'Deselect', hint: 'Esc', action: () => this.setMulti([]) });
+    if (this.opts.onDelete) {
+      items.push({ separator: true });
+      items.push({
+        label: editable.length > 1 ? `Delete ${editable.length} labels` : 'Delete', danger: true, hint: 'Del',
+        disabled: !editable.length,
+        action: () => this.opts.onDelete!(editable),
+      });
+    }
+    showContextMenu({ x, y, items: items.filter((it, i, a) => !(it.separator && (i === 0 || a[i - 1].separator || i === a.length - 1))) });
+  }
+
+  private showTagValueMenu(x: number, y: number, ids: string[], c: Column) {
+    const key = c.key.slice(4);
+    const store = this.opts.tagStore;
+    const values: string[] = (store ? store.getMerged(key, tagPreset(key)) : tagPreset(key).map((v) => ({ value: v }))).map((it: any) => it.value);
+    const cur = new Set(ids.map((t) => String(this.byId.get(t)?.tags?.[key] ?? '')));
+    const one = cur.size === 1 ? [...cur][0] : null;
+    const items: any[] = [{ heading: `${c.title}${ids.length > 1 ? ` — ${ids.length} labels` : ''}` }];
+    for (const v of values) items.push({ label: v, checked: one === v ? true : undefined, action: () => { this.applyValue(ids[0], c, v, ids); this.queueRender(true); } });
+    items.push({ separator: true }, { label: 'Not specified', disabled: one === '', action: () => { this.applyValue(ids[0], c, '', ids); this.queueRender(true); } });
+    showContextMenu({ x, y, items });
   }
 
   private toggleSource(k: SourceKey) {
@@ -662,6 +802,7 @@ export class LabelGrid {
       const f = this.fullRepaint;
       this.fullRepaint = false;
       if (f) this.paint(); else this.decorateAll();
+      this.syncSelBar();
     });
   }
 
@@ -784,6 +925,7 @@ export class LabelGrid {
     if (!hit) return;
     if (this.editing) this.commitEdit();
     e.preventDefault();
+    if (e.button === 2) { this.focus(); return; }   // the context menu handles the selection
     if ((e.target as HTMLElement).closest('.lgrid-reset')) {
       this.cursor = { id: hit.id, col: hit.col };
       this.focus();
@@ -802,6 +944,10 @@ export class LabelGrid {
     this.lastDown = { ...hit, t: now };
     if (ld && ld.id === hit.id && ld.col === hit.col && now - ld.t < 450 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       this.lastDown = null;
+      // The first click collapsed a selection this row belongs to: edit them all
+      const lm = this.lastMulti;
+      this.lastMulti = null;
+      if (lm && lm.ids.has(hit.id) && now - lm.t < 450) this.setMulti([...lm.ids]);
       this.startEdit(hit.id, hit.col);
       return;
     }
@@ -821,6 +967,7 @@ export class LabelGrid {
       this.opts.onMultiSelectionChange?.([...this.multi]);
     } else {
       this.anchorId = hit.id;
+      this.lastMulti = this.multi.size > 1 && this.multi.has(hit.id) ? { ids: new Set(this.multi), t: now } : null;
       if (this.multi.size) { this.multi.clear(); this.opts.onMultiSelectionChange?.([]); }
       this.selectedId = hit.id;
       this.opts.onFocus(hit.id);
@@ -1019,7 +1166,7 @@ export class LabelGrid {
         if (!Number.isFinite(v)) return;
         const digits = c.edit === 'freq' ? 2 : 3;
         input.value = (v + step).toFixed(digits);
-        this.applyValue(id, c, input.value);       // live: the box follows each step
+        this.applyTo(this.editableTargets(id), c, input.value.trim());   // live: the box follows each step (no undo step each)
         input.select();
       }
     };
@@ -1089,9 +1236,10 @@ export class LabelGrid {
       cell.classList.remove('editing');
       this.editing = null;
       if (sel?.name) {
-        for (const tid of this.editableTargets(id)) {
-          this.opts.onChange(tid, { label: sel.name, scientificName: sel.scientificName || '', commonName: '' });
-        }
+        const targets = this.editableTargets(id);
+        this.batch(`${targets.length} labels: ${sel.name}`, targets.length, () => {
+          for (const tid of targets) this.opts.onChange(tid, { label: sel.name, scientificName: sel.scientificName || '', commonName: '' });
+        });
       }
       const fresh = this.byId.get(id);
       if (fresh && cell.isConnected) cell.textContent = this.opts.resolveName(fresh).display;
@@ -1131,13 +1279,18 @@ export class LabelGrid {
   }
 
   /** Parse an edited cell value and report it for every editable target row. */
-  private applyValue(id: string, c: Column, raw: string) {
+  private applyValue(id: string, c: Column, raw: string, only?: string[]) {
+    const targets = only ?? this.editableTargets(id);
     const v = String(raw).trim();
+    this.batch(`${targets.length} labels: ${c.title} ${v ? `→ ${v}` : 'cleared'}`, targets.length, () => this.applyTo(targets, c, v));
+  }
+
+  private applyTo(targets: string[], c: Column, v: string) {
     const n = Number(v.replace(',', '.'));
     const dur = this.opts.getDuration?.() || Infinity;
     const fmax = this.opts.getMaxFreq?.() || Infinity;
     let refused = 0;
-    for (const tid of this.editableTargets(id)) {
+    for (const tid of targets) {
       const l = this.byId.get(tid);
       const start = num(l.start), end = num(l.end);
       let up: Record<string, any> | null = null;

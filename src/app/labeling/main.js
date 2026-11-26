@@ -2930,6 +2930,54 @@ document.documentElement.classList.remove('sv-booting');
   recordingManager.addEventListener('activechange', () => mobileApp.refresh());
 }
 
+/** Copy several detections / imported labels into my labels in one step (one undo). */
+function adoptLabelIds(ids) {
+  const picked = ids.map((id) => state.labels.find((l) => l.id === id)).filter((l) => l && l.setId !== OWN_SOURCE_ID);
+  if (picked.length === 1 || picked.some((l) => l.origin === SIMILAR_ORIGIN)) { for (const l of picked) adoptOneLabel(l.id); return; }
+  const src = adoptSources(picked, state.labels, 'best');
+  if (!src.length) { selectionMeta.textContent = 'These labels are already in my labels'; return; }
+  const undo = snapshotLabels();
+  const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+  labelStore.add(copies);
+  touchOwnSet(OWN_SOURCE_ID);
+  const msg = `Converted ${picked.length} labels into ${copies.length} of my labels`;
+  selectionMeta.textContent = msg;
+  showUndoToast(msg, undo);
+}
+
+/** App actions in the label table's row menu (the grid adds edit / fill / clear / delete). */
+function labelTableRowMenu(ids, lbl) {
+  const items = [];
+  const labels = ids.map((id) => state.labels.find((l) => l.id === id)).filter(Boolean);
+  if (ids.length === 1) {
+    items.push({ label: 'Play segment', action: () => toggleSegmentPlay(lbl) });
+    items.push({ label: 'Reference Calls', icon: ICON_REFS, action: () => openRefCalls(lbl) });
+    items.push({ label: 'Use as template', icon: ICON_TEMPLATE, action: () => useLabelAsTemplate(lbl) });
+    if (canFindSimilar(lbl)) items.push({ label: 'Find similar calls', hint: 'F', icon: ICON_REFS, action: () => findSimilarCalls(lbl) });
+  }
+  const foreign = labels.filter((l) => l.setId !== OWN_SOURCE_ID);
+  if (OWN_SOURCE_ID && foreign.length) {
+    items.push({ label: foreign.length > 1 ? `Copy ${foreign.length} into my labels` : 'Copy into my labels', action: () => adoptLabelIds(foreign.map((l) => l.id)) });
+  }
+  const own = labels.filter((l) => l.setId === OWN_SOURCE_ID);
+  const layers = ownLayers(state.labelSets);
+  if (own.length && layers.length > 1) {
+    items.push({ label: own.length > 1 ? `Move ${own.length} to layer` : 'Move to layer', more: true, action: () => {
+      const at = document.querySelector('.ctx-menu')?.getBoundingClientRect();
+      const cur = new Set(own.map((l) => l.layer || DEFAULT_LAYER_ID));
+      showContextMenu({ x: at?.left ?? 100, y: at?.top ?? 100, items: layers.map((ly) => ({
+        label: ly.name, checked: cur.size === 1 && cur.has(ly.id) ? true : undefined,
+        action: () => {
+          const undo = snapshotLabels();
+          labelList._layers?.onMove(own.map((l) => l.id), ly.id);
+          showUndoToast(`${own.length} label${own.length > 1 ? 's' : ''} → layer “${ly.name}”`, undo);
+        },
+      })) });
+    } });
+  }
+  return items;
+}
+
 // ── Label table ("Table" tab below the overview) — label table view plan ──
 const labelTableHost = player.enableLabelTable?.();
 const labelTable = labelTableHost ? new LabelGrid({
@@ -2965,6 +3013,13 @@ const labelTable = labelTableHost ? new LabelGrid({
     selectionMeta.textContent = `Deleted ${ids.length} label${ids.length > 1 ? 's' : ''}`;
   },
   onNotice: (msg) => { selectionMeta.textContent = msg; },
+  onBatch: (summary, run) => {
+    const undo = snapshotLabels();
+    run();
+    selectionMeta.textContent = summary;
+    showUndoToast(summary, undo);
+  },
+  rowMenu: (ids, lbl) => labelTableRowMenu(ids, lbl),
   onTogglePlay: () => { if (player.isPlaying) player.pause(); else player.play(); },
   onExport: (format, labels, columns) => {
     const entry = recordingManager.getActive();

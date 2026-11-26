@@ -249,6 +249,23 @@ input.lgrid-editor {
     white-space: nowrap;
 }
 
+.lgrid-selbar {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 2px 0 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+    white-space: nowrap;
+
+    &[hidden] { display: none; }
+}
+
+.lgrid-selbar-n {
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
 .lgrid-col-grip {
     position: absolute;
     top: 0;
