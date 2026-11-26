@@ -70,7 +70,7 @@ jobs:
             .cache/birdbox
             models/birdnet-v3.0-12k
             models/anurapam
-          key: models-${{ hashFiles('scripts/fetch-models.mjs', 'scripts/birdbox/**', 'scripts/fetch-birdnet-12k.mjs', 'scripts/fetch-anurapam.sh') }}
+          key: models-${{ hashFiles('scripts/fetch-models.mjs', 'scripts/birdbox/**', 'scripts/fetch-birdnet-12k.mjs', 'scripts/fetch-anurapam.sh', 'scripts/anurapam*') }}
 
       - name: Setup uv (AnuraPAM conversion)
         uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d  # v10.4.0 (no major tag published)
