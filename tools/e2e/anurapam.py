@@ -1,5 +1,5 @@
 """AnuraPAM preset: pick it in the model picker, analyse a frog recording, the anuran shows up as labels.
-Dev server + `npm run models:anurapam` needed:
+Dev server + `npm run models:fetch -- anurapam` needed:
   uv run --with playwright python -I tools/e2e/anurapam.py http://localhost:5191/demo/labeling-app.html <frog.wav> <species> [screenshot-dir]
   e.g. Bombina_bombina.wav "Bombina bombina" — passes only when that anuran is detected.
 """
