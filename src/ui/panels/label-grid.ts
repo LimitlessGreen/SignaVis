@@ -555,7 +555,8 @@ export class LabelGrid {
       if (tagCols.length) {
         if (items.length) items.push({ separator: true });
         for (const tc of tagCols) {
-          items.push({ label: `Set ${tc.title}`, submenu: () => this.tagValueItems(editable, tc) });
+          const ci = COLUMNS.indexOf(tc);
+          items.push({ label: `Set ${tc.title}…`, action: () => this.editTagFor(editable, ci, x, y) });
         }
       }
     }
@@ -575,16 +576,48 @@ export class LabelGrid {
     showContextMenu({ x, y, items: items.filter((it, i, a) => !(it.separator && (i === 0 || a[i - 1].separator || i === a.length - 1))) });
   }
 
-  private tagValueItems(ids: string[], c: Column) {
+  /**
+   * Row menu "Set Type…": the same editable select as in the cell (search, own values,
+   * add / rename / remove), for the given rows — at the cell when shown, else at the menu.
+   */
+  private editTagFor(ids: string[], col: number, x: number, y: number) {
+    const c = COLUMNS[col];
+    const first = ids[0];
+    if (!c || !first) return;
+    if (this.isColVisible(c) && this.cellEl(first, col)) { this.startEdit(first, col); return; }
     const key = c.key.slice(4);
     const store = this.opts.tagStore;
-    const values: string[] = (store ? store.getMerged(key, tagPreset(key)) : tagPreset(key).map((v) => ({ value: v }))).map((it: any) => it.value);
     const cur = new Set(ids.map((t) => String(this.byId.get(t)?.tags?.[key] ?? '')));
-    const one = cur.size === 1 ? [...cur][0] : null;
-    const set = (v: string) => { this.applyValue(ids[0], c, v, ids); this.queueRender(true); };
-    const items: any[] = values.map((v) => ({ label: v, hint: one === v ? '✓' : undefined, action: () => set(v) }));
-    items.push({ separator: true }, { label: 'Not specified', disabled: one === '', action: () => set('') });
-    return items;
+    const original = cur.size === 1 ? [...cur][0] : '';
+    const host = document.createElement('div');
+    host.className = 'lgrid-float-esel';
+    host.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:9998;`;
+    document.body.appendChild(host);
+    let done = false;
+    let es: ReturnType<typeof createEditableSelect> | null = null;
+    const finish = (val: string | undefined) => {
+      if (done) return;
+      done = true;
+      queueMicrotask(() => {
+        try { es?.destroy(); } catch { /* ignore */ }
+        host.remove();
+        if (val !== undefined && (val !== original || cur.size > 1)) { this.applyValue(first, c, val, ids); this.queueRender(true); }
+        this.focus();
+      });
+    };
+    es = createEditableSelect({
+      value: original,
+      items: store ? store.getMerged(key, tagPreset(key)) : tagPreset(key).map((v) => ({ value: v, custom: false })),
+      placeholder: cur.size > 1 ? 'mixed' : '–',
+      className: 'lgrid-esel',
+      onChange: (v) => finish(v),
+      onClose: () => finish(undefined),
+      onAdd: store ? (v) => store.add(key, v) : undefined,
+      onRemove: store ? (v) => store.remove(key, v) : undefined,
+      onRename: store ? (o, n) => store.rename(key, o, n) : undefined,
+    });
+    host.appendChild(es.el);
+    es.open();
   }
 
   private toggleSource(k: SourceKey) {
