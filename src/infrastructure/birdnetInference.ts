@@ -14,6 +14,7 @@
  */
 
 import { vendorUrl } from './tauri/runtime.ts';
+import { patchWebglComplexCast } from './tfjsComplexCastFix.ts';
 const TFJS_CDN = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4';
 const TFJS_URL = vendorUrl('tfjs/tf.min.js', TFJS_CDN);
 const ORT_VERSION = '1.30.0';
@@ -36,6 +37,7 @@ export const BIRDNET_V24_MODEL_URL = 'https://limitlessgreen.github.io/SignaVis/
 // ---------------------------------------------------------------------------
 const TFJS_WORKER_SOURCE = `
 importScripts('${TFJS_URL}');
+var patchWebglComplexCast = ${patchWebglComplexCast.toString()};
 
 /* ── MelSpecLayerSimple — custom Keras layer expected by BirdNET v2.4 ── */
 class MelSpecLayerSimple extends tf.layers.Layer {
@@ -107,6 +109,7 @@ self.onmessage = async (e) => {
   if (type === 'load') {
     try {
       await tf.setBackend('webgl');
+      patchWebglComplexCast(tf);  // AnuraPAM: RFFT + Cast in the graph
       self.postMessage({ id: id, type: 'progress', message: 'Loading model\\u2026', percent: 10 });
 
       var base = e.data.modelUrl;
