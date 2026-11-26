@@ -6009,7 +6009,7 @@ async function installSuggestions() {
   editorHead?.el.after(reviewStrip.el);
   // A / X / U while a suggestion is under review (before the player's X = delete and the app's U = upload)
   window.addEventListener('keydown', (e) => {
-    if (e.ctrlKey || e.metaKey || e.altKey || !_suggCurrent || reviewStrip.el.hidden) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || !_suggCurrent || reviewStrip.el.hidden || refCompare?.isOpen) return;
     if (spaces && spaces.active !== 'annotate') return;
     const t = e.target;
     if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
@@ -6043,8 +6043,95 @@ function stopRefAudio() {
 /** A selected label with a species (not the BirdNET window of the suggestion shown) becomes the reference target. */
 function refTargetFromLabel(lbl) {
   if (!refPanel || !lbl?.scientificName || lbl.origin === SUGG_ORIGIN) return;
-  refPanel.setTarget({ sci: lbl.scientificName, name: lbl.label || lbl.scientificName, color: lbl.color,
+  refPanel.setTarget({ id: lbl.id, sci: lbl.scientificName, name: lbl.label || lbl.scientificName, color: lbl.color,
     start: Number(lbl.start), end: Number(lbl.end), source: 'label' });
+}
+/** The suggestion under review as a reference target. */
+function suggTarget(s) {
+  if (!s) return null;
+  const best = [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+  const live = best ? state.labels.find((l) => l.id === best.id) : null;
+  return { id: s.key, sci: s.scientificName || s.species, name: s.species, color: live?.color,
+    start: s.start, end: s.end, source: `suggestion ${s.confidence.toFixed(2)}` };
+}
+let refCompare = null, _refDecodeCtx = null;
+/** Compare window (mockup R2): own clip above, the Xeno-canto recording below. */
+async function openRefCompare(t, ref, list) {
+  if (!refCompare) {
+    const [{ ReferenceCompare }, { computeSnapPatch }, { loadWasmMain }, { invoke }, { heatLut, thumbPixels }] = await Promise.all([
+      import('../../ui/components/reference-compare/reference-compare.ts'), import('../../app/snapPatch.ts'),
+      import('../../infrastructure/wasm-dsp/WasmSpectrogramService.ts'), import('@tauri-apps/api/core'),
+      import('../../domain/catalog/thumb-grid.ts')]);
+    const xcBuffers = new Map();
+    refCompare = new ReferenceCompare({
+      ownPatch: async (from, to) => {
+        await loadWasmMain().catch(() => {});
+        const p = player.computeSnapPatch?.((from + to) / 2, (to - from) / 2);
+        if (p) return p;
+        const root = (projectKind === 'folder' && projectStore?.rootPath) || null;
+        const path = recordingManager.getActive()?.path;
+        if (!root || !path) return null;
+        const [tile] = await invoke('similar_tiles', { root, windows: [{ path, start: from, end: to }], spec: { w: 900, h: 260, maxHz: 12_000 } });
+        return tile && !tile.error && tile.w ? new ImageData(thumbPixels(tile, heatLut()), tile.w, tile.h) : null;
+      },
+      playOwn: (from, to) => { stopRefAudio(); refPanel?.stopped(); player.playSegment(from, to); },
+      stopOwn: () => { if (player.isPlaying) player.pause(); },
+      ownTime: () => (player.isPlaying ? player.currentTime ?? null : null),
+      ownDuration: () => player.duration || player._state?.audioBuffer?.duration || 0,
+      xcAudio: async (r) => {
+        if (xcBuffers.has(r.id)) return xcBuffers.get(r.id);
+        const audio = await xcPanel.fetchAudio(r.id);
+        _refDecodeCtx ??= new AudioContext();
+        const buf = await _refDecodeCtx.decodeAudioData(audio.buffer.slice(0));
+        xcBuffers.set(r.id, buf);
+        while (xcBuffers.size > 12) xcBuffers.delete(xcBuffers.keys().next().value);
+        return buf;
+      },
+      patchOf: async (buf) => {
+        await loadWasmMain();
+        const dur = Math.min(buf.duration, 90);
+        return computeSnapPatch(buf, dur / 2, dur / 2);
+      },
+      search: (sci) => refPanel.searchFor(sci),
+      decide: async (target, d) => {
+        if (d === 'verified') {
+          const l = state.labels.find((x) => x.id === target.id);
+          if (l && !_computeLockedIds().includes(l.id)) upsertLabel({ ...l, tags: { ...(l.tags || {}), verified: 'yes' } }, ALL_LABEL_VIEWS);
+          return null;
+        }
+        const cur = _suggGroups.flatMap((g) => g.suggestions).find((s) => s.key === target.id);
+        if (!cur) return null;
+        await decideSuggestions([cur], d);
+        const { nextOpen } = await import('../../app/suggestions.ts');
+        const next = nextOpen(_suggGroups, cur.key);
+        if (!next) return null;
+        showSuggestion(next);
+        return suggTarget(next);
+      },
+      step: (target, dir) => {
+        if (!target.source?.startsWith('suggestion')) return null;
+        stepSuggestion(dir);
+        return suggTarget(_suggCurrent);
+      },
+      addToProject: (r) => { refCompare.close(); void loadXenoCanto(String(r.id)); },
+      openExternal: (r) => window.open(`https://xeno-canto.org/${encodeURIComponent(r.id)}`, '_blank', 'noopener'),
+      // other species BirdNET heard in the same span: the usual mix-ups
+      others: (target) => {
+        const seen = new Map();
+        for (const l of state.labels) {
+          if (l.origin !== SUGG_ORIGIN || !l.scientificName || l.scientificName === target.sci) continue;
+          if (target.start == null || l.end <= target.start || l.start >= target.end) continue;
+          const c = l.confidence ?? 0;
+          if (!seen.has(l.scientificName) || seen.get(l.scientificName).c < c) seen.set(l.scientificName, { sci: l.scientificName, name: l.label || l.scientificName, c });
+        }
+        return [...seen.values()].sort((a, b) => b.c - a.c).slice(0, 4);
+      },
+    });
+  }
+  stopRefAudio();
+  refPanel?.stopped();
+  if (player.isPlaying) player.pause();
+  refCompare.open(t, ref, list);
 }
 async function revealReference() {
   if (!refPanel || !spaces) return;
@@ -6110,6 +6197,7 @@ async function installReference() {
     },
     addToProject: (ref) => { stopRefAudio(); refPanel.stopped(); void loadXenoCanto(String(ref.id)); },
     openExternal: (ref) => window.open(`https://xeno-canto.org/${encodeURIComponent(ref.id)}`, '_blank', 'noopener'),
+    compare: (t, ref, list) => void openRefCompare(t, ref, list),
   });
   // R: Xeno-canto references for the suggestion / label under review
   window.addEventListener('keydown', (e) => {
@@ -6169,8 +6257,7 @@ function showSuggestion(s, { play = false } = {}) {
   if (!s) { labelViews.invalidate('suggestions'); return; }
   const best = [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
   if (best && state.labels.some((l) => l.id === best.id)) selectLabel(best.id);
-  refPanel?.setTarget({ sci: s.scientificName || s.species, name: s.species, color: best?.color,
-    start: s.start, end: s.end, source: `suggestion ${s.confidence.toFixed(2)}` });
+  refPanel?.setTarget(suggTarget(s));
   // zoom to the suggestion with some context on both sides (option in the panel's ⋯)
   if (suggPanel?.fit) {
     const pad = Math.max(1, (s.end - s.start) * 0.5);

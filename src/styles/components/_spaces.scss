@@ -345,3 +345,52 @@ body.lite-editor-chrome .main-area { container-type: inline-size; }
   &:disabled { opacity: .45; cursor: default; } }
 .ref-foot { display: flex; gap: 6px; padding: 7px 10px 4px; border-top: 1px solid var(--color-border); flex-wrap: wrap; }
 .ref-credit { font-size: 10px; color: var(--color-text-secondary); padding: 0 10px 6px; min-height: 16px; }
+
+// ── Compare window: own clip vs Xeno-canto (Annotate v2, mockup R2) ──
+.rcmp-backdrop { position: fixed; inset: 0; z-index: 9000; background: rgba(6,6,14,.62); }
+.rcmp { position: absolute; inset: 34px 40px; background: var(--color-bg-primary); border: 1px solid rgba(255,255,255,.14); border-radius: 10px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.7); display: grid; grid-template-rows: 44px 1fr 48px; overflow: hidden; outline: none; font-size: 12.5px; }
+.rcmp-muted { color: var(--color-text-secondary); }
+.rcmp-head { display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--color-border); background: var(--color-bg-surface); }
+.rcmp-title { display: flex; align-items: center; gap: 8px; min-width: 0; b { white-space: nowrap; } }
+.rcmp-sw { width: 10px; height: 10px; border-radius: 3px; background: #4ade80; }
+.rcmp-nav { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--color-text-secondary); font-family: var(--font-mono, monospace); font-size: 11.5px; }
+.rcmp-k, .rcmp-x { width: 26px; height: 26px; border-radius: 5px; border: 1px solid var(--color-border); background: transparent; color: inherit; cursor: pointer; }
+.rcmp-x { border: 0; font-size: 15px; margin-left: 6px; }
+.rcmp-body { display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
+.rcmp-cmp { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--color-border); }
+.rcmp-bar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--color-border); color: var(--color-text-secondary); font-size: 11.5px; }
+.rcmp-sp { flex: 1; }
+.rcmp-status { color: #e7a33a; }
+.rcmp-b { height: 26px; padding: 0 9px; border-radius: 5px; border: 1px solid var(--color-border); background: transparent; color: inherit; cursor: pointer; white-space: nowrap;
+  &.play { background: #38bdf8; color: #04111b; border-color: #38bdf8; border-radius: 50%; width: 28px; padding: 0; }
+  &.ok { color: #3fb26f; border-color: rgba(63,178,111,.5); } &.no { color: #e0566b; border-color: rgba(224,86,107,.5); }
+  &.maybe { color: #e7a33a; border-color: rgba(231,163,58,.5); } &:disabled { opacity: .45; cursor: default; } }
+.rcmp-row { position: relative; flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: 170px 1fr; border-bottom: 1px solid var(--color-border);
+  &.act { background: rgba(56,189,248,.05); box-shadow: inset 3px 0 0 #38bdf8; } }
+.rcmp-lab { padding: 10px; display: flex; flex-direction: column; gap: 4px; font-size: 11px; min-width: 0; overflow: hidden;
+  b { font-size: 12px; } }
+.rcmp-tag { align-self: flex-start; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px;
+  &.own { background: #4ade80; color: #111; } &.xc { background: #38bdf8; color: #04111b; } }
+.rcmp-link { color: #7dd3fc; }
+.rcmp-plot { position: relative; margin: 10px 12px 22px 40px; min-width: 0; cursor: grab; }
+.rcmp-spec { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 4px; background: #0c0a18; }
+.rcmp-fa { position: absolute; left: -36px; top: 0; bottom: 0; width: 30px; display: flex; flex-direction: column; justify-content: space-between;
+  color: var(--color-text-secondary); font: 10px var(--font-mono, monospace); text-align: right; }
+.rcmp-tax { position: absolute; left: 0; right: 0; bottom: -17px; display: flex; justify-content: space-between; color: var(--color-text-secondary); font: 10px var(--font-mono, monospace); }
+.rcmp-ph { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #ef4444; pointer-events: none; &[hidden] { display: none; } }
+.rcmp-seg { position: absolute; top: 0; bottom: 0; border-left: 1.5px dashed rgba(255,255,255,.7); border-right: 1.5px dashed rgba(255,255,255,.7); pointer-events: none; }
+.rcmp-side { display: flex; flex-direction: column; min-height: 0; }
+.rcmp-side-head { padding: 8px 10px; border-bottom: 1px solid var(--color-border); color: var(--color-text-secondary); font-size: 11px; }
+.rcmp-list { flex: 1 1 0; overflow: auto; }
+.rcmp-li { display: grid; grid-template-columns: 92px 1fr; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--color-border); cursor: pointer; font-size: 11px;
+  &.on { background: rgba(56,189,248,.14); box-shadow: inset 3px 0 0 #38bdf8; } }
+.rcmp-li-img { height: 40px; border-radius: 3px; overflow: hidden; background: #fff; img { width: 100%; height: 100%; object-fit: cover; display: block; } }
+.rcmp-li-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; b { font-family: var(--font-mono, monospace); }
+  span { color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } }
+.rcmp-others { padding: 8px 10px; border-top: 1px solid var(--color-border); display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 11px;
+  &[hidden] { display: none; } }
+.rcmp-chip { font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--color-border); background: transparent; color: var(--color-text-secondary); cursor: pointer;
+  &.on { background: rgba(56,189,248,.14); border-color: rgba(56,189,248,.5); color: #7dd3fc; } }
+.rcmp-foot { display: flex; align-items: center; gap: 10px; padding: 0 12px; border-top: 1px solid var(--color-border); background: var(--color-bg-surface); }
+.rcmp-foot-r { margin-left: auto; display: flex; gap: 8px; }

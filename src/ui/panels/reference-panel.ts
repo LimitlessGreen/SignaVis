@@ -15,6 +15,8 @@ const FILTER_KEY = 'aw.reference.filters';
 const SORT_KEY = 'aw.reference.sort';
 
 export interface RefTarget {
+    /** Label id (a label) or suggestion key (a suggestion). */
+    id?: string;
     /** Scientific name (search key). */
     sci: string;
     /** Name in the label language. */
@@ -106,6 +108,9 @@ export class ReferencePanel {
     }
 
     get species() { return this.target?.sci ?? null; }
+
+    /** Candidates of a species with the panel's filters and sort (compare window: cross-check). */
+    async searchFor(sci: string) { return (await this.opts.search(sci, this.filters, this.sort, 1)).refs; }
 
     /** New suggestion / label under review. Ignored while pinned, unless `force`. */
     setTarget(t: RefTarget | null, { force = false } = {}) {
