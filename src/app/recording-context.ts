@@ -7,7 +7,7 @@
  */
 
 export type ContextSource = 'manual' | 'xc' | 'guano' | 'header' | 'filename';
-export type ContextField = 'date' | 'time' | 'coords' | 'locality' | 'device';
+export type ContextField = 'date' | 'time' | 'coords' | 'locality' | 'device' | 'utcOffset';
 
 export interface Coords { lat: number; lon: number }
 
@@ -17,6 +17,8 @@ export interface ContextValues {
     coords?: Coords | null;
     locality?: string;
     device?: string;
+    /** Clock zone of `time` in hours, when the user picked one (absent = local time at the place). */
+    utcOffset?: number;
 }
 
 export type ResolvedContext = { [K in ContextField]: { value: NonNullable<ContextValues[K]> | null; source: ContextSource | null } };
@@ -25,7 +27,7 @@ export const CONTEXT_SOURCE_TEXT: Record<ContextSource, string> = {
     manual: 'manual', xc: 'XC', guano: 'GUANO', header: 'file header', filename: 'file name',
 };
 
-const FIELDS: ContextField[] = ['date', 'time', 'coords', 'locality', 'device'];
+const FIELDS: ContextField[] = ['date', 'time', 'coords', 'locality', 'device', 'utcOffset'];
 const str = (v: any) => String(v ?? '').trim();
 const pad = (n: number) => String(n).padStart(2, '0');
 

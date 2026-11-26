@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     sunDay, sunAltitude, dayLengthHours, dayOfYear, guessUtcOffset, phaseOf, seasonOf, formatClock,
-} from '../src/domain/sun.ts';
+} from '../src/sun.ts';
 
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg}: ${a} vs ${b}`);
 
@@ -52,7 +52,7 @@ test('UTC offset guess, seasons, clock format', () => {
 });
 
 test('phaseSpans splits a 3 h dawn recording into light phases', async () => {
-    const { phaseSpans } = await import('../src/domain/sun.ts');
+    const { phaseSpans } = await import('../src/sun.ts');
     // Leipzig 12 May, 03:00–06:00 CEST: nautical → civil → low sun → (day after ~06:1x? no) …
     const spans = phaseSpans(51.34, 12.37, '2026-05-12', 180, 180, 2);
     assert.deepEqual(spans.map((s) => s.phase), ['astronomical', 'nautical', 'civil', 'golden']);
@@ -65,7 +65,7 @@ test('phaseSpans splits a 3 h dawn recording into light phases', async () => {
 });
 
 test('clockDiff wraps event times from large offsets; offsets list has :30 and :45 zones', async () => {
-    const { clockDiff, crossing, UTC_OFFSETS } = await import('../src/domain/sun.ts');
+    const { clockDiff, crossing, UTC_OFFSETS } = await import('../src/sun.ts');
     // Equator at 150°W with UTC+14 (CodeRabbit case): sunrise lands near minute 1800 (= 06:00)
     const c = crossing(0, -150, 79, -0.833, 14);
     assert.ok(c.rise > 1440);

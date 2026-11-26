@@ -62,7 +62,8 @@ try {
         '',
     ];
     for (const { src, types } of Object.values(PACKAGE_ENTRIES)) {
-        const generated = src.replace(/^src\//, '').replace(/\.ts$/, '');
+        // rootDir is the repo root (the app imports workspace packages), so paths keep src/
+        const generated = src.replace(/\.ts$/, '');
         fs.writeFileSync(path.join(rootDir, 'types', `${types}.d.ts`), [...header, `export * from './generated/${generated}';`, ''].join('\n'));
     }
     console.log('✅ types/index.d.ts generiert');
