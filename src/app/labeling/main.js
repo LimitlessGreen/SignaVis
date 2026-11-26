@@ -3060,8 +3060,9 @@ const labelTable = labelTableHost ? new LabelGrid({
   onNotice: (msg) => { selectionMeta.textContent = msg; },
   onBatch: (summary, run) => {
     const undo = snapshotLabels();
-    run();
+    // Summary first: a notice from run() about refused values must stay visible
     selectionMeta.textContent = summary;
+    run();
     showUndoToast(summary, undo);
   },
   rowMenu: (ids, lbl) => labelTableRowMenu(ids, lbl),
