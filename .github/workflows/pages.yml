@@ -60,14 +60,23 @@ jobs:
         if: steps.cache-species.outputs.cache-hit != 'true'
         run: npm run taxonomy:build
 
-      - name: Cache BirdBox model
+      # Models are not committed. Downloads (.cache/) and the converted AnuraPAM and
+      # 12K folders are cached, so only a changed fetch script downloads again.
+      - name: Cache models
         uses: actions/cache@v6
         with:
-          path: .cache/birdbox
-          key: birdbox-model-${{ hashFiles('scripts/birdbox/fetch-model.mjs') }}
+          path: |
+            .cache/models
+            .cache/birdbox
+            models/birdnet-v3.0-12k
+            models/anurapam
+          key: models-${{ hashFiles('scripts/fetch-models.mjs', 'scripts/birdbox/**', 'scripts/fetch-birdnet-12k.mjs', 'scripts/fetch-anurapam.sh') }}
 
-      - name: Fetch BirdBox model (stream graphs)
-        run: npm run models:birdbox
+      - name: Setup uv (AnuraPAM conversion)
+        uses: astral-sh/setup-uv@v10
+
+      - name: Fetch models
+        run: npm run models:fetch
 
       - name: Build demo site
         run: |
