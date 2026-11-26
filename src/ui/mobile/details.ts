@@ -95,7 +95,10 @@ const SOURCE_KEY: Record<string, MKey> = { manual: 'det.src.manual', xc: 'det.sr
 export class MobileDetailsView {
   readonly body: HTMLElement;
   private h: DetailsHost;
-  private sun = new SunCharts({ storage: prefs, moon: true, labels: getLang() });
+  private sun = new SunCharts({
+    storage: prefs, moon: true, labels: getLang(),
+    onZoneChange: ({ utcOffset }) => this.h.setContext?.('utcOffset', utcOffset),
+  });
   private sunLang = getLang();
 
   constructor(host: DetailsHost) {
@@ -111,7 +114,7 @@ export class MobileDetailsView {
     b.append(this.hero(d), this.whenWhere(d));
     const ctx = d.context;
     if (this.sunLang !== getLang()) { this.sunLang = getLang(); this.sun.update({ labels: this.sunLang }); }
-    const light = this.sun.render(ctx.coords.value, ctx.date.value, ctx.time.value, d.file.duration || 0);
+    const light = this.sun.render(ctx.coords.value, ctx.date.value, ctx.time.value, d.file.duration || 0, ctx.utcOffset?.value ?? null);
     if (!light.hidden) {
       // The charts bring their own heading (with the view and zone pickers).
       const c = el('section', 'm-dcard m-dcard--light');

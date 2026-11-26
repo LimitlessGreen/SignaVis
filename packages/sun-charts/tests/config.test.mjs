@@ -109,3 +109,17 @@ test('update() switches language and redraws', () => {
     sc.update({ labels: 'de' });
     assert.equal(find(sc.el, (n) => n.className === 'sun-charts-title').textContent, 'Licht');
 });
+
+test('moon disc moves aside when it would cover the sun', () => {
+    // Leipzig, 20 Nov 2026 06:40: sun and moon sit close together on the dial
+    const dial = buildDayDial(LEIPZIG, '2026-11-20', '06:40', 1, 0, { moon: true });
+    const sun = find(dial, (n) => n.attrs?.class?.startsWith('sun-disc'));
+    const moon = find(dial, (n) => /^sun-moon( |$)/.test(n.attrs?.class ?? ''));
+    assert.ok(find(dial, (n) => n.attrs?.class === 'sun-moon-leader'), 'leader to the true place');
+    const disc = moon.children[0];
+    const d = Math.hypot(disc.attrs.cx - sun.attrs.cx, disc.attrs.cy - sun.attrs.cy);
+    assert.ok(d >= 12, `discs apart: ${d}`);
+    // No leader when they are far apart (22:00: moon high, sun deep below)
+    const noon = buildDayDial(LEIPZIG, '2026-11-20', '22:00', 1, 0, { moon: true });
+    assert.equal(find(noon, (n) => n.attrs?.class === 'sun-moon-leader'), null);
+});

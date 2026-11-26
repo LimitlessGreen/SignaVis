@@ -326,11 +326,13 @@ export function buildDayDial(c: Coords, date: string, time: string | null, utcOf
     // Recording: hand + sun on the curve
     const rec = parseTime(time);
     let lines: [string, string][];
+    let sunXY: [number, number] | null = null;
     if (rec != null) {
         const phi = phiOf(rec);
         const a = alt(rec);
         const [hx, hy] = pol(R_OUT, phi);
         const [sx, sy] = pol(rAlt(a), phi);
+        sunXY = [sx, sy];
         // Recording span over the ring, sun path highlighted, end hand
         const span = Math.min(durationMin, 1440);
         if (span >= 1) {
@@ -370,7 +372,19 @@ export function buildDayDial(c: Coords, date: string, time: string | null, utcOf
         const ill = moonIllumination(date, at ?? 720, utcOffsetH);
         if (at != null) {
             const a = moonAlt(at);
-            const [mx, my] = pol(rAlt(a), phiOf(at));
+            const phi = phiOf(at);
+            let [mx, my] = pol(rAlt(a), phi);
+            // Sun and moon at nearly the same spot: move the disc aside along the ring and
+            // mark the true place with a dot and a short leader.
+            if (sunXY && Math.hypot(mx - sunXY[0], my - sunXY[1]) < 13) {
+                const [tx, ty] = [-Math.cos(phi), -Math.sin(phi)]; // tangent, clockwise
+                const [x0, y0] = [mx, my];
+                const away = Math.sign((mx - sunXY[0]) * tx + (my - sunXY[1]) * ty) || 1;
+                mx = sunXY[0] + away * 15 * tx;
+                my = sunXY[1] + away * 15 * ty;
+                el('line', { x1: x0, y1: y0, x2: mx, y2: my, class: 'sun-moon-leader' }, svg);
+                el('circle', { cx: x0, cy: y0, r: 1.6, class: 'sun-moon-dot' }, svg);
+            }
             moonDisc(svg, mx, my, 6, ill, southern, a >= MOON_HORIZON, cfg);
         }
         const up = rec == null ? '' : ` · ${moonAlt(rec) >= MOON_HORIZON ? t.moonUp : t.moonDown}`;

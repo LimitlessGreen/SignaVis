@@ -510,3 +510,5 @@
 /* Linear charts: day-length area and sun line */
 .sun-chart-daylight { fill: var(--sun-color-daylight, #f1cf94); fill-opacity: .45; }
 .sun-chart-line { fill: none; stroke: var(--sun-color-line, #d9822b); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.sun-moon-leader { stroke: var(--sun-color-moon-lit, #f3f1e4); stroke-width: .8; opacity: .8; }
+.sun-moon-dot { fill: var(--sun-color-moon-lit, #f3f1e4); }

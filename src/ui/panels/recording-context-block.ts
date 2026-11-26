@@ -67,7 +67,12 @@ export class RecordingContextBlock {
     el: HTMLElement;
     mapEl: HTMLElement | null;
     onChange: RecordingContextBlockOptions['onChange'];
-    sunCharts = new SunCharts({ storage: prefs, moon: true });
+    sunCharts = new SunCharts({
+        storage: prefs,
+        moon: true,
+        // A picked clock zone is kept with the recording (null = back to local time).
+        onZoneChange: ({ utcOffset }) => this.onChange('utcOffset', utcOffset),
+    });
 
     constructor(opts: RecordingContextBlockOptions) {
         this.el = opts.el;
@@ -117,7 +122,8 @@ export class RecordingContextBlock {
         const target = this.mapEl || this.el;
         if (coords) target.appendChild(buildMiniMap(coords, () => this._openMap(coords)));
         // Where in the year and in the day (light) the recording sits
-        target.appendChild(this.sunCharts.render(coords, (ctx.date.value as string) || null, (ctx.time.value as string) || null, durationSec));
+        target.appendChild(this.sunCharts.render(coords, (ctx.date.value as string) || null, (ctx.time.value as string) || null, durationSec,
+            (ctx.utcOffset?.value as number | null | undefined) ?? null));
     }
 
     _row(label: string, controls: HTMLElement[], source: string | null, manualFields: ContextField[]) {
