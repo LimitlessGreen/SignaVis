@@ -541,6 +541,7 @@ self.onmessage = async (e) => {
         scientific: labels[j].scientific,
         common:     labels[j].common,
         geoscore:   geoscores ? geoscores[j] : null,
+        hasGeo:     labels[j].geoIx >= 0,
       });
     }
     self.postMessage({ id: id, type: 'species-list', species: specList });

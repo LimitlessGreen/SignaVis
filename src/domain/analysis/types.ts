@@ -31,6 +31,8 @@ export interface AnalysisSpeciesItem {
     scientific: string;
     common: string;
     geoscore: number | null;
+    /** False for classes without geomodel output (e.g. non-animal sounds; their geoscore is fixed). */
+    hasGeo?: boolean;
 }
 
 export interface AnalysisDetection {

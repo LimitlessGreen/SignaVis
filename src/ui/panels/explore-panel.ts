@@ -365,6 +365,7 @@ export class ExplorePanel {
         metaRight:  `${pct}%`,
         labeled:    labeled.has(s.scientific),
         imgTitle:   imgAttribution,
+        hasGeo:     s.hasGeo !== false,
       }));
     }
   }
@@ -383,7 +384,7 @@ export class ExplorePanel {
    * @param {{ scientificName:string, commonName:string, badgeText:string, badgeTitle:string,
    *           barValue:number|null, metaLeft:string, metaRight:string, labeled:boolean, imgTitle?:string }} opts
    */
-  _makeCard({ scientificName, commonName, badgeText, badgeTitle, barValue, metaLeft, metaRight, labeled, imgTitle }: any) {
+  _makeCard({ scientificName, commonName, badgeText, badgeTitle, barValue, metaLeft, metaRight, labeled, imgTitle, hasGeo = true }: any) {
     const card = document.createElement('div');
     card.className = 'sp-card' + (this._onSpeciesSelect ? ' sp-card--clickable' : '')
                                + (labeled ? ' sp-card--labeled' : '');
@@ -433,7 +434,7 @@ export class ExplorePanel {
       else card.querySelector('.sp-card-body')?.appendChild(refBtn);
     }
 
-    if (this._onOpenRangeMap && scientificName) {
+    if (this._onOpenRangeMap && scientificName && hasGeo) {
       const mapBtn = document.createElement('button');
       mapBtn.className = 'act-btn';
       mapBtn.title = 'Range map (geomodel)';
@@ -466,7 +467,7 @@ export class ExplorePanel {
         {
           select: this._onSpeciesSelect ? () => card.click() : null,
           refCalls: this._onOpenRefCalls && scientificName ? () => this._onOpenRefCalls({ scientificName, name: commonName }) : null,
-          rangeMap: this._onOpenRangeMap && scientificName ? () => this._onOpenRangeMap({ scientificName, name: commonName }) : null,
+          rangeMap: this._onOpenRangeMap && scientificName && hasGeo ? () => this._onOpenRangeMap({ scientificName, name: commonName }) : null,
           addTo: this._onAddToSpeciesList ? (id: string) => this._onAddToSpeciesList(id, scientificName) : null,
           copy: (t: string) => { navigator.clipboard?.writeText(t).catch(() => {}); },
         },
