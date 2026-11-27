@@ -34,12 +34,14 @@ export function baseName(path: string | null | undefined): string {
 }
 
 /**
- * The catalog row that belongs to the open recording: the view's current row, but only when its file
- * is the one in the editor (a recording opened from Files or a link is not the view's current one).
+ * The view row of the recording open in the editor, by its catalog id (set when a catalog recording
+ * finished loading; null when the editor shows one opened from Files or a link). Not by file name:
+ * two folders can hold files with the same name.
  */
-export function rowOfOpen(row: CatalogRow | null | undefined, openName: string): CatalogRow | null {
-    if (!row || !openName) return null;
-    return baseName(row.path) === openName ? row : null;
+export function rowOfOpen(rows: readonly (CatalogRow | undefined)[], openId: number | null): { row: CatalogRow | null; index: number } {
+    if (openId == null) return { row: null, index: -1 };
+    const index = rows.findIndex((r) => r?.id === openId);
+    return { row: index >= 0 ? rows[index]! : null, index };
 }
 
 export interface EditorPlace {

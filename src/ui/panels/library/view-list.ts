@@ -27,6 +27,8 @@ export interface ViewListOptions {
     open: (i: number) => Promise<void>;
     /** Store the review state of recordings (true: done, false: back to open). */
     setDone: (ids: number[], done: boolean) => Promise<void>;
+    /** Catalog id of the recording confirmed open in the editor (null: none, or one opened from Files). */
+    openId: () => number | null;
 }
 
 export function reviewText(r: Pick<CatalogRow, 'review'>): 'new' | 'open' | 'done' {
@@ -75,14 +77,16 @@ export class ViewList {
 
     #q<T extends HTMLElement = HTMLElement>(sel: string): T { return this.el.querySelector<T>(sel)!; }
 
-    /** Recording opened from this list last: found again after the view reloads (filter change). */
-    #openId: number | null = null;
+    /** Last page-load error (shown until the next successful render of rows). */
+    #loadError: string | null = null;
 
     #onView(c: ViewChange) {
         if (c === 'loading') { this.el.classList.add('is-loading'); return; }
         if (c === 'ready') this.el.classList.remove('is-loading');
-        if ((c === 'rows' || c === 'ready') && this.#v.current < 0 && this.#openId != null) {
-            const i = this.#v.rows.findIndex((r) => r.id === this.#openId);
+        const openId = this.#o.openId();
+        if ((c === 'rows' || c === 'ready') && this.#v.current < 0 && openId != null) {
+            // The open recording is found again after the view reloads (filter change).
+            const i = this.#v.rows.findIndex((r) => r.id === openId);
             if (i >= 0) { this.#v.setCurrent(i); return; }   // emits 'selection', which renders
         }
         if (c === 'selection') this.#reveal(this.#v.current);
@@ -99,8 +103,9 @@ export class ViewList {
         const total = v.total;
         this.#q('.vl-bar > span').style.width = `${total ? Math.min(100, (done / total) * 100) : 0}%`;
         this.#q('.vl-progress-text').textContent = v.error ? v.error
+            : this.#loadError ? `Could not load more: ${this.#loadError} (scroll or click to retry)`
             : `done ${done.toLocaleString()} / ${total.toLocaleString()}${f?.reviewOpen ? ` · opened ${f.reviewOpen.toLocaleString()}` : ''}`;
-        const cur = v.rows[v.current];
+        const cur = this.#openRow();
         const doneBtn = this.#q<HTMLButtonElement>('.vl-done');
         doneBtn.disabled = !cur;
         doneBtn.textContent = cur?.review === 'done' ? 'Done ✓ — undo' : 'Mark done ✓';
@@ -117,7 +122,9 @@ export class ViewList {
         this.#q('.vl-spacer').style.height = `${total * ROW_H}px`;
         const first = Math.max(0, Math.floor(list.scrollTop / ROW_H) - 5);
         const last = Math.min(total - 1, Math.ceil((list.scrollTop + list.clientHeight) / ROW_H) + 5);
-        if (last >= v.rows.length - PREFETCH && v.hasMore) void v.loadMore();
+        if (last >= v.rows.length - PREFETCH && v.hasMore) {
+            v.loadMore().then(() => { if (this.#loadError) { this.#loadError = null; this.render(); } }, (e) => this.#failed(e));
+        }
         const html: string[] = [];
         for (let i = first; i <= last; i++) {
             const r = v.rows[i];
@@ -130,7 +137,22 @@ export class ViewList {
               <span class="vl-sub">${esc(rowSub(r))}</span>
               <span class="vl-state vl-state--${state}">${state}</span></button>`);
         }
+        // Keyboard focus on a row survives the redraw (the rows are rebuilt).
+        const focused = (document.activeElement as HTMLElement | null)?.closest?.<HTMLElement>('.vl-r[data-i]');
+        const keep = focused && this.el.contains(focused) ? focused.dataset.i : null;
         this.#q('.vl-rows').innerHTML = html.join('');
+        if (keep != null) this.#q('.vl-rows').querySelector<HTMLElement>(`.vl-r[data-i="${keep}"]`)?.focus({ preventScroll: true });
+    }
+
+    #failed(e: unknown) {
+        this.#loadError = e instanceof Error ? e.message : String(e);
+        this.render();
+    }
+
+    /** The view row of the recording open in the editor (null: none of the view's loaded rows). */
+    #openRow(): CatalogRow | null {
+        const id = this.#o.openId();
+        return id == null ? null : this.#v.rows.find((r) => r.id === id) ?? null;
     }
 
     #reveal(i: number) {
@@ -163,26 +185,24 @@ export class ViewList {
         try {
             const row = await this.#v.rowAt(i);
             if (!row) return;
-            this.#openId = row.id;
             await this.#o.open(i);
-        } finally { this.#busy = false; }
+        } catch (e) { this.#failed(e); } finally { this.#busy = false; }
     }
 
-    /** A catalog recording was opened elsewhere (Browse): keep it as the list's open one. */
-    track(id: number) { this.#openId = id; }
-
-    /** Whether N / P / D should go to this list: a recording of the view is open. */
-    get active(): boolean { return this.#v.current >= 0 && this.#v.rows[this.#v.current] != null; }
+    /** Whether N / P / D should go to this list: a recording of the view is open in the editor. */
+    get active(): boolean { return this.#openRow() != null; }
 
     next(): Promise<void> { return this.#go(this.#v.current + 1); }
     prev(): Promise<void> { return this.#go(this.#v.current - 1); }
 
     /** Mark the open recording done and go on to the next; on a done one: back to open (undo). */
     async toggleDone() {
-        const r = this.#v.rows[this.#v.current];
+        if (this.#busy) return;
+        const r = this.#openRow();   // the recording in the editor, not just the list cursor
         if (!r) return;
         const done = r.review !== 'done';
-        await this.#o.setDone([r.id], done);
-        if (done) await this.next();
+        this.#busy = true;   // N / P / clicks wait until the state is stored
+        try { await this.#o.setDone([r.id], done); } catch (e) { this.#failed(e); return; } finally { this.#busy = false; }
+        if (done) await this.#go(this.#v.rows.indexOf(r) + 1);
     }
 }

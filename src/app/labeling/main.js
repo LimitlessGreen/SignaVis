@@ -2357,6 +2357,7 @@ async function activateRecordingEntry(entry) {
       player.hideLoadingOverlay();
     }
   }
+  return !_audioFailed;   // false: the audio could not be loaded (the entry is active, but empty)
 }
 
 /**
@@ -3828,6 +3829,12 @@ let libraryOpenRow = async (_row) => {};
 let catalogView = null;
 /** Spaces: the Annotate panel "View" (list of the catalog view with review state); null until built. */
 let viewList = null;
+/** Catalog recording confirmed open: { entryId (recording manager), rowId (catalog) }; set only after it loaded. */
+let catalogOpen = null;
+/** Catalog id of the recording in the editor, null when the editor shows another one (Files, link). */
+function openCatalogRowId() {
+  return catalogOpen && recordingManager.getActive()?.id === catalogOpen.entryId ? catalogOpen.rowId : null;
+}
 const viewListHost = document.createElement('div');
 viewListHost.className = 'space-fill';
 let mountViewList = () => {};
@@ -3967,10 +3974,15 @@ if (isLite()) {
   libraryOpenRow = async (row) => {
     const root = libRoot();
     if (!root || !row?.id) return;
-    const path = await catalogApi.recordingPath(root, row.id);
-    if (!path) { showLoadError('This recording\'s source folder is not located on this computer.', 'Cannot open'); return; }
-    if (await openCatalogRecording(path, () => spaces?.reveal('editor'))) noteOpened(row);
+    const entry = await openCatalogRecording(catalogRowPath(root, row.id), () => spaces?.reveal('editor'));
+    if (entry) noteOpened(row, entry);
   };
+  /** The file of a catalog row, or null (load error shown) when its folder is not on this computer. */
+  async function catalogRowPath(root, id) {
+    const path = await catalogApi.recordingPath(root, id);
+    if (!path) showLoadError('This recording\'s source folder is not located on this computer.', 'Cannot open');
+    return path || null;
+  }
   /** Spaces: the library lives in Browse (built once, stays while a recording is open in Annotate). */
   mountLibraryPanel = () => {
     const root = libRoot();
@@ -3986,7 +3998,8 @@ if (isLite()) {
       view: catalogView ?? undefined,
       revealPart: (k) => void spaces?.reveal(`lib-${k}`),
       openRecording: async (path, row) => {
-        if (await openCatalogRecording(path, () => spaces?.reveal('editor'))) noteOpened(row);
+        const entry = await openCatalogRecording(path, () => spaces?.reveal('editor'));
+        if (entry) noteOpened(row, entry);
       },
     });
     for (const k of LIB_PARTS) libraryHosts[k].replaceChildren(libView.parts[k]);
@@ -3999,9 +4012,10 @@ if (isLite()) {
     }
   };
   /** Opening a catalog recording marks it "open" in the review (never undoes "done"). */
-  function noteOpened(row) {
+  function noteOpened(row, entry) {
     const root = libRoot();
-    if (row?.id) viewList?.track(row.id);
+    if (row?.id && entry) catalogOpen = { entryId: entry.id, rowId: row.id };
+    refreshEditorPlace();
     if (!root || !row?.id || row.review) return;
     catalogApi.setReview(root, [row.id], 'open', true)
       .then(() => catalogView?.noteReview([row.id], 'open', true))
@@ -4022,10 +4036,10 @@ if (isLite()) {
         const row = view.rows[i];
         if (!row) return;
         view.select(i, { keepPicks: true });
-        const path = await catalogApi.recordingPath(view.projectRoot, row.id);
-        if (!path) { showLoadError('This recording\'s source folder is not located on this computer.', 'Cannot open'); return; }
-        if (await openCatalogRecording(path)) noteOpened(row);
+        const entry = await openCatalogRecording(catalogRowPath(view.projectRoot, row.id));
+        if (entry) noteOpened(row, entry);
       },
+      openId: openCatalogRowId,
       setDone: async (ids, done) => {
         const review = done ? 'done' : 'open';
         await catalogApi.setReview(view.projectRoot, ids, review);
@@ -4040,10 +4054,13 @@ if (isLite()) {
    * In the project folder: the same project-relative entry as the Project tab and
    * Similar use (reused if present). Outside: matched only by its absolute path.
    * A newer open wins; read errors are shown and the library stays open.
-   * Returns true once the recording is the active one.
+   * Returns the entry once the recording is loaded and active (path: a string or a promise of one).
    */
-  async function openCatalogRecording(path, beforeActivate) {
+  async function openCatalogRecording(pathOrPromise, beforeActivate) {
+    // The order is that of the requests: a path still being looked up belongs to its request.
     const seq = ++_catalogOpenSeq;
+    const path = await pathOrPromise;
+    if (seq !== _catalogOpenSeq || !path) return;
     const root = libRoot();
     const rel = root ? projectRelativePath(root, path) : null;
     let entry = recordingManager.getAll().find((e) => (rel ? e.path === rel : !e.path && e.filePath === path));
@@ -4068,8 +4085,8 @@ if (isLite()) {
     }
     await beforeActivate?.();
     if (seq !== _catalogOpenSeq) return;
-    await activateRecordingEntry(entry);
-    return true;
+    if (!await activateRecordingEntry(entry)) return;   // load error shown already; not "opened"
+    return entry;
   }
   const openLibrary = (startImport = false) => {
     const root = libRoot();
@@ -6056,8 +6073,10 @@ async function refreshEditorPlace() {
   const text = fileLabel.textContent?.trim() || '';
   const name = text === 'No file loaded' ? '' : text;
   const v = catalogView;
-  const row = v ? rowOfOpen(v.rows[v.current], name) : null;
-  const place = { row, index: row ? v.current : -1, total: v?.total ?? 0 };
+  // By identity: two files with the same name in different folders are different recordings.
+  const { row, index } = v ? rowOfOpen(v.rows, openCatalogRowId()) : { row: null, index: -1 };
+  const place = { row, index, total: v?.total ?? 0 };
+  viewList?.render();   // Mark done follows the recording in the editor
   editorHead.setName(name);
   editorHead.setPlace(place, !!v);
   editorLabelBar.setPlace(place);
