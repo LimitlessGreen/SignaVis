@@ -103,11 +103,22 @@ export class MapDialog {
     }
 
     /** Follow a new library filter (panel): points again, area rectangle redrawn. */
-    setFilter(filter: CatalogFilter, area: [number, number, number, number] | null) {
+    setFilter(filter: CatalogFilter, area: [number, number, number, number] | null, devices?: FacetValue[]) {
         this.#o = { ...this.#o, filter };
         this.#area = area;
+        if (devices) this.#setDevices(devices);
         this.#drawArea();
         void this.#loadPoints();
+    }
+
+    /** Recorder choices for track import from the current facets; the chosen one stays if still there. */
+    #setDevices(devices: FacetValue[]) {
+        this.#o = { ...this.#o, devices };
+        const sel = this.el.querySelector<HTMLSelectElement>('[data-k="device"]');
+        if (!sel) return;
+        const keep = sel.value;
+        sel.innerHTML = `<option value="">all recorders (filtered)</option>${devices.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('')}`;
+        sel.value = devices.some((d) => String(d.id) === keep) ? keep : '';
     }
 
     #drawArea() {
@@ -134,7 +145,7 @@ export class MapDialog {
 
     #drawPoints() {
         const L = (window as any).L, d = this.#data, lay = this.#layers;
-        if (!L || !d || !lay) return;
+        if (!L || !d || !lay || !this.#map) return;
         lay.sites.clearLayers();
         lay.cells.clearLayers();
         const css = getComputedStyle(this.el);
@@ -238,7 +249,9 @@ export class MapDialog {
                     if (!path) return;
                     const dev = this.el.querySelector<HTMLSelectElement>('[data-k="device"]')!.value;
                     const gap = Number(this.el.querySelector<HTMLInputElement>('[data-k="gap"]')!.value) || 120;
-                    const filter = dev ? { ...this.#o.filter, deviceIds: [Number(dev)] } : this.#o.filter;
+                    // Points are drawn without the area (to show what lies outside); positions are only written inside it.
+                    const inArea = { ...this.#o.filter, bbox: this.#area ?? this.#o.filter.bbox ?? null };
+                    const filter = dev ? { ...inArea, deviceIds: [Number(dev)] } : inArea;
                     out.classList.remove('lib-warn');
                     out.textContent = 'Reading track…';
                     const r = await catalogApi.importTrack(this.#o.projectRoot, path, dev ? Number(dev) : null, { filter }, gap);
@@ -276,6 +289,7 @@ export class MapDialog {
 
     dispose() {
         this.#disposed = true;
+        this.#gen++;   // a point request still running must not draw on the removed map
         this.#resize?.disconnect();
         this.#resize = null;
         this.#map?.remove();

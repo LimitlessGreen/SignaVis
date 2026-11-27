@@ -1193,7 +1193,7 @@ export class LibraryView {
 
     #showMap() {
         const dlg = new MapDialog({
-            projectRoot: this.#o.projectRoot, filter: { ...this.#v.filter, bbox: null }, devices: this.#v.facets?.devices ?? [],
+            projectRoot: this.#o.projectRoot, filter: { ...this.#v.filter, bbox: null }, area: this.#v.filter.bbox ?? null, devices: this.#v.facets?.devices ?? [],
             ...this.#mapActions(() => this.#hideImport()),
         });
         this.#showHost('Map', dlg.el);   // disposes a map shown before
@@ -1252,7 +1252,7 @@ export class LibraryView {
                     devices: this.#v.facets?.devices ?? [], panel: true, ...this.#mapActions(() => {}),
                 });
                 this.parts.map.replaceChildren(this.#mapPart.el);
-            } else if (this.#partStale.map) this.#mapPart.setFilter({ ...f, bbox: null }, f.bbox ?? null);
+            } else if (this.#partStale.map) this.#mapPart.setFilter({ ...f, bbox: null }, f.bbox ?? null, this.#v.facets?.devices ?? []);
             this.#partStale.map = false;
         } else if (part === 'stats') {
             if (!this.#statsPart) {
