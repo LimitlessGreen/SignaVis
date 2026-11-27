@@ -54,6 +54,8 @@ export interface AnalysisBackend {
     load(options: AnalysisLoadOptions): Promise<AnalysisLoadResult>;
     setLocation(latitude: number, longitude: number, options?: AnalysisSetLocationOptions): Promise<AnalysisSetLocationResult>;
     getAllSpecies(): Promise<AnalysisSpeciesItem[]>;
+    /** Geomodel scores for weeks 1–48 per species at one place; null when unsupported. Optional. */
+    getYearProfile?(latitude: number, longitude: number, species: string[]): Promise<Record<string, number[]> | null>;
     clearLocation(): Promise<void>;
     analyze(channelData: Float32Array | number[], options?: AnalysisRunOptions): Promise<AnalysisDetection[]>;
     dispose(): void;

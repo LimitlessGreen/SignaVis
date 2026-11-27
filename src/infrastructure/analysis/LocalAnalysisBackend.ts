@@ -35,6 +35,10 @@ export class LocalAnalysisBackend implements AnalysisBackend {
         return this.#birdnet.getAllSpecies();
     }
 
+    getYearProfile(latitude: number, longitude: number, species: string[]): Promise<Record<string, number[]> | null> {
+        return this.#birdnet.getYearProfile(latitude, longitude, species);
+    }
+
     clearLocation(): Promise<void> {
         return this.#birdnet.clearLocation();
     }

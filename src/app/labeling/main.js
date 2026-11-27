@@ -24,6 +24,7 @@ import { LabelList } from '../../ui/panels/label-list.ts';
 import { LabelGrid } from '../../ui/panels/label-grid.ts';
 import { buildLabelExport } from '../../infrastructure/export/labelTableFormats.ts';
 import { BirdNETPanel } from '../../ui/panels/birdnet-panel.ts';
+import { geoWeek } from '../../ui/components/geo-season.ts';
 import { BirdBoxPanel, BIRDBOX_ORIGIN } from '../../ui/panels/birdbox-panel.ts';
 import { initModeTiles } from '../../ui/panels/mode-tiles.ts';
 import { initModelPicker } from '../../ui/panels/model-picker.ts';
@@ -886,8 +887,36 @@ specPanel.relocate();
   specPanel.el.insertBefore(auto, sec);
 })();
 
+// Year profile of a label's species at the recording place (geomodel), cached per place.
+const seasonProfiles = new Map(); // `${lat},${lon}\0${sci}` → Promise<number[]|null>
 const propsPanel = new PropertiesPanel({
   getSetInfo: (setId) => (setId === OWN_SOURCE_ID ? null : state.labelSets?.get(setId) || null),
+  getSeason: (sci) => {
+    let bp = null;
+    try { bp = birdnetPanel; } catch { return null; } // not created yet during start-up
+    const c = bp.getCoords?.();
+    if (!c) return null;
+    const week = geoWeek(bp.getRecordingDate?.());
+    const threshold = bp.getGeoThreshold();
+    const place = `${c.lat.toFixed(3)},${c.lon.toFixed(3)}`;
+    return {
+      key: `${place}\0${week}\0${threshold}\0${birdnet.loaded ? birdnet.hasAreaModel : 'unloaded'}`,
+      load: async (allowModelLoad) => {
+        if (!birdnet.loaded) {
+          if (!allowModelLoad) return { needsModel: true };
+          await bp.loadModel();
+        }
+        if (!birdnet.hasAreaModel || !birdnet.getYearProfile) return null;
+        const k = `${bp._loadedModelUrl || ''}\0${place}\0${sci}`;
+        if (!seasonProfiles.has(k)) {
+          seasonProfiles.set(k, birdnet.getYearProfile(c.lat, c.lon, [sci]).then((p) => p?.[sci] || null)
+            .catch((err) => { seasonProfiles.delete(k); throw err; }));
+        }
+        const scores = await seasonProfiles.get(k);
+        return scores ? { scores, week, threshold } : null;
+      },
+    };
+  },
 });
 propsPanel.setTagStore(tagStore);
 
@@ -2305,11 +2334,13 @@ async function activateRecordingEntry(entry) {
     const also = meta?.also;
     player.setBackgroundSpecies(Array.isArray(also) ? also : []);
     birdnetPanel.setLocationFromMeta(meta);
+    propsPanel.refreshSeason();
   } else {
     updateUrlXcId(null);
     player.setSpeciesBar('', {});
     player.setBackgroundSpecies([]);
     birdnetPanel.setLocationFromMeta(null);
+    propsPanel.refreshSeason();
   }
   xcPanel._rebuildSetSection?.();
   try { renderRecordingContext(); } catch (e) { /* not initialized yet */ }
@@ -3209,6 +3240,8 @@ const birdnetPanel = new BirdNETPanel({
     if (readFlag(BIRDNET_SHOW_LABELS_KEY, true)) sidebar.setActive('labels');
   },
 });
+// Season block in Properties follows the threshold slider and a model loaded elsewhere.
+document.getElementById('birdnetGeoThreshold')?.addEventListener('change', () => propsPanel.refreshSeason());
 initModelPicker({
   seg: document.getElementById('birdnetModelSeg'),
   select: document.getElementById('birdnetModelPreset'),
@@ -3710,6 +3743,7 @@ function renderRecordingContext() {
   } else {
     line.textContent = 'No location set — the geo filter needs one.';
   }
+  propsPanel.refreshSeason();
 }
 
 document.getElementById('birdnetLocationEditBtn').addEventListener('click', () => { rightBar.setActive('properties'); propsPanel.showRecordingContext(); });
@@ -4170,6 +4204,7 @@ async function importXenoCantoLabels(xcId) {
   state.xcLabelPool = XenoCantoPanel.buildLabelPool(result);
   state.recordingMeta = result.recordingMeta || null;
   birdnetPanel.setLocationFromMeta(state.recordingMeta);
+  propsPanel.refreshSeason();
   try { renderRecordingContext(); } catch (e) { /* not initialized yet */ }
   try { applyTagVocabulary(); } catch (e) { /* not initialized yet */ }
   const recGen = result.recording?.gen || '';

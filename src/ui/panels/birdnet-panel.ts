@@ -260,6 +260,9 @@ export class BirdNETPanel {
     prefs.remove(STORAGE_GEO_KEY);
   }
 
+  /** Area filter threshold of the slider (also used for the "unusual here" hint). */
+  getGeoThreshold() { return parseFloat(this.geoThresholdInput?.value) || 0.01; }
+
   /** Return current {lat, lon} or null if not set / invalid. */
   getCoords() { return this._getCoords(); }
 

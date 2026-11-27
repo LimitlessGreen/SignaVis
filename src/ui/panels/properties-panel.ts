@@ -13,6 +13,7 @@
  * Inspired by the property editors in GIS software and modern IDEs.
  */
 
+import { summarizeSeason, seasonChartSvg, presentText, weekLabel } from '../components/geo-season.ts';
 import { TAG_PRESETS } from './label-table.ts';
 import { createEditableSelect } from '../components/editable-select/editable-select.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
@@ -111,10 +112,15 @@ export class PropertiesPanel {
     _recordingMeta: any;
     _renderSig: any;
     _speciesSearchFactory: any;
+    _getSeason: any;
+    _seasonEl: HTMLElement | null = null;
+    _seasonKey = '';
   /**
    * @param {object} [opts]
    * @param {(setId: string) => object|null} [opts.getSetInfo]
    * @param {((anchor: HTMLElement, cb: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} [opts.speciesSearchFactory]
+   * @param {(scientific: string) => {key: string, load: (allowModelLoad: boolean) => Promise<{scores:number[], week:number|null, threshold:number}|{needsModel:true}|null>}|null} [opts.getSeason]
+   *   Year profile of a species at the recording place (geomodel); null when there is no place or area model.
    */
   constructor(opts: any = {}) {
     this.el = document.createElement('div');
@@ -144,6 +150,7 @@ export class PropertiesPanel {
     this._getSetInfo = opts.getSetInfo || null;
     /** @type {((anchor: HTMLElement, cb: function) => object)|null} */
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
+    this._getSeason = opts.getSeason || null;
 
     /** Structural signature of the last full render — used to short-circuit to in-place value patching. */
     this._renderSig = null;
@@ -477,6 +484,12 @@ export class PropertiesPanel {
 
     this._snrDd = null;
     this._lblBody.appendChild(this._buildLabelGrid(lbl, editable));
+    this._seasonEl = document.createElement('div');
+    this._seasonEl.className = 'props-season';
+    this._seasonEl.hidden = true;
+    this._seasonKey = '';
+    this._lblBody.appendChild(this._seasonEl);
+    this._updateSeason(lbl);
     if (isLocked && !isHover) {
       const hint = document.createElement('div');
       hint.className = 'props-locked-hint';
@@ -522,8 +535,62 @@ export class PropertiesPanel {
       }
     }
 
+    this._updateSeason(lbl);
     // Set section is a read-only summary — re-render it
     this._renderSet();
+  }
+
+  /** Re-check the season block when the label, its species, the place or the date changed. */
+  refreshSeason() {
+    const lbl = this._hoverLabel || this._pinnedLabel;
+    if (lbl) this._updateSeason(lbl);
+  }
+
+  _updateSeason(lbl: any) {
+    const el = this._seasonEl;
+    if (!el) return;
+    const sci = String(lbl?.scientificName || '').trim();
+    const src = sci && this._getSeason ? this._getSeason(sci) : null;
+    const key = src ? `${sci}\0${src.key}` : '';
+    if (key === this._seasonKey) return;
+    this._seasonKey = key;
+    if (!src) { el.hidden = true; el.innerHTML = ''; return; }
+    this._loadSeason(el, key, src, false);
+  }
+
+  _loadSeason(el: HTMLElement, key: string, src: any, allowModelLoad: boolean) {
+    src.load(allowModelLoad).then((res: any) => {
+      if (this._seasonKey !== key || this._seasonEl !== el) return; // outdated
+      if (res?.needsModel) {
+        // Loading BirdNET is heavy: only on request.
+        el.hidden = false;
+        el.classList.remove('props-season--unusual');
+        el.innerHTML = '';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'props-season-load';
+        btn.textContent = 'Show season here (loads BirdNET)';
+        btn.addEventListener('click', () => {
+          btn.disabled = true;
+          btn.textContent = 'Loading BirdNET…';
+          this._loadSeason(el, key, src, true);
+        });
+        el.appendChild(btn);
+        return;
+      }
+      if (!res?.scores?.length) { el.hidden = true; el.innerHTML = ''; return; }
+      const s = summarizeSeason(res.scores, res.week, res.threshold);
+      el.hidden = false;
+      el.classList.toggle('props-season--unusual', s.unusual);
+      const now = s.current == null ? ''
+        : `<span class="props-season-now">${s.unusual ? '⚠ Unusual here at this time' : 'Expected here at this time'} · ${weekLabel(s.week!)}: ${s.current.toFixed(2)}</span>`;
+      el.innerHTML = `<div class="props-season-head"><span>Season here</span><span class="props-season-range">${presentText(s.presentRanges)}</span></div>`
+        + seasonChartSvg(res.scores, { week: res.week, threshold: res.threshold })
+        + now;
+      el.title = `Geomodel score per week at the recording place (peak ${s.peak.toFixed(2)}, ${weekLabel(s.peakWeek)}). Dashed line: area filter threshold ${res.threshold}.`;
+    }).catch(() => {
+      if (this._seasonKey === key) { el.hidden = true; el.innerHTML = ''; }
+    });
   }
 
   // ── Grid builders ─────────────────────────────────────────────────

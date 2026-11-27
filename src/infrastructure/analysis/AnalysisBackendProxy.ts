@@ -51,6 +51,10 @@ export class AnalysisBackendProxy implements AnalysisBackend {
         return this.#current.getAllSpecies();
     }
 
+    getYearProfile(latitude: number, longitude: number, species: string[]): Promise<Record<string, number[]> | null> {
+        return this.#current.getYearProfile?.(latitude, longitude, species) ?? Promise.resolve(null);
+    }
+
     clearLocation(): Promise<void> {
         return this.#current.clearLocation();
     }

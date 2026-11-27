@@ -248,6 +248,31 @@ self.onmessage = async (e) => {
     }
   }
 
+  if (type === 'geo-profile') {
+    // Year profile (weeks 1–48) for a few species at one place. Leaves geoscores alone.
+    if (!areaModel) { self.postMessage({ id: id, type: 'no-area-model' }); return; }
+    try {
+      var rows = [];
+      for (var gw = 1; gw <= 48; gw++) rows.push([e.data.latitude, e.data.longitude, gw]);
+      var gin = tf.tensor2d(rows);
+      var gout = areaModel.predict(gin);
+      var gall = await gout.data();
+      gin.dispose(); gout.dispose();
+      var gn = gall.length / 48;
+      var profiles = {};
+      (e.data.species || []).forEach(function (sci) {
+        var li = labels.findIndex(function (l) { return l && l.scientific === sci; });
+        if (li < 0 || li >= gn) return;
+        var arr = new Array(48);
+        for (var w = 0; w < 48; w++) arr[w] = gall[w * gn + li];
+        profiles[sci] = arr;
+      });
+      self.postMessage({ id: id, type: 'geo-profile', profiles: profiles });
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
   if (type === 'clear-location') {
     geoscores = null;
     self.postMessage({ id: id, type: 'location-cleared' });
@@ -409,6 +434,31 @@ self.onmessage = async (e) => {
         geoscores[i] = labels[i].geoIx >= 0 ? probs[labels[i].geoIx] : 1;
       }
       self.postMessage({ id: id, type: 'area-scores-set', count: geoscores.length, week: week });
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
+  if (type === 'geo-profile') {
+    // Year profile (weeks 1–48) for a few species at one place. Leaves geoscores alone.
+    if (!geo) { self.postMessage({ id: id, type: 'no-area-model' }); return; }
+    try {
+      var gx = new Float32Array(48 * 3);
+      for (var gw = 0; gw < 48; gw++) { gx[gw * 3] = e.data.latitude; gx[gw * 3 + 1] = e.data.longitude; gx[gw * 3 + 2] = gw + 1; }
+      var gf = {};
+      gf[cfg.geoModel.inputName] = new ort.Tensor('float32', gx, [48, 3]);
+      var gall = (await geo.run(gf))[cfg.geoModel.outputName].data;
+      var gn = gall.length / 48;
+      var profiles = {};
+      (e.data.species || []).forEach(function (sci) {
+        var li = labels.findIndex(function (l) { return l && l.scientific === sci; });
+        var gi = li >= 0 ? labels[li].geoIx : -1;
+        if (gi < 0) return;
+        var arr = new Array(48);
+        for (var w = 0; w < 48; w++) arr[w] = gall[w * gn + gi];
+        profiles[sci] = arr;
+      });
+      self.postMessage({ id: id, type: 'geo-profile', profiles: profiles });
     } catch (err) {
       self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
     }
@@ -599,6 +649,17 @@ export class BirdNETInference {
     if (!this.#loaded) return [];
     const result = await this.#send('get-species-list', {});
     return result.type === 'species-list' ? result.species : [];
+  }
+
+  /**
+   * Geomodel scores for weeks 1–48 (four per month) at one place, per species.
+   * Does not change the location set with setLocation. Species without geo output are left out.
+   * Returns null without an area model.
+   */
+  async getYearProfile(latitude: number, longitude: number, species: string[]): Promise<Record<string, number[]> | null> {
+    if (!this.#loaded || !this.hasAreaModel) return null;
+    const result = await this.#send('geo-profile', { latitude, longitude, species });
+    return result.type === 'geo-profile' ? result.profiles : null;
   }
 
   /**
