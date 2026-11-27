@@ -17,6 +17,7 @@ mod hdbscan;
 mod embeddings;
 mod guano;
 mod launch;
+mod mcp;
 mod menu;
 mod project_fs;
 mod updater;
@@ -61,6 +62,11 @@ fn probe_report(app: tauri::AppHandle, report: String) -> Result<(), String> {
     println!("probe report written to {path}");
     app.exit(0);
     Ok(())
+}
+
+/// `signavis-lite --mcp`: stdio bridge to the running app for MCP clients (no window).
+pub fn run_mcp_stdio() {
+    mcp::stdio_bridge();
 }
 
 pub fn run() {
@@ -166,6 +172,10 @@ pub fn run() {
             agile::agile_rank,
             agile::agile_classifier_info,
             agile::agile_export,
+            mcp::mcp_status,
+            mcp::mcp_set_enabled,
+            mcp::mcp_set_tools,
+            mcp::mcp_respond,
             updater::update_check,
             updater::update_install,
         ])
@@ -174,6 +184,7 @@ pub fn run() {
         .manage(updater::PendingUpdate::default())
         .manage(embeddings::EmbedState::default())
         .manage(catalog::CatalogState::default())
+        .manage(mcp::McpState::default())
         .setup(|app| {
             // Installers register signavis:// ; an AppImage, and a dev build on
             // Windows, have to do it themselves at run time.

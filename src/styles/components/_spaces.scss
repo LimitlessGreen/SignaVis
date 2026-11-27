@@ -248,6 +248,11 @@ body.lite-top-menus .topbar-right > .tb-sep { display: none; }
   strong { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 }
 .top-settings-btn svg { width: 15px; height: 15px; }
+// AI assistants may delete without asking: a warning dot while that mode is on.
+.top-settings-btn.ai-no-ask { position: relative; color: var(--color-danger); border-color: var(--color-danger); }
+.top-settings-btn.ai-no-ask::after {
+  content: ''; position: absolute; top: 2px; right: 2px; width: 7px; height: 7px; border-radius: 50%; background: var(--color-danger);
+}
 
 // ── Suggestions panel + review strip (Annotate v2, mockup B4/B6) ──
 $sugg-ok: #3fb26f; $sugg-no: #e0566b; $sugg-maybe: #e7a33a;

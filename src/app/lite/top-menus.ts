@@ -64,6 +64,10 @@ export interface SettingsMenuContext {
     language: string;
     hasXcKey: boolean;
     dark: boolean;
+    /** AI assistants (MCP server) on; undefined = not offered (browser build). */
+    ai?: boolean;
+    /** Destructive AI actions run without asking (this session only). */
+    aiNoAsk?: boolean;
 }
 
 export function settingsMenu(c: SettingsMenuContext): MenuEntry[] {
@@ -73,5 +77,7 @@ export function settingsMenu(c: SettingsMenuContext): MenuEntry[] {
         { id: 'xc-key', label: 'Xeno-canto API key', hint: c.hasXcKey ? 'saved ✓' : 'not set' },
         { id: 'theme', label: 'Dark theme', checked: c.dark },
         { id: 'reset-layout', label: 'Reset panel layout', hint: 'this project' },
+        ...(c.ai === undefined ? [] : [{ id: 'ai-assistants', label: 'Allow AI assistants (MCP)', checked: c.ai, hint: 'Claude, Cursor, …' }]),
+        ...(c.ai ? [{ id: 'ai-no-ask', label: 'Don\'t ask before AI deletes', checked: !!c.aiNoAsk, hint: 'until restart · undo stays' }] : []),
     ];
 }

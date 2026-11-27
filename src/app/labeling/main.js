@@ -1216,6 +1216,12 @@ const labelStore = new LabelStore({ freeze: !!import.meta.env.DEV });
 const ALL_LABEL_VIEWS = ['player', 'list', 'badge', 'explore', 'props', 'suggestions'];
 /** Views after an edit on the spectrogram / waveform (the explore panel catches up on the next full sync) */
 const EDIT_VIEWS = ['player', 'list', 'badge', 'props', 'suggestions'];
+// AI undo chain (Lite MCP): the person's input ends it. On window in capture and registered here,
+// before every shortcut handler that stops the event (e.g. A/X/U for suggestions); not the toast's Undo.
+let _aiUndoReset = null;
+for (const type of ['pointerdown', 'keydown']) {
+  window.addEventListener(type, (e) => { if (_aiUndoReset && !e.target?.closest?.('.undo-toast')) _aiUndoReset(); }, true);
+}
 labelStore.subscribe((change) => {
   if (change.kind !== 'load' && change.kind !== 'clear') saveCurrentAnnotationsIfNeeded();
   labelViews.invalidate(...(change.views ?? ALL_LABEL_VIEWS));
@@ -3994,6 +4000,7 @@ if (isLite()) {
     if (!root || !row?.id) return;
     const entry = await openCatalogRecording(catalogRowPath(root, row.id), () => spaces?.reveal('editor'));
     if (entry) noteOpened(row, entry);
+    return entry || null;
   };
   /** The file of a catalog row, or null (load error shown) when its folder is not on this computer. */
   async function catalogRowPath(root, id) {
@@ -5907,6 +5914,8 @@ async function installTopMenus(shell) {
       (lang) => { taxonomyLangSelect.value = lang; taxonomyLangSelect.dispatchEvent(new Event('change')); }),
     'xc-key': () => xcKeyIndicator.click(),
     theme: () => themeToggleBtn.click(),
+    'ai-assistants': () => void toggleAssistants(),
+    'ai-no-ask': () => setAssistantsNoAsk(!assistantsNoAsk),
     'reset-layout': async () => {
       if (!await appConfirm('Put every panel of this project back where it started? Labels and saved datasets stay; a filter that is not saved as a dataset is cleared.',
         { title: 'Reset panel layout', okLabel: 'Reset layout' })) return;
@@ -5918,6 +5927,8 @@ async function installTopMenus(shell) {
     language: taxonomyLangSelect.value || state.taxonomyLang || '',
     hasXcKey: xcKeyIndicator.classList.contains('has-key'),
     dark: (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark',
+    ai: assistantBridge ? assistantBridge.enabled : undefined,
+    aiNoAsk: assistantsNoAsk,
   });
   const projectContext = () => {
     const recordBtn = document.getElementById('recordBtn');
@@ -5927,8 +5938,10 @@ async function installTopMenus(shell) {
   settingsBtn.addEventListener('click', () => {
     show(below(settingsBtn), settingsMenu(settingsContext()), (id, at) => settingsActions[id]?.(at));
   });
-  installCommandPalette(shell, settingsBtn, { projectMenu: () => projectMenu(projectContext()), settingsMenu: () => settingsMenu(settingsContext()),
-    projectActions, settingsActions, menuAt: () => below(settingsBtn) });
+  void installCommandPalette(shell, settingsBtn, { projectMenu: () => projectMenu(projectContext()), settingsMenu: () => settingsMenu(settingsContext()),
+    projectActions, settingsActions, menuAt: () => below(settingsBtn) })
+    .then((palette) => installAssistantTools(shell, palette))
+    .catch((e) => console.warn('[assistant] not available:', e));
 }
 
 // ── Lite: Ctrl K search for species, recordings, actions and panels (Annotate v2, mockup B3) ──
@@ -5989,7 +6002,7 @@ async function installCommandPalette(shell, beforeEl, menus) {
     'prev-recording': () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true })),
     shortcuts: () => showShortcuts(),
   };
-  const palette = new CommandPalette({
+  const paletteOpts = {
     species: speciesFound,
     recordings: recordingsFound,
     actions: () => {
@@ -6036,7 +6049,8 @@ async function installCommandPalette(shell, beforeEl, menus) {
       if (kind === 'settings') { menus.settingsActions[arg]?.(menus.menuAt()); return; }
       runs[id]?.();
     },
-  });
+  };
+  const palette = new CommandPalette(paletteOpts);
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'top-search-btn';
@@ -6052,6 +6066,242 @@ async function installCommandPalette(shell, beforeEl, menus) {
     e.stopPropagation();
     openPalette();
   }, true);
+  // The AI assistant tools reach the same actions (list_actions / run_action).
+  return { actions: paletteOpts.actions, run: paletteOpts.run };
+}
+// ── Lite: tools for AI assistants (MCP server in src-tauri-lite/src/mcp.rs; plan in SignaVis-lab) ──
+let assistantBridge = null;
+async function installAssistantTools(shell, palette) {
+  if (!('__TAURI_INTERNALS__' in window)) return;
+  const [{ buildAppTools }, { AssistantBridge }, { newLabelId }, { AssistantUndoChain }] = await Promise.all([
+    import('../lite/assistant-app-tools.ts'), import('../lite/assistant-bridge.ts'), import('../../app/annotation-sets.ts'),
+    import('../lite/assistant-undo.ts'),
+  ]);
+  // Quick AI changes in a row share one Undo (only one undo toast shows at a time).
+  const aiUndo = new AssistantUndoChain();
+  // Any input of the person ends the chain (listener registered early, see _aiUndoReset).
+  _aiUndoReset = () => aiUndo.reset();
+  const aiToast = (summary, undo, opts) => {
+    const step = aiUndo.add(summary, undo, opts);
+    selectionMeta.textContent = step.summary;
+    showUndoToast(step.summary, step.undo);
+  };
+  const view = () => {
+    if (!recordingManager.getActive() || !(player.duration > 0)) return null;
+    const r = player.getVisibleTimeRange?.() || { start: 0, end: player.duration };
+    // Frequency zoom, else the display's full range (max frequency setting).
+    const fz = player._state?._freqZoom;
+    const fullMax = parseFloat(player._state?.d?.maxFreqSelect?.value || '');
+    const freq = fz?.max != null && fz.max > (fz.min ?? 0) ? { freqMin: fz.min ?? 0, freqMax: fz.max }
+      : fullMax > 0 ? { freqMin: 0, freqMax: fullMax } : {};
+    return { duration: player.duration, time: Number(player.currentTime) || 0, start: r.start, end: r.end, ...freq };
+  };
+  const catalogRows = new Map();
+  const undoStep = (summary, change) => {
+    const undo = snapshotLabels();
+    const out = change();
+    syncToPlayer();
+    aiToast(summary, undo, { full: true });
+    return out;
+  };
+  const app = {
+    state: () => {
+      const rec = recordingManager.getActive();
+      const v = view();
+      const own = state.labels.filter((l) => !l.origin || l.origin === 'manual').length;
+      const tpl = player.getSpeciesBarSelection?.();
+      return {
+        project: { kind: projectKind, catalog: catalogView?.projectRoot || null, recordings: recordingManager.getAll().length },
+        space: shell.active,
+        recording: rec ? { id: String(rec.id), name: rec.filename || rec.xcId || 'Recording', ...(v ? { duration: +v.duration.toFixed(3), playhead: +v.time.toFixed(3), visible: [+v.start.toFixed(3), +v.end.toFixed(3)] } : {}) } : null,
+        labels: rec ? { own, suggestions: state.labels.length - own } : null,
+        labelTemplate: tpl?.name || tpl?.label || null,
+        language: taxonomyLangSelect.value || state.taxonomyLang || '',
+      };
+    },
+    recordings: async (q, limit) => {
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const active = recordingManager.getActive()?.id;
+      const out = recordingManager.getAll()
+        .filter((r) => words.every((w) => `${r.filename || ''} ${r.path || ''} ${r.xcId || ''}`.toLowerCase().includes(w)))
+        .slice(0, limit)
+        .map((r) => ({ id: `rec:${r.id}`, name: r.filename || r.xcId || 'Recording', where: 'project', ...(r.id === active ? { open: true } : {}) }));
+      const root = catalogView?.projectRoot;
+      if (root && out.length < limit) {
+        const page = await catalogApi.list(root, { pathContains: q.trim() }, 'path', null, limit - out.length).catch(() => null);
+        for (const row of page?.rows || []) {
+          catalogRows.set(row.id, row);
+          out.push({ id: `cat:${row.id}`, name: String(row.path || '').split(/[\\/]/).pop() || `#${row.id}`,
+            where: ['catalog', row.site, row.device].filter(Boolean).join(' · ') });
+        }
+      }
+      return out;
+    },
+    openRecording: async (id) => {
+      const [kind, rest] = [id.slice(0, id.indexOf(':')), id.slice(id.indexOf(':') + 1)];
+      if (kind === 'rec') {
+        const entry = recordingManager.getAll().find((r) => String(r.id) === rest);
+        if (!entry) throw new Error(`No recording ${id} in the project.`);
+        await shell.reveal('editor');
+        if (!await activateRecordingEntry(entry)) throw new Error(`Could not load the audio of ${id} (see the app).`);
+      } else if (kind === 'cat') {
+        const row = catalogRows.get(Number(rest));
+        if (!row) throw new Error(`Unknown catalog id ${id}; search again.`);
+        if (!await libraryOpenRow(row)) throw new Error(`Could not open ${id}: the file is missing or not readable (see the app).`);
+      } else throw new Error(`Unknown recording id ${id}.`);
+      await player.ready;
+    },
+    labels: () => state.labels,
+    // The live labels belong to the open recording only after its saved ones are loaded.
+    labelsReady: () => {
+      const active = recordingManager.getActive()?.id;
+      return active != null && labelStore.entryId != null && String(labelStore.entryId) === String(active);
+    },
+    addLabels: (list, summary) => undoStep(summary, () => {
+      const made = list.map((l) => {
+        const color = colorForName(l.species);
+        return { id: newLabelId(), start: l.start, end: l.end, label: l.species, ...(l.scientificName ? { scientificName: l.scientificName } : {}),
+          color, origin: 'manual', author: 'AI assistant', ...(l.tags ? { tags: l.tags } : {}),
+          ...(l.freqMin != null ? { freqMin: l.freqMin, freqMax: l.freqMax } : { fullBand: true }) };
+      });
+      for (const m of made) upsertLabel(m);
+      return made.map((m) => m.id);
+    }),
+    updateLabels: (changes, summary) => undoStep(summary, () => {
+      for (const { id, patch } of changes) {
+        const prev = state.labels.find((l) => l.id === id);
+        const next = { ...patch, id };
+        if (patch.label && !patch.color) next.color = colorForName(patch.label);
+        // A new species: the old localized name must not come back (relocalizeAllLabels, exports).
+        if ('label' in patch) next.commonName = undefined;
+        if (patch.freqMin != null || patch.freqMax != null) next.fullBand = false;
+        if (!prev) continue;
+        upsertLabel(next);
+        // Same as the properties panel: new bounds, new SNR.
+        if (['start', 'end', 'freqMin', 'freqMax'].some((k) => k in patch)) {
+          const ab = player._state?.audioBuffer;
+          const now = state.labels.find((l) => l.id === id);
+          if (ab && now) snrComputer.request(now, ab, ab.sampleRate);
+        }
+      }
+      return changes.length;
+    }),
+    deleteLabels: (ids, summary) => undoStep(summary, () => {
+      for (const id of ids) { snrComputer.invalidate(id); touchOwnSet(state.labels.find((l) => l.id === id)?.setId); }
+      labelStore.remove(new Set(ids));
+      return ids.length;
+    }),
+    view,
+    seek: (t) => player.seekTo?.(t),
+    zoom: (a, b) => player.zoomToTimeRange?.(a, b),
+    species: (q, n) => (player.getLabelEditorSuggestions?.(q, n) || []).map((sp) => ({ name: sp.name, ...(sp.scientificName ? { scientificName: sp.scientificName } : {}) })),
+    actions: () => palette.actions(),
+    runAction: (id) => palette.run(id, palette.actions().find((it) => it.id === id)),
+    canBirdnet: () => !!birdnetPanel?.canAnalyze,
+    // Undo removes only what the run added: edits the person makes while it runs are kept.
+    runBirdnet: async () => {
+      const recId = recordingManager.activeId;
+      const before = new Set(state.labels.map((l) => l.id));
+      await shell.reveal('analyse');
+      const ok = !!await birdnetPanel.analyze();
+      if (!ok || recordingManager.activeId !== recId) return { ok, added: 0 };
+      const added = state.labels.filter((l) => !before.has(l.id)).map((l) => l.id);
+      if (added.length) {
+        const summary = `AI: BirdNET added ${added.length} detection${added.length === 1 ? '' : 's'}`;
+        aiToast(summary, () => {
+          const ids = new Set(added);
+          if (recordingManager.activeId === recId) {
+            for (const id of ids) snrComputer.invalidate(id);
+            labelStore.remove(ids);
+            syncToPlayer();
+          } else {
+            const entry = recordingManager.getById(recId);
+            if (entry) recordingManager.update(recId, { annotations: (entry.annotations || []).filter((a) => !ids.has(a.id)) });
+          }
+        });
+      }
+      return { ok, added: added.length };
+    },
+    spectrogramPng: async (maxWidth, withLabels) => {
+      const src = player.root?.querySelector('canvas[data-aw="spectrogramCanvas"]');
+      if (!src || !src.width) return null;
+      const scale = Math.min(1, maxWidth / src.width);
+      const c = document.createElement('canvas');
+      c.width = Math.round(src.width * scale);
+      c.height = Math.round(src.height * scale);
+      const g = c.getContext('2d');
+      g.drawImage(src, 0, 0, c.width, c.height);
+      if (withLabels) {
+        // The label boxes as the app shows them (their DOM regions over the canvas), so any
+        // frequency scale and zoom match what the person sees.
+        labelViews.flush();
+        const box = src.getBoundingClientRect();
+        const k = box.width ? c.width / box.width : 1;
+        const byId = new Map(state.labels.map((l) => [l.id, l]));
+        g.font = `${Math.max(11, Math.round(12 * k))}px sans-serif`;
+        g.lineWidth = Math.max(1.5, 2 * k);
+        for (const el of player.root.querySelectorAll('.spectrogram-label-region')) {
+          const lbl = byId.get(el.dataset.id);
+          const r = el.getBoundingClientRect();
+          if (!lbl || r.right < box.left || r.left > box.right || !r.width) continue;
+          const x = (r.left - box.left) * k, y = (r.top - box.top) * k, w = r.width * k, h = r.height * k;
+          const color = lbl.color || colorForName(lbl.label || '');
+          g.strokeStyle = color;
+          g.strokeRect(x, y, w, h);
+          const text = lbl.label || '?';
+          const tw = g.measureText(text).width + 6;
+          const ty = Math.max(0, y - 16 * k);
+          g.fillStyle = 'rgba(0,0,0,0.7)';
+          g.fillRect(x, ty, tw, 16 * k);
+          g.fillStyle = color;
+          g.fillText(text, x + 3, ty + 12 * k);
+        }
+      }
+      return c.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
+    },
+  };
+  const reg = buildAppTools(app, {
+    confirm: (msg, title) => appConfirm(msg, { title, okLabel: 'Allow', danger: true }),
+    askFirst: () => !assistantsNoAsk,
+  });
+  reg.onCall = (e) => console.info(`[assistant] ${e.name} ${e.ok ? 'ok' : 'failed'}: ${e.summary}`);
+  assistantBridge = new AssistantBridge(reg, prefsStorage);
+  await assistantBridge.start();
+}
+
+// "Don't ask" mode for destructive AI actions: only for this run of the app (never saved), off again
+// with the assistants; the ⚙ button shows a warning dot while it is on. Undo and the "AI: …" toast stay.
+let assistantsNoAsk = false;
+async function setAssistantsNoAsk(on) {
+  if (on && !await appConfirm('AI assistants may then delete labels without asking you first. Undo in the notice after a change reverts it '
+    + '(quick changes in a row share one Undo), '
+    + 'and actions that reset the session stay blocked. This lasts until SignaVis restarts.',
+  { title: 'Don\'t ask before AI deletes', okLabel: 'Don\'t ask', danger: true })) return;
+  assistantsNoAsk = on;
+  const btn = document.querySelector('.top-settings-btn');
+  btn?.classList.toggle('ai-no-ask', on);
+  if (btn) btn.title = on ? 'Settings – AI assistants may delete without asking' : 'Settings';
+  selectionMeta.textContent = on ? 'AI assistants: no questions before deleting (until restart)' : 'AI assistants ask again before deleting';
+}
+async function toggleAssistants() {
+  if (!assistantBridge) return;
+  const on = !assistantBridge.enabled;
+  try {
+    const st = await assistantBridge.setEnabled(on);
+    if (!on) { if (assistantsNoAsk) void setAssistantsNoAsk(false); selectionMeta.textContent = 'AI assistants switched off'; return; }
+    const cfg = JSON.stringify(st.clientConfig, null, 2);
+    const exe = st.clientConfig?.mcpServers?.signavis?.command || 'signavis-lite';
+    const copy = await appConfirm('AI assistants (Claude, Cursor, …) can now use SignaVis Lite while it is open.\n\n'
+      + 'Copy the client config and paste it into your MCP client (e.g. claude_desktop_config.json, under "mcpServers").',
+    { title: 'AI assistants (MCP)', okLabel: 'Copy client config', cancelLabel: 'Close',
+      hint: `Claude Code: claude mcp add signavis -- "${exe}" --mcp  ·  HTTP: ${st.url} (token in ${st.configPath})` });
+    if (copy) {
+      await navigator.clipboard.writeText(cfg);
+      selectionMeta.textContent = 'MCP client config copied';
+    }
+  } catch (e) {
+    await appAlert(`Could not switch AI assistants ${on ? 'on' : 'off'}: ${e?.message || e}`, { title: 'AI assistants (MCP)' });
+  }
 }
 // ── Lite: editor head (recording, state, place in the view) and label bar (template, tools, Mark done) ──
 let editorHead = null;
