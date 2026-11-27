@@ -115,6 +115,10 @@ async fn run(cache: std::path::PathBuf, cell: Arc<Mutex<Option<Loaded>>>, req: G
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let mut guard = cell.lock().map_err(|e| e.to_string())?;
         let l = guard.as_mut().ok_or("geomodel trunk not loaded")?;
+        // An overlapping request for another model may have replaced it since the load above.
+        if l.key != key {
+            return Err(format!("geomodel trunk changed while loading ({key}); try again"));
+        }
         let Some(&ix) = l.label_ix.get(req.species.as_str()) else { return Ok(Vec::new()) };
         let mut rows: Vec<usize> = l.rows.iter().filter_map(|r| r.get(ix).copied()).collect();
         rows.sort_unstable();
