@@ -27,7 +27,8 @@ export interface AppPort {
     /** One undo step; returns how many changed. */
     updateLabels(changes: { id: string; patch: Partial<PortLabel> }[], summary: string): number;
     deleteLabels(ids: string[], summary: string): number;
-    view(): { duration: number; time: number; start: number; end: number } | null;
+    /** Visible ranges: time in s, frequency in Hz (freqMin/freqMax when known). */
+    view(): { duration: number; time: number; start: number; end: number; freqMin?: number; freqMax?: number } | null;
     seek(t: number): void;
     zoom(start: number, end: number): void;
     species(query: string, limit: number): { name: string; scientificName?: string }[];
@@ -214,7 +215,8 @@ export function buildAppTools(app: AppPort, ctx: ToolContext): ToolRegistry {
             if (!png) throw new Error('The spectrogram is not drawn yet.');
             return { content: [
                 { type: 'image', data: png, mimeType: 'image/png' },
-                { type: 'text', text: `Visible ${r3(v.start)}–${r3(v.end)} s of ${r3(v.duration)} s.` },
+                { type: 'text', text: `Visible ${r3(v.start)}–${r3(v.end)} s of ${r3(v.duration)} s`
+                    + (v.freqMax ? `, ${Math.round(v.freqMin ?? 0)}–${Math.round(v.freqMax)} Hz (linear; bottom edge = ${Math.round(v.freqMin ?? 0)} Hz, top edge = ${Math.round(v.freqMax)} Hz).` : '.') },
             ] };
         },
     });

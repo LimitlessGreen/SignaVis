@@ -43,6 +43,8 @@ pub struct McpConfig {
 pub struct McpState {
     inner: Arc<Shared>,
     running: Mutex<Option<Running>>,
+    /// Port of this session's last server: switching off and on keeps the client URL.
+    last_port: Mutex<Option<u16>>,
 }
 
 #[derive(Default)]
@@ -157,9 +159,9 @@ pub fn mcp_set_enabled(app: AppHandle, state: State<'_, McpState>, enabled: bool
     if running.is_none() {
         // Keep the port of last time when it is free (clients configured by URL keep working).
         let old = read_config();
-        let server = old
-            .as_ref()
-            .and_then(|c| tiny_http::Server::http(("127.0.0.1", c.port)).ok())
+        let wanted = old.as_ref().map(|c| c.port).or(*state.last_port.lock().unwrap());
+        let server = wanted
+            .and_then(|port| tiny_http::Server::http(("127.0.0.1", port)).ok())
             .map(Ok)
             .unwrap_or_else(|| tiny_http::Server::http("127.0.0.1:0"))
             .map_err(|e| format!("cannot start the MCP server: {e}"))?;
@@ -168,6 +170,7 @@ pub fn mcp_set_enabled(app: AppHandle, state: State<'_, McpState>, enabled: bool
             Some(c) if c.port == port => c.token,
             _ => new_token()?,
         };
+        *state.last_port.lock().unwrap() = Some(port);
         let config = McpConfig { port, token, url: format!("http://127.0.0.1:{port}/mcp") };
         write_config(&config)?;
         let server = Arc::new(server);

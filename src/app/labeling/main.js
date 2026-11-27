@@ -6070,7 +6070,12 @@ async function installAssistantTools(shell, palette) {
   const view = () => {
     if (!recordingManager.getActive() || !(player.duration > 0)) return null;
     const r = player.getVisibleTimeRange?.() || { start: 0, end: player.duration };
-    return { duration: player.duration, time: Number(player.currentTime) || 0, start: r.start, end: r.end };
+    // Frequency zoom, else the display's full range (max frequency setting).
+    const fz = player._state?._freqZoom;
+    const fullMax = parseFloat(player._state?.d?.maxFreqSelect?.value || '');
+    const freq = fz?.max != null && fz.max > (fz.min ?? 0) ? { freqMin: fz.min ?? 0, freqMax: fz.max }
+      : fullMax > 0 ? { freqMin: 0, freqMax: fullMax } : {};
+    return { duration: player.duration, time: Number(player.currentTime) || 0, start: r.start, end: r.end, ...freq };
   };
   const catalogRows = new Map();
   const undoStep = (summary, change) => {
@@ -6188,8 +6193,15 @@ async function toggleAssistants() {
     const st = await assistantBridge.setEnabled(on);
     if (!on) { selectionMeta.textContent = 'AI assistants switched off'; return; }
     const cfg = JSON.stringify(st.clientConfig, null, 2);
-    await appAlert(`AI assistants can now use SignaVis Lite while it is open.\n\nAdd this to your MCP client (e.g. claude_desktop_config.json):\n\n${cfg}\n\nOr connect by HTTP: ${st.url} with the token from\n${st.configPath}`,
-      { title: 'AI assistants (MCP)' });
+    const exe = st.clientConfig?.mcpServers?.signavis?.command || 'signavis-lite';
+    const copy = await appConfirm('AI assistants (Claude, Cursor, …) can now use SignaVis Lite while it is open.\n\n'
+      + 'Copy the client config and paste it into your MCP client (e.g. claude_desktop_config.json, under "mcpServers").',
+    { title: 'AI assistants (MCP)', okLabel: 'Copy client config', cancelLabel: 'Close',
+      hint: `Claude Code: claude mcp add signavis -- "${exe}" --mcp  ·  HTTP: ${st.url} (token in ${st.configPath})` });
+    if (copy) {
+      await navigator.clipboard.writeText(cfg);
+      selectionMeta.textContent = 'MCP client config copied';
+    }
   } catch (e) {
     await appAlert(`Could not switch AI assistants ${on ? 'on' : 'off'}: ${e?.message || e}`, { title: 'AI assistants (MCP)' });
   }
