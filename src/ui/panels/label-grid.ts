@@ -1176,10 +1176,13 @@ export class LabelGrid {
 
     const original = input.value;
     let stepped = false;
+    /** Values before the first ↑/↓ step (live edits): Escape puts them back. */
+    let before: [string, string][] = [];
     let done = false;
     const finish = (commit: boolean, move?: { dRow: number; dCol: number }) => {
       if (done) return;
       done = true;
+      if (!commit && stepped) for (const [tid, raw] of before) if (this.byId.get(tid)) this.applyTo([tid], c, raw);
       cleanup();
       if (commit && input.value !== original) {
         if (stepped) this.applyTo(this.editableTargets(id), c, input.value.trim());   // undo step taken at the first ↑/↓
@@ -1205,7 +1208,11 @@ export class LabelGrid {
         input.value = (v + step).toFixed(digits);
         // live: the box follows each step; one undo step for the whole edit, taken before the first
         if (stepped) this.applyTo(this.editableTargets(id), c, input.value.trim());
-        else { stepped = true; this.applyValue(id, c, input.value); }
+        else {
+          before = this.editableTargets(id).map((tid) => [tid, this.rawValue(this.byId.get(tid)!, c) ?? '']);
+          stepped = true;
+          this.applyValue(id, c, input.value);
+        }
         input.select();
       }
     };
@@ -1321,7 +1328,9 @@ export class LabelGrid {
 
   /** Parse an edited cell value and report it for every editable target row. */
   private applyValue(id: string, c: Column, raw: string, only?: string[]) {
-    const targets = only ?? this.editableTargets(id);
+    // Ids kept by a floating editor are checked again: a row may be gone or locked since it opened.
+    const targets = only ? only.filter((tid) => { const l = this.byId.get(tid); return l && !this.opts.isLocked(l); }) : this.editableTargets(id);
+    if (!targets.length) return;
     const v = String(raw).trim();
     this.batch(`${targets.length} labels: ${c.title} ${v ? `→ ${v}` : 'cleared'}`, targets.length, () => this.applyTo(targets, c, v));
   }
@@ -1333,6 +1342,7 @@ export class LabelGrid {
     let refused = 0;
     for (const tid of targets) {
       const l = this.byId.get(tid);
+      if (!l) continue;   // removed meanwhile
       const start = num(l.start), end = num(l.end);
       let up: Record<string, any> | null = null;
       switch (c.edit) {
