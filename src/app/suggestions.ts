@@ -74,19 +74,19 @@ export function buildSuggestions(detections: any[], opts: SuggestionOptions = {}
     for (const [k, list] of bySpecies) {
         list.sort((a, b) => a.start - b.start || a.end - b.end);
         const runs: any[][] = [];
+        let runEnd = -Infinity;   // latest end in the current run (kept as it grows: long recordings have very long runs)
         for (const d of list) {
             const last = runs[runs.length - 1];
-            const prevEnd = last ? Math.max(...last.map((w) => w.end)) : -Infinity;
-            if (join && last && d.start <= prevEnd + gap) last.push(d);
-            else runs.push([d]);
+            if (join && last && d.start <= runEnd + gap) { last.push(d); runEnd = Math.max(runEnd, d.end); }
+            else { runs.push([d]); runEnd = d.end; }
         }
         const suggestions = runs.map((w): Suggestion => ({
             key: `${k}|${w[0].start}`,
             species: String(w[0].label ?? w[0].commonName ?? k),
             scientificName: String(w[0].scientificName || ''),
             start: w[0].start,
-            end: Math.max(...w.map((x) => x.end)),
-            confidence: Math.max(...w.map((x) => x.confidence ?? 0)),
+            end: w.reduce((m, x) => Math.max(m, x.end), -Infinity),
+            confidence: w.reduce((m, x) => Math.max(m, x.confidence ?? 0), 0),
             windows: w,
             state: runState(w.map((x) => windowState(x, adoptedIds))),
         }));

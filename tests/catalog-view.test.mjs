@@ -70,7 +70,7 @@ test('a newer filter wins over a slower older reload', async () => {
     release();
     await slow;
     assert.deepEqual(v.filter, { siteIds: [2] });
-    assert.ok(v.rows.every((r) => r.id % 3 === 2));
+    assert.deepEqual(v.rows.map((r) => r.id), [2, 5, 8, 11, 14, 17, 20, 23, 26, 29]);
     assert.equal(v.total, 10);
 });
 
@@ -158,12 +158,18 @@ test('dataset counts are not re-read on every filter change', async () => {
 
 test('dispose: no more events, late pages are dropped', async () => {
     const { api } = fakeApi(20);
-    const v = new CatalogView('/p', api);
+    let release, started;
+    const gate = new Promise((r) => { release = r; });
+    const listStarted = new Promise((r) => { started = r; });
+    const v = new CatalogView('/p', { ...api, async list(...a) { started(); await gate; return api.list(...a); } });
     const seen = changes(v);
     const p = v.reload();
+    await listStarted;   // the page request is really under way
     v.dispose();
+    release();
     await p;
-    assert.deepEqual(seen, ['loading']);
+    assert.equal(v.rows.length, 0, 'the late page is not taken');
+    assert.ok(!seen.includes('rows'));
 });
 
 test('allTotal: the whole catalog is counted once, again only after catalogChanged', async () => {
