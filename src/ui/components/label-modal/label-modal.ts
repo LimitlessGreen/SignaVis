@@ -44,6 +44,8 @@ export interface LabelModalHost {
     isPlaying: () => boolean;
     colorScheme: () => string;
     maxFreq: () => number;
+    /** Length of the recording (s); a moved box stays inside it. */
+    duration?: () => number;
     fileName: () => string;
     clock: ((sec: number) => string) | null;
     fields: Omit<FieldsFormOptions, 'change'>;
@@ -151,6 +153,7 @@ export class LabelModal {
     close() {
         this.endVisit();
         this.h.stop();
+        this.drawTok++;
         cancelAnimationFrame(this.raf);
         document.removeEventListener('keydown', this.onKey, true);
         this.form.destroy();
@@ -241,6 +244,7 @@ export class LabelModal {
         const i = list.findIndex((x) => x.id === l.id);
         const next = list[i + 1] || list[i - 1] || null;
         this.endVisit();
+        this.h.stop(); this.queue = []; this.wasPlaying = false;   // its clip must not play on (or loop) after it is gone
         this.h.remove(l.id);
         if (!next) { this.close(); return; }
         this.id = next.id;
@@ -306,15 +310,17 @@ export class LabelModal {
     // ── rendering ──
 
     private render() {
-        if (this.isMulti) { this.renderMulti(); return; }
+        if (this.isMulti) { this.drawTok++; this.renderMulti(); return; }
         const l = this.current;
         if (!l) return;
         const list = this.h.labels();
         const i = list.findIndex((x) => x.id === l.id);
         this.box.replaceChildren(this.head(l, i, list.length), this.body(l, list), this.foot(l));
         this.form.render(l);
-        requestAnimationFrame(() => this.draw(l, list));
+        const tok = ++this.drawTok;   // a later render (or multi mode, or close) makes this draw void
+        requestAnimationFrame(() => { if (tok === this.drawTok && !this.isMulti && this.el.isConnected) this.draw(l, list); });
     }
+    private drawTok = 0;
 
     // ── several labels (M3) ──
 
@@ -406,7 +412,7 @@ export class LabelModal {
         cap.append(sw, el('span', '', `${l.label || '–'}${l.polarity === 'absent' ? ' · absent' : l.tags?.soundType ? ` · ${l.tags.soundType}` : ''}`),
             el('span', 'lm-m', this.fmt(l.start).slice(0, 8)));
         card.append(wrap, cap);
-        requestAnimationFrame(() => this.drawPatch(c, l.start, l.end, l.freqMin, l.freqMax, false));
+        requestAnimationFrame(() => this.drawWin(c, w));   // the window the box above was placed in
         return card;
     }
 
@@ -528,7 +534,11 @@ export class LabelModal {
             const key = `${l.start}|${l.end}|${l.freqMin}|${l.freqMax}|${l.fullBand === true}`;
             const cached = this.tiles.get(key);
             if (cached) c.getContext('2d')?.drawImage(cached, 0, 0);
-            else requestAnimationFrame(() => { this.drawPatch(c, l.start, l.end, l.freqMin, l.freqMax, l.fullBand === true); this.tiles.set(key, c); });
+            else {
+                const w = this.tileWin(l.start, l.end, l.freqMin, l.freqMax, l.fullBand === true);
+                // cached only once drawn (audio not analysed yet: try again on the next render)
+                requestAnimationFrame(() => { if (this.drawWin(c, w)) this.tiles.set(key, c); });
+            }
         }
         f.append(strip);
         queueMicrotask(() => strip.querySelector('.cur, .sel')?.scrollIntoView({ block: 'nearest', inline: 'center' }));
@@ -542,7 +552,14 @@ export class LabelModal {
         del.disabled = ro;
         del.onclick = () => this.del();
         const dup = btn('', 'Duplicate');
-        dup.onclick = () => { const id = this.h.duplicate(l.id); if (id) this.goto(id); };
+        // The edit visit is committed first: edit and copy are two undo steps, each undoing only itself.
+        dup.onclick = () => {
+            this.endVisit();
+            const id = this.h.duplicate(l.id);
+            if (id) this.id = id;
+            this.startVisit();
+            this.render();
+        };
         const keep = el('label', 'lm-keep');
         const cb = el('input');
         cb.type = 'checkbox';
@@ -576,12 +593,13 @@ export class LabelModal {
         const span = Math.min(MAX_SPAN, l.end - l.start + 2 * CONTEXT);
         const mid = (l.start + l.end) / 2;
         const t0 = Math.max(0, Math.min(l.start - CONTEXT, mid - span / 2));
-        const t1 = t0 + Math.max(span, l.end - l.start);
+        // A label longer than the usual span is shown whole, with its end handle reachable.
+        const t1 = Math.max(t0 + span, l.end + Math.min(CONTEXT, 0.5));
         const maxF = this.h.maxFreq();
         const top = l.fullBand || l.freqMax == null ? maxF : Math.min(maxF, Math.max(l.freqMax * 1.35, l.freqMax + 1000));
         this.win = { t0, t1, f0: 0, f1: top };
         this.canvas.width = w; this.canvas.height = hgt;
-        this.drawPatch(this.canvas, t0, t1, 0, top, true);
+        this.drawWin(this.canvas, { a: t0, b: t1, lo: 0, hi: top });
         // dim outside the label, ghosts of neighbours, the label box with handles
         crop.querySelectorAll('.lm-dim, .lm-lbx, .lm-ph').forEach((e) => e.remove());
         const x = (t: number) => ((t - t0) / (t1 - t0)) * w;
@@ -659,22 +677,29 @@ export class LabelModal {
             b.removeEventListener('pointermove', move);
             b.removeEventListener('pointerup', up);
             const moved = n.start !== o.start || n.end !== o.end || n.freqMin !== o.freqMin || n.freqMax !== o.freqMax;
-            if (moved) this.change(full ? { start: Math.max(0, n.start), end: n.end } : { start: Math.max(0, n.start), end: n.end, freqMin: Math.max(0, n.freqMin), freqMax: n.freqMax });
+            if (!moved) return;
+            // Inside the recording: a moved box keeps its length and is shifted back; an edge stops at the end.
+            const dur = this.h.duration?.() || Infinity;
+            if (hnd === 'move') {
+                const len = n.end - n.start;
+                n.start = Math.max(0, Math.min(n.start, dur - len));
+                n.end = n.start + len;
+            } else { n.start = Math.max(0, n.start); n.end = Math.min(dur, n.end); }
+            this.change(full ? { start: n.start, end: n.end } : { start: n.start, end: n.end, freqMin: Math.max(0, n.freqMin), freqMax: n.freqMax });
         };
         b.addEventListener('pointermove', move);
         b.addEventListener('pointerup', up);
     }
 
-    private drawPatch(c: HTMLCanvasElement, start: number, end: number, fLo: number | null, fHi: number | null, keepBand: boolean) {
+    /** Spectrogram of a time/frequency window into a canvas; false when the audio is not analysed yet. */
+    private drawWin(c: HTMLCanvasElement, w: { a: number; b: number; lo: number; hi: number }): boolean {
         const ctx = c.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) return false;
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, c.width, c.height);
-        // tiles: the label with a little context and its band (+ margin); the crop: exactly [start, end]
-        let a = start, b2 = end, lo = 0, hi = this.h.maxFreq();
-        if (!keepBand) ({ a, b: b2, lo, hi } = this.tileWin(start, end, fLo, fHi)); else if (fHi != null) { hi = fHi; lo = fLo ?? 0; }
-        const p = this.h.patch(a, Math.min(b2, a + MAX_SPAN));
-        if (!p) return;
+        const { a, b: b2, lo, hi } = w;
+        const p = this.h.patch(a, b2);
+        if (!p) return false;
         const img = ctx.createImageData(c.width, c.height);
         const scheme = this.h.colorScheme();
         // contrast from the patch: 5th … 99.5th percentile
@@ -700,6 +725,7 @@ export class LabelModal {
             }
         }
         ctx.putImageData(img, 0, 0);
+        return true;
     }
 
     private drawWave(t0: number, t1: number) {

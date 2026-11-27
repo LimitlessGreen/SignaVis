@@ -6594,6 +6594,7 @@ async function openLabelModal(id, selection = []) {
     isPlaying: () => player.isPlaying,
     colorScheme: () => player._state?.d?.colorSchemeSelect?.value || 'inferno',
     maxFreq: () => (ab()?.sampleRate || 48000) / 2,
+    duration: () => player.duration || ab()?.duration || 0,
     fileName: () => entry?.filename || entry?.name || '',
     clock: start ? (sec) => ravenClock(start, sec, sec)[1].slice(0, 11) : null,
     fields: labelFieldsOptions(),
