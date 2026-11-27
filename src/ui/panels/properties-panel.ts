@@ -234,7 +234,8 @@ export class PropertiesPanel {
    */
   setCatalogRow(row: CatalogFieldsRow | null, editSites?: () => void) {
     (this as any)._editSites = editSites ?? null;
-    const key = row ? JSON.stringify(catalogFields(row)) : '';
+    // The Site ✎ button is part of what is shown: its presence counts, the callback itself is read on click.
+    const key = row ? JSON.stringify([catalogFields(row), !!editSites]) : '';
     if (key === (this as any)._catalogKey) return;   // called on every view change: keep the DOM (a click may be under way)
     (this as any)._catalogKey = key;
     (this as any)._catalogRow = row;
@@ -479,7 +480,7 @@ export class PropertiesPanel {
         b.textContent = '✎';
         b.title = 'Sites & recorders…';
         b.setAttribute('aria-label', 'Edit sites and recorders');
-        b.addEventListener('click', () => edit());
+        b.addEventListener('click', () => ((this as any)._editSites as (() => void) | null)?.());   // the current callback
         dd.appendChild(b);
       }
       dl.append(dt, dd);

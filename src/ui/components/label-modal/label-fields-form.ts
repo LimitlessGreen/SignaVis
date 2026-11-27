@@ -339,7 +339,16 @@ export class LabelFieldsForm {
         const a = el('div');
         a.append(el('span', 'lf-m', 'From '), src.from);
         const b = el('div');
-        b.append(el('span', 'lf-m', 'Author '), src.author);
+        if (l.readonly === true) b.append(el('span', 'lf-m', 'Author '), src.author);
+        else {
+            // writable: the author can be set or cleared here (Properties had this field)
+            const inp = el('input', 'lf-inp lf-in lf-author');
+            inp.value = l.author || '';
+            inp.placeholder = src.author || 'Author';
+            inp.setAttribute('aria-label', 'Author');
+            inp.onchange = () => this.o.change({ author: inp.value.trim() });
+            b.append(el('span', 'lf-m', 'Author '), inp);
+        }
         if (src.history && this.o.showHistory) {
             const h = el('button', 'lf-link', `History (${src.history})`);
             h.type = 'button';
