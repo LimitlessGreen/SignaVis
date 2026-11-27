@@ -5,7 +5,7 @@
 // Static: a fixed list, optionally filled with what the library shows now.
 // ═══════════════════════════════════════════════════════════════════════
 
-import { normalizeFilter, type CatalogFilter, type DatasetInfo } from '../../../domain/catalog/catalog-types.ts';
+import { normalizeFilter, type CatalogFilter, type DatasetInfo, type Selection } from '../../../domain/catalog/catalog-types.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
@@ -22,6 +22,8 @@ export interface DatasetDialogOptions {
     shown: number;
     /** Preselected kind when creating. */
     kind?: 'static' | 'filter';
+    /** Recordings picked in the view: a new dataset is a static one with exactly these. */
+    picks?: { selection: Selection; count: number } | null;
     onDone: (id: number) => void;
 }
 
@@ -46,12 +48,15 @@ export class DatasetDialog {
           </div></div>
           ${d ? `<p class="lib-hint">${d.kind === 'filter' ? 'Dynamic dataset: to change its filter, open it, change the filters and press “Save filter”.' : 'Static dataset: add or remove recordings in the selection panel on the right.'}</p>` : `
           <fieldset class="lib-ds-kind"><legend>Kind</legend>
-            <label><input type="radio" name="ds-kind" value="filter"${o.kind !== 'static' ? ' checked' : ''}>
+            ${o.picks ? `<p class="lib-hint">${o.picks.count.toLocaleString()} recordings are selected: the dataset gets exactly these (static).</p>` : ''}
+            <label><input type="radio" name="ds-kind" value="filter"${o.picks ? ' disabled' : o.kind !== 'static' ? ' checked' : ''}>
               <span><b>Dynamic</b> — saves the current filter. New imports and edits that match it appear automatically.
               <span class="lib-hint lib-break">Filter: ${esc(o.filterText || 'none (all recordings)')}</span></span></label>
-            <label><input type="radio" name="ds-kind" value="static"${o.kind === 'static' ? ' checked' : ''}>
+            <label><input type="radio" name="ds-kind" value="static"${o.picks || o.kind === 'static' ? ' checked' : ''}>
               <span><b>Static</b> — a fixed list that only changes when you add or remove recordings. Good for a training set or a set you report on.</span></label>
-            <label class="lib-ds-fill"><input type="checkbox" data-k="fill" checked> <span>Start with the ${o.shown.toLocaleString()} recordings shown now</span></label>
+            <label class="lib-ds-fill"><input type="checkbox" data-k="fill" checked${o.picks ? ' disabled' : ''}> <span>${o.picks
+                ? `Start with the ${o.picks.count.toLocaleString()} selected recordings`
+                : `Start with the ${o.shown.toLocaleString()} recordings shown now`}</span></label>
           </fieldset>`}
           <div class="lib-row"><span class="lib-spacer"></span><span class="lib-hint lib-warn-text" data-k="err"></span>
             <button class="btn btn--sm" type="submit">${d ? 'Save' : 'Create dataset'}</button></div>`;
@@ -96,8 +101,9 @@ export class DatasetDialog {
                 } else {
                     await catalogApi.updateDataset(o.projectRoot, id, edit);   // name/colour edited before the retry
                 }
-                if (kind === 'static' && this.el.querySelector<HTMLInputElement>('[data-k="fill"]')?.checked && o.shown) {
-                    try { await catalogApi.datasetAdd(o.projectRoot, id, { filter: o.filter }); }
+                const fill = o.picks ? o.picks.selection : o.shown ? { filter: o.filter } : null;
+                if (kind === 'static' && this.el.querySelector<HTMLInputElement>('[data-k="fill"]')?.checked && fill) {
+                    try { await catalogApi.datasetAdd(o.projectRoot, id, fill); }
                     catch (e) { throw new Error(`Dataset created, but filling it failed: ${e instanceof Error ? e.message : e}. Press the button again to retry.`); }
                 }
                 this.#created = null;

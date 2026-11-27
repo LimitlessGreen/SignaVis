@@ -693,6 +693,9 @@ export class LibraryView {
                 this.#showHost('New dataset', new DatasetDialog({
                     projectRoot: root, filter: { ...this.#v.filter }, filterText: this.#chipText, shown: this.#v.facets?.total ?? 0,
                     kind: static_ || isEmptyFilter(this.#v.filter) ? 'static' : 'filter',
+                    // Some recordings picked (not just "all shown"): save exactly those.
+                    picks: this.#v.pickedCount && (!this.#v.pickAll || this.#v.unpicked.size)
+                        ? { selection: this.#v.selection, count: this.#v.pickedCount } : null,
                     onDone: (id) => { this.#hideImport(); void this.#openDataset(id); },
                 }).el);
                 return;
@@ -1212,7 +1215,7 @@ export class LibraryView {
     /** The view this library shows (its own, or the shared one it was given). */
     get view(): CatalogView { return this.#v; }
 
-    /** "Save as dataset" (view bar): the new-dataset dialog for the current filter. */
+    /** "Save as dataset" (view bar): the new-dataset dialog for the picked recordings, else for the current filter. */
     saveAsDataset() { void this.#onDatasetAction('ds-new', this.el); }
 
     /** Map clicks change the shared filter (dialog: `done` closes it first). */

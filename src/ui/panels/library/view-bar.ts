@@ -17,7 +17,7 @@ const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&
 export interface ViewBarOptions {
     /** "+ Filter": show the fields (Browse). */
     onAddFilter: () => void;
-    /** "Save as dataset": the dataset dialog for the current filter or picks. */
+    /** "Save as dataset": the dataset dialog; the host reads filter and picks from the shared view (picks win, saved as a static dataset). */
     onSaveDataset: () => void;
     /** Readable name of a detection class (chip "Detected …"). */
     className?: (cls: string) => string;
