@@ -85,3 +85,12 @@ export function setPeriod(f: CatalogFilter, side: 'from' | 'to', value: string):
     f.toMs = null;
     return true;
 }
+
+/**
+ * Local days of a statistics week cell (Monday `week` to Sunday) within the period the
+ * view already has (inclusive local days, null = open): the cell only counted those days.
+ */
+export function weekInPeriod(week: string, from: string | null, to: string | null): { from: string; to: string } {
+    const sunday = isoDay(dayMs(week) + 6 * DAY);
+    return { from: from && from > week ? from : week, to: to && to < sunday ? to : sunday };
+}

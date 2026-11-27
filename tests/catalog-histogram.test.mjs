@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { brushDays, brushHours, dayBars, filterDays, hourBars, hourIn, isOnlyBar, setPeriod } from '../src/domain/catalog/histogram.ts';
+import { brushDays, brushHours, dayBars, filterDays, hourBars, hourIn, isOnlyBar, setPeriod, weekInPeriod } from '../src/domain/catalog/histogram.ts';
 
 const days = [{ day: '2023-03-06', count: 5 }, { day: '2023-03-08', count: 2 }, { day: '2023-03-07', count: 1 }];
 
@@ -64,4 +64,10 @@ test('setPeriod: period inputs set local days and drop UTC bounds', () => {
 
 test('filterDays: an exclusive end inside a day keeps that day', () => {
     assert.deepEqual(filterDays({ fromMs: Date.UTC(2023, 2, 9), toMs: Date.UTC(2023, 2, 9, 18) }), { from: '2023-03-09', to: '2023-03-09' });
+});
+
+test('weekInPeriod: a week cell stays inside the period already filtered', () => {
+    assert.deepEqual(weekInPeriod('2023-03-06', null, null), { from: '2023-03-06', to: '2023-03-12' });
+    assert.deepEqual(weekInPeriod('2023-03-06', '2023-03-08', '2023-03-10'), { from: '2023-03-08', to: '2023-03-10' });
+    assert.deepEqual(weekInPeriod('2023-03-06', '2023-03-01', '2023-03-31'), { from: '2023-03-06', to: '2023-03-12' });
 });

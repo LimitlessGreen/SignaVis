@@ -20,7 +20,7 @@ import {
 } from '../../../domain/catalog/thumb-grid.ts';
 import { CatalogView, type ViewChange } from '../../../domain/catalog/catalog-view.ts';
 import { chipsText, viewChips, type ChipKind } from '../../../domain/catalog/view-chips.ts';
-import { brushDays, brushHours, dayBars, filterDays, hourBars, isOnlyBar, setPeriod } from '../../../domain/catalog/histogram.ts';
+import { brushDays, brushHours, dayBars, filterDays, hourBars, isOnlyBar, setPeriod, weekInPeriod } from '../../../domain/catalog/histogram.ts';
 import { calendarBrush, cellAt, cellInView, sunLines, type CalCell } from '../../../domain/catalog/calendar.ts';
 import { catalogApi } from '../../../infrastructure/tauri/catalogApi.ts';
 import { prefs } from '../../../infrastructure/storage/prefs.ts';
@@ -105,6 +105,7 @@ export class LibraryView {
     #disposed = false;
     #importDialog: ImportDialog | null = null;
     #searchTimer: ReturnType<typeof setTimeout> | null = null;
+    #resizeObs: ResizeObserver | null = null;
     #integrity: Integrity | null = null;
     #devices: DeviceInfo[] = [];
     #shifts: ClockShift[] = [];
@@ -252,8 +253,8 @@ export class LibraryView {
             const r = (e.target as HTMLElement).closest<HTMLElement>('[data-i]');
             if (r) void this.#open(Number(r.dataset.i));
         });
-        const ro = new ResizeObserver(() => { this.#renderRows(); this.#drawHeat(); });
-        for (const r of this.#roots) ro.observe(r);
+        this.#resizeObs = new ResizeObserver(() => { this.#renderRows(); this.#drawHeat(); });
+        for (const r of this.#roots) this.#resizeObs.observe(r);
         void catalogApi.onHashProgress((p) => {
             if (p.projectRoot !== this.#o.projectRoot) return;
             this.#hash = p.finished ? null : p;
@@ -323,6 +324,9 @@ export class LibraryView {
 
     dispose() {
         this.#disposed = true;
+        if (this.#searchTimer) { clearTimeout(this.#searchTimer); this.#searchTimer = null; }
+        this.#resizeObs?.disconnect();
+        this.#resizeObs = null;
         this.#unlisten?.();
         this.#unlisten = null;
         this.#unsubscribe();
@@ -479,8 +483,17 @@ export class LibraryView {
         if (change === 'ready') { delete this.el.dataset.loading; return; }
         if (change === 'rows') { this.#renderRows(); return; }
         if (change === 'selection') { this.#markSelection(); return; }
+        // Review state of a few rows changed (Annotate): rows and counts only, the Fields inputs keep unsaved edits.
+        if (change === 'review') { this.#renderRows(); this.#renderStats(); return; }
         // query
-        if (this.#v.error) { this.#setStats(`Catalog error: ${this.#v.error}`); return; }
+        if (this.#v.error) {
+            // The view has no rows any more: do not leave the previous table and calendar clickable.
+            this.#setStats(`Catalog error: ${this.#v.error}`);
+            this.#renderRows();
+            this.#drawHeat();
+            this.#updateSide();
+            return;
+        }
         this.#renderFacets();
         this.#renderStats();
         this.#drawHeat();
@@ -595,7 +608,7 @@ export class LibraryView {
     }
 
     /** Drag over a histogram: bars in range light up, release sets the filter (a click on the only kept bar clears it). */
-    #brush: { svg: SVGSVGElement; kind: 'day' | 'hour'; start: number; cur: number } | null = null;
+    #brush: { svg: SVGSVGElement; kind: 'day' | 'hour'; start: number; cur: number; pointerId: number } | null = null;
 
     #brushIndex(svg: SVGSVGElement, x: number): number {
         const r = svg.getBoundingClientRect();
@@ -606,12 +619,12 @@ export class LibraryView {
     #onBrush(e: PointerEvent) {
         if (e.type === 'pointerdown') {
             const svg = (e.target as Element).closest<SVGSVGElement>('svg[data-hist]');
-            if (!svg || e.button !== 0) return;
+            if (!svg || e.button !== 0 || this.#brush) return;   // one brush at a time (second finger ignored)
             e.preventDefault();
             svg.setPointerCapture(e.pointerId);
             const i = this.#brushIndex(svg, e.clientX);
-            this.#brush = { svg, kind: svg.dataset.hist as 'day' | 'hour', start: i, cur: i };
-        } else if (!this.#brush) return;
+            this.#brush = { svg, kind: svg.dataset.hist as 'day' | 'hour', start: i, cur: i, pointerId: e.pointerId };
+        } else if (!this.#brush || e.pointerId !== this.#brush.pointerId) return;
         const b = this.#brush;
         if (e.type === 'pointermove') b.cur = this.#brushIndex(b.svg, e.clientX);
         const [lo, hi] = b.start <= b.cur ? [b.start, b.cur] : [b.cur, b.start];
@@ -719,8 +732,8 @@ export class LibraryView {
                 if (!this.#confirmDelete) { this.#confirmDelete = true; this.#renderFacets(); return; }
                 this.#confirmDelete = false;
                 await catalogApi.deleteDataset(root, a.id);
-                this.#v.activeDs = null;
-                this.#v.filter = {};
+                // Another dataset opened meanwhile stays open; only the deleted one's view goes back to all.
+                if (this.#v.activeDs === a.id) { this.#v.activeDs = null; this.#v.filter = {}; }
             }
             else return;
         } catch (e) { fail(e); return; }
@@ -1135,8 +1148,11 @@ export class LibraryView {
         if (t.dataset.k !== 'path') return;
         if (this.#searchTimer) clearTimeout(this.#searchTimer);
         this.#searchTimer = setTimeout(() => {
+            this.#searchTimer = null;
+            if (this.#disposed) return;
             this.#v.filter.pathContains = t.value.trim() || null;
             void this.reload().then(() => {
+                if (this.#disposed) return;
                 const inp = this.#q<HTMLInputElement>('[data-k="path"]');
                 if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
             });
@@ -1146,6 +1162,8 @@ export class LibraryView {
     #onKey(e: KeyboardEvent) {
         if ((e.target as HTMLElement).closest('input, textarea, select')) return;
         if (this.#expand.onKey(e)) return;
+        // Recording keys belong to the recording list; a focused button (Fields, datasets) keeps Enter/Space.
+        if (e.key !== 'Escape' && (e.target as HTMLElement).closest('.lib-facets, button, a, [role="button"]')) return;
         if (e.key === 'Escape') {
             if (!this.#q<HTMLElement>('.lib-import-host')!.hidden) this.#hideImport(); else this.#o.onClose?.();
         } else if (e.key.startsWith('Arrow')) {
@@ -1231,10 +1249,11 @@ export class LibraryView {
 
     /** Statistics cell: the same recordings it counts — its local Monday–Sunday, and "(no site)" really without one. */
     #pickWeek(siteId: number | null, week: string) {
-        const sunday = new Date(Date.parse(`${week}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
+        const f = this.#v.filter;
+        const r = weekInPeriod(week, f.localDayFrom ?? null, f.localDayTo ?? null);
         void this.#v.setFilter({
-            ...this.#v.filter, siteIds: siteId == null ? [] : [siteId], noSite: siteId == null,
-            fromMs: null, toMs: null, localDayFrom: week, localDayTo: sunday,
+            ...f, siteIds: siteId == null ? [] : [siteId], noSite: siteId == null,
+            localDayFrom: r.from, localDayTo: r.to,   // UTC bounds (fromMs/toMs) stay: the cell counted within them
         });
     }
 
