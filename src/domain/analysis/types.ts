@@ -19,6 +19,14 @@ export interface AnalysisSetLocationResult {
     week?: number;
 }
 
+/** Grid for range maps: row latitudes (north first) and evenly spaced columns west→east (cell centres). */
+export interface RangeGrid {
+    lats: number[];
+    west: number;
+    east: number;
+    cols: number;
+}
+
 export interface AnalysisSpeciesItem {
     scientific: string;
     common: string;
@@ -58,6 +66,8 @@ export interface AnalysisBackend {
     getAllSpecies(): Promise<AnalysisSpeciesItem[]>;
     /** Geomodel scores for weeks 1–48 per species at one place; null when unsupported. Optional. */
     getYearProfile?(latitude: number, longitude: number, species: string[]): Promise<Record<string, number[]> | null>;
+    /** Geomodel scores of one species on a lat/lon grid for one week; null when unsupported. Optional. */
+    getRangeGrid?(species: string, grid: RangeGrid, week: number): Promise<Float32Array | null>;
     clearLocation(): Promise<void>;
     analyze(channelData: Float32Array | number[], options?: AnalysisRunOptions): Promise<AnalysisDetection[]>;
     dispose(): void;

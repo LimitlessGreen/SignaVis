@@ -25,6 +25,7 @@ import { LabelGrid } from '../../ui/panels/label-grid.ts';
 import { buildLabelExport } from '../../infrastructure/export/labelTableFormats.ts';
 import { BirdNETPanel } from '../../ui/panels/birdnet-panel.ts';
 import { geoWeek, unusualHintText } from '../../ui/components/geo-season.ts';
+import { openRangeMap } from '../../ui/components/geo-range-map/geo-range-map.ts';
 import { BirdBoxPanel, BIRDBOX_ORIGIN } from '../../ui/panels/birdbox-panel.ts';
 import { initModeTiles } from '../../ui/panels/mode-tiles.ts';
 import { initModelPicker } from '../../ui/panels/model-picker.ts';
@@ -889,7 +890,26 @@ specPanel.relocate();
 
 // Year profile of a label's species at the recording place (geomodel), cached per place.
 const seasonProfiles = new Map(); // `${lat},${lon}\0${sci}` → Promise<number[]|null>
+/** Range map of a species from the geomodel (loads BirdNET when needed). */
+async function openSpeciesRangeMap(sci, week = null) {
+  if (!sci) return;
+  let bp = null;
+  try { bp = birdnetPanel; } catch { return; }
+  if (!birdnet.loaded) await bp.loadModel();
+  if (!birdnet.hasAreaModel || !birdnet.getRangeGrid) { await appAlert('The loaded BirdNET model has no area model.', { title: 'Range map' }); return; }
+  const record = taxonomy.resolve(sci);
+  const title = (record && taxonomy.resolveCommonName(record, state.taxonomyLang)) || sci;
+  await openRangeMap({
+    scientific: sci, title,
+    place: bp.getCoords?.() || null,
+    week: week ?? geoWeek(bp.getRecordingDate?.()),
+    modelName: birdnet.geoModelName,
+    minScore: bp.getGeoThreshold(),
+    fetchGrid: (grid, w) => birdnet.getRangeGrid(sci, grid, w),
+  });
+}
 const propsPanel = new PropertiesPanel({
+  onOpenRangeMap: (sci, week) => { openSpeciesRangeMap(sci, week).catch((e) => console.warn('[range map]', e)); },
   getSetInfo: (setId) => (setId === OWN_SOURCE_ID ? null : state.labelSets?.get(setId) || null),
   getSeason: (sci) => {
     let bp = null;
@@ -3792,6 +3812,7 @@ player.on('ultrasoundinfo', (e) => {
 
 // ── Explore panel (species cards) ─────────────────────────────────
 const explorePanel = new ExplorePanel({
+  onOpenRangeMap: ({ scientificName }) => { openSpeciesRangeMap(scientificName).catch((e) => console.warn('[range map]', e)); },
   birdnet,
   getLabels:        () => state.labels,
   getLang:          () => state.taxonomyLang,

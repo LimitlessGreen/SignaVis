@@ -46,6 +46,7 @@ export class ExplorePanel {
     _loadModel: any;
     _loading: any;
     _onOpenRefCalls: any;
+    _onOpenRangeMap: any;
     _onSpeciesSelect: any;
     _getSpeciesLists: any;
     _onAddToSpeciesList: any;
@@ -65,7 +66,8 @@ export class ExplorePanel {
    * @param {(item: {name:string, scientificName:string}) => void} [opts.onSpeciesSelect]
    *   Called when the user clicks a species card — use to pre-fill the label species bar.
    */
-  constructor({ birdnet, getLabels, getLang, taxonomy, getCoords, getRecordingDate, loadModel, onSpeciesSelect, onOpenRefCalls, getSpeciesLists, onAddToSpeciesList }: any) {
+  constructor({ birdnet, getLabels, getLang, taxonomy, getCoords, getRecordingDate, loadModel, onSpeciesSelect, onOpenRefCalls, getSpeciesLists, onAddToSpeciesList, onOpenRangeMap }: any) {
+    this._onOpenRangeMap = onOpenRangeMap ?? null;
     this._getSpeciesLists = getSpeciesLists ?? null;
     this._onAddToSpeciesList = onAddToSpeciesList ?? null;
     this._birdnet          = birdnet;
@@ -431,6 +433,19 @@ export class ExplorePanel {
       else card.querySelector('.sp-card-body')?.appendChild(refBtn);
     }
 
+    if (this._onOpenRangeMap && scientificName) {
+      const mapBtn = document.createElement('button');
+      mapBtn.className = 'act-btn';
+      mapBtn.title = 'Range map (geomodel)';
+      mapBtn.setAttribute('aria-label', mapBtn.title);
+      mapBtn.innerHTML = MAP_ICON;
+      mapBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._onOpenRangeMap({ scientificName, name: commonName });
+      });
+      (card.querySelector('.sp-card-meta') || card.querySelector('.sp-card-body'))?.appendChild(mapBtn);
+    }
+
     const img = card.querySelector('.sp-card-img');
     img?.addEventListener('error', () => { (img as any).src = FALLBACK_SVG; }, { once: true });
 
@@ -451,6 +466,7 @@ export class ExplorePanel {
         {
           select: this._onSpeciesSelect ? () => card.click() : null,
           refCalls: this._onOpenRefCalls && scientificName ? () => this._onOpenRefCalls({ scientificName, name: commonName }) : null,
+          rangeMap: this._onOpenRangeMap && scientificName ? () => this._onOpenRangeMap({ scientificName, name: commonName }) : null,
           addTo: this._onAddToSpeciesList ? (id: string) => this._onAddToSpeciesList(id, scientificName) : null,
           copy: (t: string) => { navigator.clipboard?.writeText(t).catch(() => {}); },
         },
@@ -476,11 +492,12 @@ export class ExplorePanel {
 export function speciesCardMenuItems(
   sp: { name: string; scientificName: string },
   lists: { id: string; name: string; species: string[] }[],
-  act: { select: (() => void) | null; refCalls: (() => void) | null; addTo: ((id: string) => void) | null; copy: (t: string) => void },
+  act: { select: (() => void) | null; refCalls: (() => void) | null; rangeMap?: (() => void) | null; addTo: ((id: string) => void) | null; copy: (t: string) => void },
 ) {
   const items: any[] = [];
   if (act.select) items.push({ label: 'Use as label species', action: act.select });
   if (act.refCalls) items.push({ label: 'Reference calls…', action: act.refCalls });
+  if (act.rangeMap) items.push({ label: 'Range map…', action: act.rangeMap });
   if (act.addTo && sp.scientificName && lists.length) {
     if (items.length) items.push({ separator: true });
     const lc = sp.scientificName.toLowerCase();
@@ -496,6 +513,8 @@ export function speciesCardMenuItems(
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────
+
+const MAP_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>';
 
 function _fmtDur(seconds: any) {
   if (seconds < 60) return `${seconds.toFixed(1)} s`;

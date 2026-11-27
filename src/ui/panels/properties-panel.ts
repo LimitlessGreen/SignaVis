@@ -113,6 +113,7 @@ export class PropertiesPanel {
     _renderSig: any;
     _speciesSearchFactory: any;
     _getSeason: any;
+    _onOpenRangeMap: ((scientific: string, week: number | null) => void) | null;
     _seasonEl: HTMLElement | null = null;
     _seasonKey = '';
   /**
@@ -151,6 +152,7 @@ export class PropertiesPanel {
     /** @type {((anchor: HTMLElement, cb: function) => object)|null} */
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
     this._getSeason = opts.getSeason || null;
+    this._onOpenRangeMap = opts.onOpenRangeMap || null;
 
     /** Structural signature of the last full render — used to short-circuit to in-place value patching. */
     this._renderSig = null;
@@ -555,10 +557,10 @@ export class PropertiesPanel {
     if (key === this._seasonKey) return;
     this._seasonKey = key;
     if (!src) { el.hidden = true; el.innerHTML = ''; return; }
-    this._loadSeason(el, key, src, false);
+    this._loadSeason(el, key, src, false, sci);
   }
 
-  _loadSeason(el: HTMLElement, key: string, src: any, allowModelLoad: boolean) {
+  _loadSeason(el: HTMLElement, key: string, src: any, allowModelLoad: boolean, sci: string) {
     src.load(allowModelLoad).then((res: any) => {
       if (this._seasonKey !== key || this._seasonEl !== el) return; // outdated
       if (res?.needsModel) {
@@ -573,7 +575,7 @@ export class PropertiesPanel {
         btn.addEventListener('click', () => {
           btn.disabled = true;
           btn.textContent = 'Loading BirdNET…';
-          this._loadSeason(el, key, src, true);
+          this._loadSeason(el, key, src, true, sci);
         });
         el.appendChild(btn);
         return;
@@ -588,6 +590,15 @@ export class PropertiesPanel {
         + seasonChartSvg(res.scores, { week: res.week, threshold: res.threshold })
         + now;
       el.querySelector('.props-season-title')!.appendChild(createGeoSourceInfo(res.modelName));
+      if (this._onOpenRangeMap) {
+        const mb = document.createElement('button');
+        mb.type = 'button';
+        mb.className = 'props-season-map';
+        mb.textContent = 'Map';
+        mb.title = 'Range map over the year (geomodel)';
+        mb.addEventListener('click', () => this._onOpenRangeMap?.(sci, res.week));
+        el.querySelector('.props-season-title')!.appendChild(mb);
+      }
       el.title = `Geomodel score per week at the recording place (peak ${s.peak.toFixed(2)}, ${weekLabel(s.peakWeek)}). Dashed line: area filter threshold ${res.threshold}.`;
     }).catch(() => {
       if (this._seasonKey === key) { el.hidden = true; el.innerHTML = ''; }

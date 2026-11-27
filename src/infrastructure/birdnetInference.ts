@@ -248,6 +248,38 @@ self.onmessage = async (e) => {
     }
   }
 
+  if (type === 'geo-grid') {
+    // Scores of one species on a lat/lon grid (cell centres, row 0 = north) for one week.
+    if (!areaModel) { self.postMessage({ id: id, type: 'no-area-model' }); return; }
+    try {
+      var li2 = labels.findIndex(function (l) { return l && l.scientific === e.data.species; });
+      if (li2 < 0) { self.postMessage({ id: id, type: 'geo-grid', values: null }); return; }
+      var LATS = e.data.lats, R = LATS.length, C = e.data.cols, N = R * C;
+      var dLon = (e.data.east - e.data.west) / C;
+      var vals = new Float32Array(N);
+      var B = 1024;
+      for (var o = 0; o < N; o += B) {
+        var n2 = Math.min(B, N - o), rowsB = [];
+        for (var k2 = 0; k2 < n2; k2++) {
+          var cell = o + k2, rr = Math.floor(cell / C), cc = cell % C;
+          var lon2 = e.data.west + (cc + 0.5) * dLon;
+          lon2 = ((lon2 + 180) % 360 + 360) % 360 - 180;
+          rowsB.push([LATS[rr], lon2, e.data.week]);
+        }
+        var tin = tf.tensor2d(rowsB);
+        var tout = areaModel.predict(tin);
+        var ob = await tout.data();
+        tin.dispose(); tout.dispose();
+        var nb = ob.length / n2;
+        if (li2 >= nb) { self.postMessage({ id: id, type: 'geo-grid', values: null }); return; }
+        for (var k3 = 0; k3 < n2; k3++) vals[o + k3] = ob[k3 * nb + li2];
+      }
+      self.postMessage({ id: id, type: 'geo-grid', values: vals }, [vals.buffer]);
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
   if (type === 'geo-profile') {
     // Year profile (weeks 1–48) for a few species at one place. Leaves geoscores alone.
     if (!areaModel) { self.postMessage({ id: id, type: 'no-area-model' }); return; }
@@ -435,6 +467,38 @@ self.onmessage = async (e) => {
         geoscores[i] = labels[i].geoIx >= 0 ? probs[labels[i].geoIx] : 1;
       }
       self.postMessage({ id: id, type: 'area-scores-set', count: geoscores.length, week: week });
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
+  if (type === 'geo-grid') {
+    // Scores of one species on a lat/lon grid (cell centres, row 0 = north) for one week.
+    if (!geo) { self.postMessage({ id: id, type: 'no-area-model' }); return; }
+    try {
+      var li2 = labels.findIndex(function (l) { return l && l.scientific === e.data.species; });
+      var gi2 = li2 >= 0 ? labels[li2].geoIx : -1;
+      if (gi2 < 0) { self.postMessage({ id: id, type: 'geo-grid', values: null }); return; }
+      var LATS = e.data.lats, R = LATS.length, C = e.data.cols, N = R * C;
+      var dLon = (e.data.east - e.data.west) / C;
+      var vals = new Float32Array(N);
+      var B = 1024; // rows per run: the output holds B x all species
+      for (var o = 0; o < N; o += B) {
+        var n2 = Math.min(B, N - o);
+        var xb = new Float32Array(n2 * 3);
+        for (var k2 = 0; k2 < n2; k2++) {
+          var cell = o + k2, rr = Math.floor(cell / C), cc = cell % C;
+          var lon2 = e.data.west + (cc + 0.5) * dLon;
+          lon2 = ((lon2 + 180) % 360 + 360) % 360 - 180;
+          xb[k2 * 3] = LATS[rr]; xb[k2 * 3 + 1] = lon2; xb[k2 * 3 + 2] = e.data.week;
+        }
+        var fb = {};
+        fb[cfg.geoModel.inputName] = new ort.Tensor('float32', xb, [n2, 3]);
+        var ob = (await geo.run(fb))[cfg.geoModel.outputName].data;
+        var nb = ob.length / n2;
+        for (var k3 = 0; k3 < n2; k3++) vals[o + k3] = ob[k3 * nb + gi2];
+      }
+      self.postMessage({ id: id, type: 'geo-grid', values: vals }, [vals.buffer]);
     } catch (err) {
       self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
     }
@@ -665,6 +729,18 @@ export class BirdNETInference {
     if (!this.#loaded || !this.hasAreaModel) return null;
     const result = await this.#send('geo-profile', { latitude, longitude, species });
     return result.type === 'geo-profile' ? result.profiles : null;
+  }
+
+  /**
+   * Geomodel scores of one species on a grid for one week (1–48): rows at the given latitudes
+   * (north first), cols evenly from west to east (cell centres). Null without area model or
+   * when the species has no geo output.
+   */
+  async getRangeGrid(species: string, grid: { lats: number[]; west: number; east: number; cols: number }, week: number): Promise<Float32Array | null> {
+    if (!this.#loaded || !this.hasAreaModel) return null;
+    const result = await this.#send('geo-grid', { species, week, ...grid });
+    if (result.type === 'error') throw new Error(result.message);
+    return result.type === 'geo-grid' ? result.values : null;
   }
 
   /**
