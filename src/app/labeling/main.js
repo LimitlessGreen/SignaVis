@@ -2977,6 +2977,7 @@ labelList.onRemove = (lbl) => {
 // Review queue with accept (copy into My labels) / discard; strings in src/ui/mobile/i18n.ts.
 const mobileApp = new MobileApp({
   player,
+  openRangeMap: (sci) => { openSpeciesRangeMap(sci).catch((e) => console.warn('[range map]', e)); },
   playerRoot: document.getElementById('playerRoot'),
   getRecordings: () => recordingManager.getAll().map((e) => ({
     id: e.id,

@@ -61,6 +61,8 @@ export interface MobileAppHost {
   resolveName(lbl: any): { display: string; scientific?: string };
   /** Common names in all languages, so the species filter also finds other-language names. */
   altNames?(scientificName: string): string[];
+  /** Range map of a species from the geomodel (modal); absent: no map button. */
+  openRangeMap?(scientificName: string): void;
   /** True for labels in "My labels" (confirmed by the user). */
   isOwn?(lbl: any): boolean;
   /** Open the file picker to add audio. */
@@ -1900,6 +1902,12 @@ export class MobileApp {
           ex.appendChild(b);
         });
         if (sp.examples.length > 3) ex.appendChild(el('div', 'm-ex-more', t('sp.more', { n: sp.examples.length - 3 })));
+        if (this.h.openRangeMap && sp.sci) {
+          const mb = el('button', 'm-sp-map', t('sp.map'));
+          mb.type = 'button';
+          mb.addEventListener('click', () => this.h.openRangeMap!(sp.sci));
+          ex.appendChild(mb);
+        }
         row.appendChild(ex);
       }
       this.spList.appendChild(row);
