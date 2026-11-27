@@ -66,7 +66,7 @@ test('geoWeek: date-only strings are calendar dates in every time zone', async (
   const { execFileSync } = await import('node:child_process');
   const code = `import('${new URL('../src/ui/components/geo-season.ts', import.meta.url).href}').then((m) => process.stdout.write(JSON.stringify([m.geoWeek('2026-01-01'), m.geoWeek('2026-12-31'), m.geoWeek('2026-05-15')])))`;
   for (const tz of ['America/Los_Angeles', 'Pacific/Auckland', 'UTC']) {
-    const out = execFileSync(process.execPath, ['--experimental-strip-types', '-e', code], { env: { ...process.env, TZ: tz } }).toString();
+    const out = execFileSync(process.execPath, [...process.execArgv.filter((a) => !a.startsWith('--test')), '-e', code], { env: { ...process.env, TZ: tz } }).toString();
     assert.deepEqual(JSON.parse(out), [1, 48, 19], tz);
   }
 });
