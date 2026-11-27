@@ -6067,9 +6067,17 @@ async function installCommandPalette(shell, beforeEl, menus) {
 let assistantBridge = null;
 async function installAssistantTools(shell, palette) {
   if (!('__TAURI_INTERNALS__' in window)) return;
-  const [{ buildAppTools }, { AssistantBridge }, { newLabelId }] = await Promise.all([
+  const [{ buildAppTools }, { AssistantBridge }, { newLabelId }, { AssistantUndoChain }] = await Promise.all([
     import('../lite/assistant-app-tools.ts'), import('../lite/assistant-bridge.ts'), import('../../app/annotation-sets.ts'),
+    import('../lite/assistant-undo.ts'),
   ]);
+  // Quick AI changes in a row share one Undo (only one undo toast shows at a time).
+  const aiUndo = new AssistantUndoChain();
+  const aiToast = (summary, undo) => {
+    const step = aiUndo.add(summary, undo);
+    selectionMeta.textContent = step.summary;
+    showUndoToast(step.summary, step.undo);
+  };
   const view = () => {
     if (!recordingManager.getActive() || !(player.duration > 0)) return null;
     const r = player.getVisibleTimeRange?.() || { start: 0, end: player.duration };
@@ -6085,8 +6093,7 @@ async function installAssistantTools(shell, palette) {
     const undo = snapshotLabels();
     const out = change();
     syncToPlayer();
-    selectionMeta.textContent = summary;
-    showUndoToast(summary, undo);
+    aiToast(summary, undo);
     return out;
   };
   const app = {
@@ -6193,8 +6200,7 @@ async function installAssistantTools(shell, palette) {
       const added = state.labels.filter((l) => !before.has(l.id)).map((l) => l.id);
       if (added.length) {
         const summary = `AI: BirdNET added ${added.length} detection${added.length === 1 ? '' : 's'}`;
-        selectionMeta.textContent = summary;
-        showUndoToast(summary, () => {
+        aiToast(summary, () => {
           const ids = new Set(added);
           if (recordingManager.activeId === recId) {
             for (const id of ids) snrComputer.invalidate(id);
@@ -6259,7 +6265,8 @@ async function installAssistantTools(shell, palette) {
 // with the assistants; the ⚙ button shows a warning dot while it is on. Undo and the "AI: …" toast stay.
 let assistantsNoAsk = false;
 async function setAssistantsNoAsk(on) {
-  if (on && !await appConfirm('AI assistants may then delete labels without asking you first. Each change can still be undone, '
+  if (on && !await appConfirm('AI assistants may then delete labels without asking you first. Undo in the notice after a change reverts it '
+    + '(quick changes in a row share one Undo), '
     + 'and actions that reset the session stay blocked. This lasts until SignaVis restarts.',
   { title: 'Don\'t ask before AI deletes', okLabel: 'Don\'t ask', danger: true })) return;
   assistantsNoAsk = on;
