@@ -5,6 +5,8 @@
 // would replace the first one's toast and its undo would be lost (fast in "don't ask" mode).
 // While the previous AI toast is still showing, the next change joins it: one toast, and Undo
 // runs every step's undo, newest first, back to the state before the first change.
+// Anything the person does in between (click, key) ends the chain (`reset`), so an Undo never
+// reaches back over their own edits.
 // ═══════════════════════════════════════════════════════════════════════
 
 export const AI_UNDO_WINDOW_MS = 8000;   // = the toast's timeout
@@ -14,7 +16,16 @@ export class AssistantUndoChain {
     private summaries: string[] = [];
     private at = -Infinity;
 
-    constructor(private now: () => number = Date.now, private windowMs = AI_UNDO_WINDOW_MS) {}
+    private readonly now: () => number;
+    private readonly windowMs: number;
+
+    constructor(now: () => number = Date.now, windowMs = AI_UNDO_WINDOW_MS) {
+        this.now = now;
+        this.windowMs = windowMs;
+    }
+
+    /** The person acted: the next AI change starts its own Undo. */
+    reset(): void { this.steps = []; this.summaries = []; this.at = -Infinity; }
 
     /** Add a step; returns the toast text and the undo for the whole chain. */
     add(summary: string, undo: () => void): { summary: string; undo: () => void } {

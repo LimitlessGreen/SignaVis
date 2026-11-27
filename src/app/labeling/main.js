@@ -6073,6 +6073,10 @@ async function installAssistantTools(shell, palette) {
   ]);
   // Quick AI changes in a row share one Undo (only one undo toast shows at a time).
   const aiUndo = new AssistantUndoChain();
+  // Any input of the person ends the chain (not the toast's own Undo button).
+  const endAiChain = (e) => { if (!e.target?.closest?.('.undo-toast')) aiUndo.reset(); };
+  document.addEventListener('pointerdown', endAiChain, true);
+  document.addEventListener('keydown', endAiChain, true);
   const aiToast = (summary, undo) => {
     const step = aiUndo.add(summary, undo);
     selectionMeta.textContent = step.summary;

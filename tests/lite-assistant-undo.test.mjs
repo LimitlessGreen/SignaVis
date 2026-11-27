@@ -30,3 +30,16 @@ test('assistant undo: a change after the toast is gone starts a new step', () =>
   const after = chain.add('AI: added 1 label', () => log.push('c'));
   assert.equal(after.summary, 'AI: added 1 label');
 });
+
+test('assistant undo: the person acting in between ends the chain', () => {
+  let t = 0;
+  const chain = new AssistantUndoChain(() => t, 8000);
+  const log = [];
+  chain.add('AI: deleted 1 label', () => log.push('a'));
+  chain.reset();                       // the person added a label
+  t = 1000;
+  const b = chain.add('AI: added 1 label', () => log.push('b'));
+  assert.equal(b.summary, 'AI: added 1 label');
+  b.undo();
+  assert.deepEqual(log, ['b']);        // the earlier AI step is not undone over the person's edit
+});
