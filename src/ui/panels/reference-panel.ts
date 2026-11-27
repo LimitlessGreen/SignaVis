@@ -131,7 +131,9 @@ export class ReferencePanel {
         this.renderHead();
         this.renderClip();
         if (speciesChanged) void this.load(1);
-        else if (clipChanged && this.sort === 'similar') { this.gen++; this.loading = false; void this.rank(); }
+        // Another clip of the same species: rank the list again. While the first search still runs it
+        // is kept (it ranks against the clip current when it arrives).
+        else if (clipChanged && this.sort === 'similar' && this.refs.length) { this.gen++; this.loading = false; void this.rank(); }
     }
 
     /** Panel became visible: search if the species was set while hidden. */
