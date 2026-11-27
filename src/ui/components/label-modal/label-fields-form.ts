@@ -124,6 +124,14 @@ export class LabelFieldsForm {
             species = el('div', 'lf-inp lf-species');
             const sci = el('small', '', l.scientificName || '');
             species.append(sw(), w.el, sci, el('span', 'lf-caret', '▾'));
+        } else if (!ro) {
+            // No taxonomy search: the name as plain text (as Properties had it)
+            species = el('div', 'lf-inp lf-species');
+            const inp = el('input', 'lf-in');
+            inp.value = l.label || '';
+            inp.placeholder = 'Label';
+            inp.onchange = () => { const name = inp.value.trim(); if (name) this.o.change({ label: name, scientificName: '', ...(l.colorCustom ? {} : { color: colorForName(name) }) }); };
+            species.append(sw(), inp);
         } else {
             species = el('div', 'lf-inp lf-species');
             species.append(sw(), el('span', '', l.label || '–'), el('small', '', l.scientificName || ''));
@@ -197,7 +205,18 @@ export class LabelFieldsForm {
                 const opts = p.options.slice(0, 3).map((v) => ({ value: v, text: v }));
                 if (cur && !opts.some((o) => o.value === cur)) opts.push({ value: cur, text: cur });
                 opts.push({ value: '', text: '–' });
-                s.append(this.row(nice(p), seg(opts, cur, (v) => setTag(p.key, v), ro)));
+                const segEl = seg(opts, cur, (v) => setTag(p.key, v), ro);
+                const rest = p.options.filter((v) => !opts.some((o) => o.value === v));
+                if (rest.length) {
+                    // the other configured values (e.g. Life stage: subadult) behind "more…"
+                    const more = el('select', 'lf-more');
+                    more.disabled = ro;
+                    more.append(new Option('more…', ''), ...rest.map((v) => new Option(v, v)));
+                    more.onchange = () => { const v = more.value; more.value = ''; if (v) setTag(p.key, v); };
+                    const w = el('span', 'lf-segmore');
+                    w.append(segEl, more);
+                    s.append(this.row(nice(p), w));
+                } else s.append(this.row(nice(p), segEl));
             }
         }
         const preset = new Set([...this.o.tagPresets.map((p) => p.key), ...ANNOTA_FIELDS.map((f) => f.key)]);
@@ -345,6 +364,10 @@ export function parseClock(raw: string, current: number, clock?: ((s: number) =>
     if (/^-?\d+(\.\d+)?$/.test(t)) {
         // a plain number is seconds into the recording (no clock) or seconds of the minute (clock)
         if (!clock) return parseFloat(t);
+        const s = parseFloat(t);
+        const cm = /^(\d{1,2}):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(clock(current));
+        if (!cm || s < 0 || s >= 60) return NaN;
+        return current + (s - parseFloat(cm[3]));   // same minute, other second
     }
     const m = /^(\d{1,2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?$/.exec(t);
     if (!m || !clock) return clock ? NaN : parseFloat(t);
