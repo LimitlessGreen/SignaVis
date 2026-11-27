@@ -219,7 +219,9 @@ export class SpacesShell {
         const p = this.#panels.get(panelId);
         if (!p) return;
         const title = text ? `${p.def.title} ${text}` : p.def.title;
-        if (p.title === title) return;
+        // A layout restored from storage brings its saved tab titles (e.g. an old count): compare with those too.
+        const shown = [...this.#spaces.values()].map((sp) => sp.api?.getPanel(panelId)?.title).filter((t) => t != null);
+        if (p.title === title && shown.every((t) => t === title)) return;
         p.title = title;
         for (const sp of this.#spaces.values()) sp.api?.getPanel(panelId)?.api.setTitle(title);
     }
@@ -325,7 +327,8 @@ export class SpacesShell {
         const el = target instanceof Element ? target : null;
         if (!el?.closest('.dv-tab') || !sp.api) return null;
         const g = sp.api.groups.find((x) => x.element.contains(el));
-        return g && sp.def.collapsible?.some((c) => g.panels.some((p) => p.id === c)) ? g : null;
+        // Also a group that is folded now (its collapsible panel may have been dragged away): it must be able to open.
+        return g && (sp.folded.has(g.id) || sp.def.collapsible?.some((c) => g.panels.some((p) => p.id === c))) ? g : null;
     }
 
     /** A click on the active tab folds its group; any tab of a folded group unfolds it. */
@@ -343,6 +346,20 @@ export class SpacesShell {
             if (sp.folded.has(g.id)) this.#unfold(sp, g);
             else if (g.activePanel?.id === was.panel) this.#fold(sp, g);
         });
+        // Enter / Space on a tab: the dock activates the panel without a click; fold and unfold the same way.
+        sp.el.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const g = this.#foldableGroupAt(sp, e.target);
+            if (!g) return;
+            const tabs = [...g.element.querySelectorAll('.dv-tab')];
+            const tab = (e.target as Element).closest('.dv-tab');
+            const wasActive = g.panels[tabs.indexOf(tab!)]?.id === g.activePanel?.id;
+            const folded = sp.folded.has(g.id);
+            queueMicrotask(() => {
+                if (folded) this.#unfold(sp, g);
+                else if (wasActive) this.#fold(sp, g);
+            });
+        }, true);
     }
 
     #fold(sp: SpaceRuntime, g: any, unfoldTo?: number) {
