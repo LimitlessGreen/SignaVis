@@ -80,8 +80,7 @@ fn open_trunk(path: &std::path::Path, input: &str, output: &str) -> Result<GeoTr
     GeoTrunk::new(path, threads, "cpu", input, output).map_err(|e| e.to_string())
 }
 
-async fn load(app: &tauri::AppHandle, trunk: &str, labels: &str) -> Result<Loaded, String> {
-    let cache = app.path().app_data_dir().map_err(|e| e.to_string())?.join("data-cache");
+async fn load(cache: std::path::PathBuf, trunk: &str, labels: &str) -> Result<Loaded, String> {
     let get = |p: String| crate::data_cache::load(cache.clone(), p);
     let head_json: HeadJson = serde_json::from_slice(&get(format!("{trunk}head.json")).await.map_err(|(_, m)| m)?)
         .map_err(|e| format!("head.json: {e}"))?;
@@ -99,16 +98,21 @@ async fn load(app: &tauri::AppHandle, trunk: &str, labels: &str) -> Result<Loade
 /// geomodel has no output for it. The first call loads the trunk (provider: geo_grid_ep).
 #[tauri::command]
 pub async fn geo_grid(app: tauri::AppHandle, state: tauri::State<'_, GeoState>, req: GridRequest) -> Result<tauri::ipc::Response, String> {
+    let cache = app.path().app_data_dir().map_err(|e| e.to_string())?.join("data-cache");
+    Ok(tauri::ipc::Response::new(run(cache, state.0.clone(), req).await?))
+}
+
+/// geo_grid without Tauri: `cache` is the svdata cache folder.
+async fn run(cache: std::path::PathBuf, cell: Arc<Mutex<Option<Loaded>>>, req: GridRequest) -> Result<Vec<u8>, String> {
     let trunk = checked(&req.trunk)?;
     let labels = checked(&req.labels)?;
     let key = format!("{trunk}|{labels}");
-    let need_load = state.0.lock().map_err(|e| e.to_string())?.as_ref().map_or(true, |l| l.key != key);
+    let need_load = cell.lock().map_err(|e| e.to_string())?.as_ref().map_or(true, |l| l.key != key);
     if need_load {
-        let loaded = load(&app, &trunk, &labels).await?;
-        *state.0.lock().map_err(|e| e.to_string())? = Some(loaded);
+        let loaded = load(cache, &trunk, &labels).await?;
+        *cell.lock().map_err(|e| e.to_string())? = Some(loaded);
     }
-    let cell = state.0.clone();
-    let bytes = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u8>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let mut guard = cell.lock().map_err(|e| e.to_string())?;
         let l = guard.as_mut().ok_or("geomodel trunk not loaded")?;
         let Some(&ix) = l.label_ix.get(req.species.as_str()) else { return Ok(Vec::new()) };
@@ -120,8 +124,7 @@ pub async fn geo_grid(app: tauri::AppHandle, state: tauri::State<'_, GeoState>, 
         Ok(l.head.scores(&hidden, &rows).iter().flat_map(|v| v.to_le_bytes()).collect())
     })
     .await
-    .map_err(|e| e.to_string())??;
-    Ok(tauri::ipc::Response::new(bytes))
+    .map_err(|e| e.to_string())?
 }
 
 /// Execution provider of the loaded trunk ("cuda", "directml", "cpu"), or "" before the first grid.
@@ -140,6 +143,34 @@ mod tests {
         assert_eq!(ix["Cuculus canorus"], 0);
         assert_eq!(ix["Turdus merula"], 1);
         assert_eq!(ix.len(), 2);
+    }
+
+    /// The request as the frontend sends it (NativeGeoGridRunner.grid), against a cache folder
+    /// with the real trunk: GEO_TRUNK_DIR=models/geo-trunk-v3.0 GEO_LABELS=<geo labels file>
+    /// cargo test -p signavis-lite geo_grid -- --ignored
+    #[test]
+    #[ignore]
+    fn frontend_request_end_to_end() {
+        let trunk = std::path::PathBuf::from(std::env::var("GEO_TRUNK_DIR").expect("GEO_TRUNK_DIR"));
+        let labels = std::path::PathBuf::from(std::env::var("GEO_LABELS").expect("GEO_LABELS"));
+        let cache = std::env::temp_dir().join(format!("geo-grid-test-{}", std::process::id()));
+        let t = cache.join("models/geo-trunk-v3.0");
+        std::fs::create_dir_all(&t).unwrap();
+        for f in ["trunk.onnx", "head.bin", "head.json"] { std::fs::copy(trunk.join(f), t.join(f)).unwrap(); }
+        std::fs::create_dir_all(cache.join("models/birdnet-v3.0")).unwrap();
+        std::fs::copy(&labels, cache.join("models/birdnet-v3.0/G.txt")).unwrap();
+        let json = r#"{"trunk":"models/geo-trunk-v3.0/","labels":"models/birdnet-v3.0/G.txt",
+            "species":"Cuculus canorus","week":20,"lats":[51.34,-1.0],"west":12.0,"east":12.74,"cols":1}"#;
+        let cell = Arc::new(Mutex::new(None));
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let bytes = rt.block_on(run(cache.clone(), cell.clone(), serde_json::from_str(json).unwrap())).unwrap();
+        let v: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+        assert_eq!(v.len(), 2);
+        assert!((v[0] - 0.9437).abs() < 0.01, "{v:?}");   // Leipzig, mid May (full model 0.9437)
+        let none = rt.block_on(run(cache.clone(), cell, serde_json::from_str(&json.replace("Cuculus canorus", "Nobody"))
+            .unwrap())).unwrap();
+        assert!(none.is_empty());
+        let _ = std::fs::remove_dir_all(cache);
     }
 
     #[test]
