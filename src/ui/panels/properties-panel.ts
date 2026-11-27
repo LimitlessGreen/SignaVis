@@ -334,6 +334,10 @@ export class PropertiesPanel {
     this._audioInfo = null;
     this._pinnedLabel = null;
     this._hoverLabel = null;
+    // The catalog row belongs to the recording too: not shown again with the next one's metadata.
+    (this as any)._catalogRow = null;
+    (this as any)._catalogKey = '';
+    (this as any)._editSites = null;
     this._renderRecording();
     this._renderLabel();
   }
@@ -589,6 +593,7 @@ export class PropertiesPanel {
     if (form) {
       // keep the field being typed in; otherwise draw the values again
       if (!(active && form.el.contains(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))) form.render(editable ? lbl : { ...lbl, readonly: true });
+      else form.track(lbl);
       this._renderSet();
       return;
     }

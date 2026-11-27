@@ -57,6 +57,19 @@ export class LabelFieldsForm {
 
     constructor(private o: FieldsFormOptions) {}
 
+    /**
+     * The label changed while a field has focus (the form is not drawn again then): keep its newest
+     * state, so a tag edit starts from it and does not undo a change made elsewhere meanwhile.
+     */
+    track(label: any) { if (label) this.label = label; }
+
+    /** One tag changed, on top of the label's current tags (not the ones seen when the form was drawn). */
+    private setTag(k: string, v: string) {
+        const next = { ...(this.label?.tags || {}) };
+        if (v) next[k] = v; else delete next[k];
+        this.o.change({ tags: next });
+    }
+
     render(label: any) {
         this.label = label;
         for (const w of this.widgets) w.destroy?.();
@@ -150,11 +163,7 @@ export class LabelFieldsForm {
         add.disabled = ro;
         add.onclick = () => this.addCustomTag(s);
         const s = this.section('tags', 'Tags', add);
-        const setTag = (k: string, v: string) => {
-            const next = { ...tags };
-            if (v) next[k] = v; else delete next[k];
-            this.o.change({ tags: next });
-        };
+        const setTag = (k: string, v: string) => this.setTag(k, v);
         // mockup order: sound type first; names as words ("Life stage", not "lifeStage")
         const nice = (p: TagPreset) => (p.label && p.label !== p.key ? p.label
             : p.key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase()).replace(/ ([A-Z])/g, (_, c) => ` ${c.toLowerCase()}`));
@@ -238,11 +247,7 @@ export class LabelFieldsForm {
         more.type = 'button';
         more.onclick = () => { if (open) this.collapsed.add('annota-more'); else this.collapsed.delete('annota-more'); this.render(this.label); };
         const s = this.section('annota', 'Xeno-canto Annota', more);
-        const setTag = (k: string, v: string) => {
-            const next = { ...tags };
-            if (v) next[k] = v; else delete next[k];
-            this.o.change({ tags: next });
-        };
+        const setTag = (k: string, v: string) => this.setTag(k, v);
         const text = (key: string, multi: boolean, type = 'text') => {
             const i = multi ? el('textarea', 'lf-inp lf-ta') : el('input', 'lf-inp lf-in');
             if (i instanceof HTMLInputElement) i.type = type;
