@@ -163,6 +163,11 @@ async function loadHeadModel(manifest, folder, baseFolder) {
   };
 }
 
+/** BirdNET geo week: 4 per month, 1–48. */
+function geoWeek(d) {
+  return d.getMonth() * 4 + Math.min(3, Math.floor((d.getDate() - 1) / 7)) + 1;
+}
+
 /* ── Worker message handler ── */
 let model     = null;
 let areaModel = null;
@@ -230,13 +235,8 @@ self.onmessage = async (e) => {
       // Use provided date or fall back to today
       var refDate = e.data.date ? new Date(e.data.date) : new Date();
       if (isNaN(refDate.getTime())) refDate = new Date();
-      // Calculate ISO week number
-      var now = refDate;
-      var jan4 = new Date(now.getFullYear(), 0, 4);
-      var weekStart = new Date(jan4);
-      weekStart.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
-      var week = Math.round((now - weekStart) / 604800000) + 1;
-      week = Math.max(1, Math.min(52, week));
+      // BirdNET area model week: 4 per month, 1–48 (not the ISO week).
+      var week = geoWeek(refDate);
 
       var input = tf.tensor2d([[e.data.latitude, e.data.longitude, week]]);
       var scores = await areaModel.predict(input).data();
@@ -757,3 +757,6 @@ export class BirdNETInference {
     });
   }
 }
+
+/** Worker sources, for tests only. */
+export const __workerSourcesForTests = { tfjs: TFJS_WORKER_SOURCE, onnx: ONNX_WORKER_SOURCE };
