@@ -124,7 +124,7 @@ export class LabelModal {
         const next = new Set(ids.filter((x) => list.includes(x)));
         const wasMulti = this.isMulti;
         this.endVisit();
-        this.h.stop(); this.queue = [];
+        this.h.stop(); this.queue = []; this.wasPlaying = false;
         this.sel = next.size > 1 ? next : new Set();
         if (next.size === 1) this.id = [...next][0];
         if (!this.isMulti && wasMulti && !next.size) this.sel = new Set();
@@ -143,6 +143,9 @@ export class LabelModal {
         this.startVisit();
         this.render();
         this.tick();
+        // Keyboard users start inside the window (Tab then stays in it, see key()).
+        this.box.tabIndex = -1;
+        this.box.focus({ preventScroll: true });
     }
 
     close() {
@@ -212,8 +215,11 @@ export class LabelModal {
         const t = e.target as HTMLElement;
         const typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (typing) t.blur(); else this.close(); return; }
+        if (e.key === 'Tab') { e.stopPropagation(); this.trapTab(e); return; }   // also from a field
         if (typing) return;
         e.stopPropagation();
+        // A focused button or link: Enter / Space activate it (History, Revert, …), not the window shortcuts.
+        if ((e.key === 'Enter' || e.key === ' ') && t !== this.box && t?.closest?.('button, a[href], [role="button"], summary')) return;
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); this.select(this.h.labels().map((l) => l.id)); return; }
         if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); this.extend(e.key === 'ArrowLeft' ? -1 : 1); return; }
         if (this.isMulti) {
@@ -257,7 +263,7 @@ export class LabelModal {
         const ls = this.selected.filter((l) => !l.readonly);
         if (!ls.length) return;
         this.endVisit();
-        this.h.stop(); this.queue = [];
+        this.h.stop(); this.queue = []; this.wasPlaying = false;
         if (this.h.removeMany) this.h.removeMany(ls.map((l) => l.id));
         else for (const l of ls) this.h.remove(l.id);
         const left = this.h.labels();
@@ -268,8 +274,19 @@ export class LabelModal {
         this.render();
     }
 
+    /** Tab / Shift+Tab wrap around inside the window (it is modal). */
+    private trapTab(e: KeyboardEvent) {
+        const all = [...this.box.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')]
+            .filter((x) => !(x as HTMLButtonElement).disabled && x.offsetParent !== null);
+        if (!all.length) { e.preventDefault(); return; }
+        const i = all.indexOf(document.activeElement as HTMLElement);
+        if (e.shiftKey && i <= 0) { e.preventDefault(); all[all.length - 1].focus(); }
+        else if (!e.shiftKey && (i < 0 || i === all.length - 1)) { e.preventDefault(); all[0].focus(); }
+    }
+
     private togglePlay() {
-        if (this.h.isPlaying() || this.queue.length) { this.queue = []; this.h.stop(); return; }
+        // Stop: also forget that a clip was playing, or the next tick takes it as finished and loops on.
+        if (this.h.isPlaying() || this.queue.length) { this.queue = []; this.wasPlaying = false; this.h.stop(); return; }
         if (this.isMulti) { this.queue = [...this.selected]; this.playNext(); return; }
         const l = this.current;
         if (!l) return;
