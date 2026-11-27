@@ -9,6 +9,7 @@ import type {
     AnalysisSetLocationOptions,
     AnalysisSetLocationResult,
     AnalysisSpeciesItem,
+    RangeGrid,
 } from '../../domain/analysis/types.ts';
 
 export class LocalAnalysisBackend implements AnalysisBackend {
@@ -23,6 +24,10 @@ export class LocalAnalysisBackend implements AnalysisBackend {
         return this.#birdnet.hasAreaModel;
     }
 
+    get geoModelName(): string | null {
+        return (this.#birdnet as any).geoModelName ?? null;
+    }
+
     load(options: AnalysisLoadOptions): Promise<AnalysisLoadResult> {
         return this.#birdnet.load(options);
     }
@@ -33,6 +38,14 @@ export class LocalAnalysisBackend implements AnalysisBackend {
 
     getAllSpecies(): Promise<AnalysisSpeciesItem[]> {
         return this.#birdnet.getAllSpecies();
+    }
+
+    getYearProfile(latitude: number, longitude: number, species: string[]): Promise<Record<string, number[]> | null> {
+        return this.#birdnet.getYearProfile(latitude, longitude, species);
+    }
+
+    getRangeGrid(species: string, grid: RangeGrid, week: number): Promise<Float32Array | null> {
+        return this.#birdnet.getRangeGrid(species, grid, week);
     }
 
     clearLocation(): Promise<void> {

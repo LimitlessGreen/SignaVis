@@ -55,6 +55,8 @@ export interface LabelGridOptions {
   /** Toolbar slot in the tab strip (filters, counter, follow). */
   tools?: HTMLElement | null;
   resolveName: (lbl: Lbl) => { display: string; scientific: string };
+  /** Tooltip when the species is unusual at the recording place and time (geomodel); null otherwise. */
+  unusualHint?: (scientific: string) => string | null;
   isLocked: (lbl: Lbl) => boolean;
   layerName?: (lbl: Lbl) => string;
   getViewRange?: () => { start: number; end: number } | null;
@@ -888,6 +890,14 @@ export class LabelGrid {
         const n = this.opts.resolveName(l);
         cell.textContent = n.display;
         cell.title = n.scientific ? `${n.display} — ${n.scientific}` : n.display;
+        const hint = n.scientific ? this.opts.unusualHint?.(n.scientific) : null;
+        if (hint) {
+          const w = document.createElement('span');
+          w.className = 'geo-unusual';
+          w.textContent = '⚠';
+          w.title = hint;
+          cell.prepend(w);
+        }
       } else {
         cell.textContent = c.text(l, this);
         if (c.edit === 'yn') {

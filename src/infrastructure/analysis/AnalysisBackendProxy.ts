@@ -8,6 +8,7 @@ import type {
     AnalysisSetLocationOptions,
     AnalysisSetLocationResult,
     AnalysisSpeciesItem,
+    RangeGrid,
 } from '../../domain/analysis/types.ts';
 
 /**
@@ -33,6 +34,10 @@ export class AnalysisBackendProxy implements AnalysisBackend {
         return this.#current.hasAreaModel;
     }
 
+    get geoModelName(): string | null {
+        return (this.#current as any).geoModelName ?? null;
+    }
+
     setBackend(nextBackend: AnalysisBackend): void {
         const previous = this.#current;
         this.#current = nextBackend;
@@ -49,6 +54,14 @@ export class AnalysisBackendProxy implements AnalysisBackend {
 
     getAllSpecies(): Promise<AnalysisSpeciesItem[]> {
         return this.#current.getAllSpecies();
+    }
+
+    getYearProfile(latitude: number, longitude: number, species: string[]): Promise<Record<string, number[]> | null> {
+        return this.#current.getYearProfile?.(latitude, longitude, species) ?? Promise.resolve(null);
+    }
+
+    getRangeGrid(species: string, grid: RangeGrid, week: number): Promise<Float32Array | null> {
+        return this.#current.getRangeGrid?.(species, grid, week) ?? Promise.resolve(null);
     }
 
     clearLocation(): Promise<void> {

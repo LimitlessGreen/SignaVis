@@ -227,3 +227,60 @@
 /* ── Leaflet overrides ── */
 .leaflet-container { font-family: inherit; }
 .leaflet-control-attribution { font-size: 9px !important; }
+
+/* ── Geomodel range map ─────────────────────────────────────────────── */
+.geo-range-modal { width: min(1000px, 100%); }
+.geo-range-container { min-height: min(560px, calc(100vh - 200px)); }
+.geo-range-sci { font-weight: 400; color: var(--color-text-secondary); margin-left: 6px; }
+.geo-range-src { margin-left: 2px; margin-right: auto; }
+.geo-range-overlay { image-rendering: pixelated; }
+.geo-range-bar {
+  display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  border-top: 1px solid var(--color-border); font-size: 12px; flex-wrap: wrap;
+}
+.geo-range-play { min-width: 34px; justify-content: center; }
+.geo-range-week { flex: 1; min-width: 140px; }
+.geo-range-week-label { min-width: 120px; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+.geo-range-legend { display: inline-flex; align-items: center; gap: 4px; color: var(--color-text-muted); font-size: 11px; }
+.geo-range-ramp {
+  width: 80px; height: 8px; border-radius: 2px;
+  background: linear-gradient(90deg, rgba(68,1,84,0.4), rgb(59,82,139), rgb(33,145,140), rgb(94,201,98), rgb(253,231,37));
+}
+.geo-range-status { color: var(--color-text-muted); font-size: 11px; min-width: 70px; }
+.props-season-map { all: unset; cursor: pointer; color: var(--color-text-muted); font-size: 11px; margin-left: 4px; }
+.props-season-map:hover { color: var(--color-accent); }
+.props-season-map:focus-visible, .props-season-load:focus-visible { outline: 2px solid var(--color-accent); border-radius: 2px; }
+
+/* Season here: geomodel year profile of the label's species at the recording place */
+.props-season { margin: 8px 0 4px; font-size: 11px; color: var(--color-text-secondary); }
+.props-season-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+.props-season-head > span:first-child { color: var(--color-text-primary); font-weight: 500; }
+.props-season-range { text-align: right; }
+.geo-season-chart { display: block; overflow: visible; }
+.geo-season-area { fill: var(--color-accent-faint); stroke: var(--color-accent); stroke-width: 1; }
+.geo-season-threshold { stroke: var(--color-text-muted); stroke-dasharray: 3 2; stroke-width: 0.75; }
+.geo-season-tick { stroke: var(--color-border-strong); stroke-width: 0.75; }
+.geo-season-month { fill: var(--color-text-muted); font-size: 8px; }
+.geo-season-now { stroke: var(--color-text-primary); stroke-width: 1; }
+.geo-season-now-dot { fill: var(--color-text-primary); }
+.props-season--unusual .geo-season-now, .props-season--unusual .geo-season-now-dot { stroke: var(--color-warning); fill: var(--color-warning); }
+.props-season-now { display: block; margin-top: 2px; }
+.props-season--unusual .props-season-now { color: var(--color-warning); }
+.props-season-load { font-size: 11px; }
+
+/* Geomodel: ⚠ unusual here now (table, list) and ⓘ source/limits popover */
+.geo-unusual { color: var(--color-warning); font-size: 0.9em; margin-right: 3px; cursor: help; }
+.geo-src { position: relative; display: inline-block; margin-left: 4px; }
+.geo-src-btn { all: unset; cursor: pointer; color: var(--color-text-muted); font-size: 11px; line-height: 1; }
+.geo-src-btn:hover, .geo-src-btn[aria-expanded="true"] { color: var(--color-accent); }
+.geo-src-btn:focus-visible { outline: 2px solid var(--color-accent); border-radius: 2px; }
+.geo-src-pop {
+  position: absolute; z-index: 20; top: 16px; left: -8px; width: 230px; padding: 8px 10px;
+  background: var(--color-bg-surface); border: 1px solid var(--color-border-strong); border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); font-size: 11px; font-weight: 400; color: var(--color-text-secondary);
+}
+.geo-src-pop b { color: var(--color-text-primary); }
+.geo-src-model { color: var(--color-text-muted); word-break: break-all; }
+.geo-src-pop ul { margin: 6px 0; padding-left: 14px; }
+.geo-src-pop li { margin: 2px 0; }
+.geo-src-foot { color: var(--color-text-muted); }

@@ -18,7 +18,7 @@ import { patchWebglComplexCast } from './tfjsComplexCastFix.ts';
 const TFJS_CDN = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4';
 const TFJS_URL = vendorUrl('tfjs/tf.min.js', TFJS_CDN);
 const ORT_VERSION = '1.30.0';
-const ORT_BASE = vendorUrl('ort/', `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`);
+export const ORT_BASE = vendorUrl('ort/', `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`);
 const TFJS_SR = 48000;
 const CHUNK_SECONDS = 3;
 const TFJS_CHUNK_SAMPLES = TFJS_SR * CHUNK_SECONDS; // 144 000
@@ -163,6 +163,11 @@ async function loadHeadModel(manifest, folder, baseFolder) {
   };
 }
 
+/** BirdNET geo week: 4 per month, 1–48. */
+function geoWeek(d) {
+  return d.getMonth() * 4 + Math.min(3, Math.floor((d.getDate() - 1) / 7)) + 1;
+}
+
 /* ── Worker message handler ── */
 let model     = null;
 let areaModel = null;
@@ -211,7 +216,7 @@ self.onmessage = async (e) => {
       self.postMessage({ id: id, type: 'progress', message: 'Loading area model\\u2026', percent: 92 });
       try {
         areaModel = await tf.loadGraphModel(areaBase + 'mdata/model.json');
-        self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: true, sampleRate: ${TFJS_SR}, format: 'tfjs' });
+        self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: true, geoModelName: 'BirdNET V2.4 meta model', sampleRate: ${TFJS_SR}, format: 'tfjs' });
       } catch (_) {
         // Area model is optional — continue without it
         self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: false, sampleRate: ${TFJS_SR}, format: 'tfjs' });
@@ -230,19 +235,71 @@ self.onmessage = async (e) => {
       // Use provided date or fall back to today
       var refDate = e.data.date ? new Date(e.data.date) : new Date();
       if (isNaN(refDate.getTime())) refDate = new Date();
-      // Calculate ISO week number
-      var now = refDate;
-      var jan4 = new Date(now.getFullYear(), 0, 4);
-      var weekStart = new Date(jan4);
-      weekStart.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
-      var week = Math.round((now - weekStart) / 604800000) + 1;
-      week = Math.max(1, Math.min(52, week));
+      // BirdNET area model week: 4 per month, 1–48 (not the ISO week).
+      var week = geoWeek(refDate);
 
       var input = tf.tensor2d([[e.data.latitude, e.data.longitude, week]]);
       var scores = await areaModel.predict(input).data();
       input.dispose();
       geoscores = scores;
       self.postMessage({ id: id, type: 'area-scores-set', count: scores.length, week: week });
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
+  if (type === 'geo-grid') {
+    // Scores of one species on a lat/lon grid (cell centres, row 0 = north) for one week.
+    if (!areaModel) { self.postMessage({ id: id, type: 'no-area-model' }); return; }
+    try {
+      var li2 = labels.findIndex(function (l) { return l && l.scientific === e.data.species; });
+      if (li2 < 0) { self.postMessage({ id: id, type: 'geo-grid', values: null }); return; }
+      var LATS = e.data.lats, R = LATS.length, C = e.data.cols, N = R * C;
+      var dLon = (e.data.east - e.data.west) / C;
+      var vals = new Float32Array(N);
+      var B = 1024;
+      for (var o = 0; o < N; o += B) {
+        var n2 = Math.min(B, N - o), rowsB = [];
+        for (var k2 = 0; k2 < n2; k2++) {
+          var cell = o + k2, rr = Math.floor(cell / C), cc = cell % C;
+          var lon2 = e.data.west + (cc + 0.5) * dLon;
+          lon2 = ((lon2 + 180) % 360 + 360) % 360 - 180;
+          rowsB.push([LATS[rr], lon2, e.data.week]);
+        }
+        var tin = tf.tensor2d(rowsB);
+        var tout = areaModel.predict(tin);
+        var ob = await tout.data();
+        tin.dispose(); tout.dispose();
+        var nb = ob.length / n2;
+        if (li2 >= nb) { self.postMessage({ id: id, type: 'geo-grid', values: null }); return; }
+        for (var k3 = 0; k3 < n2; k3++) vals[o + k3] = ob[k3 * nb + li2];
+      }
+      self.postMessage({ id: id, type: 'geo-grid', values: vals }, [vals.buffer]);
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
+  if (type === 'geo-profile') {
+    // Year profile (weeks 1–48) for a few species at one place. Leaves geoscores alone.
+    if (!areaModel) { self.postMessage({ id: id, type: 'no-area-model' }); return; }
+    try {
+      var rows = [];
+      for (var gw = 1; gw <= 48; gw++) rows.push([e.data.latitude, e.data.longitude, gw]);
+      var gin = tf.tensor2d(rows);
+      var gout = areaModel.predict(gin);
+      var gall = await gout.data();
+      gin.dispose(); gout.dispose();
+      var gn = gall.length / 48;
+      var profiles = {};
+      (e.data.species || []).forEach(function (sci) {
+        var li = labels.findIndex(function (l) { return l && l.scientific === sci; });
+        if (li < 0 || li >= gn) return;
+        var arr = new Array(48);
+        for (var w = 0; w < 48; w++) arr[w] = gall[w * gn + li];
+        profiles[sci] = arr;
+      });
+      self.postMessage({ id: id, type: 'geo-profile', profiles: profiles });
     } catch (err) {
       self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
     }
@@ -381,6 +438,7 @@ self.onmessage = async (e) => {
         } catch (_) { geo = null; }
       }
       self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: !!geo,
+        geoModelName: geo ? String(cfg.geoModel.modelFile).replace(/^.*\\//, '').replace(/\\.onnx$/, '') : null,
         sampleRate: am.audio.sampleRate, format: 'onnx' });
     } catch (err) {
       self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
@@ -414,6 +472,63 @@ self.onmessage = async (e) => {
     }
   }
 
+  if (type === 'geo-grid') {
+    // Scores of one species on a lat/lon grid (cell centres, row 0 = north) for one week.
+    if (!geo) { self.postMessage({ id: id, type: 'no-area-model' }); return; }
+    try {
+      var li2 = labels.findIndex(function (l) { return l && l.scientific === e.data.species; });
+      var gi2 = li2 >= 0 ? labels[li2].geoIx : -1;
+      if (gi2 < 0) { self.postMessage({ id: id, type: 'geo-grid', values: null }); return; }
+      var LATS = e.data.lats, R = LATS.length, C = e.data.cols, N = R * C;
+      var dLon = (e.data.east - e.data.west) / C;
+      var vals = new Float32Array(N);
+      var B = 1024; // rows per run: the output holds B x all species
+      for (var o = 0; o < N; o += B) {
+        var n2 = Math.min(B, N - o);
+        var xb = new Float32Array(n2 * 3);
+        for (var k2 = 0; k2 < n2; k2++) {
+          var cell = o + k2, rr = Math.floor(cell / C), cc = cell % C;
+          var lon2 = e.data.west + (cc + 0.5) * dLon;
+          lon2 = ((lon2 + 180) % 360 + 360) % 360 - 180;
+          xb[k2 * 3] = LATS[rr]; xb[k2 * 3 + 1] = lon2; xb[k2 * 3 + 2] = e.data.week;
+        }
+        var fb = {};
+        fb[cfg.geoModel.inputName] = new ort.Tensor('float32', xb, [n2, 3]);
+        var ob = (await geo.run(fb))[cfg.geoModel.outputName].data;
+        var nb = ob.length / n2;
+        for (var k3 = 0; k3 < n2; k3++) vals[o + k3] = ob[k3 * nb + gi2];
+      }
+      self.postMessage({ id: id, type: 'geo-grid', values: vals }, [vals.buffer]);
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
+  if (type === 'geo-profile') {
+    // Year profile (weeks 1–48) for a few species at one place. Leaves geoscores alone.
+    if (!geo) { self.postMessage({ id: id, type: 'no-area-model' }); return; }
+    try {
+      var gx = new Float32Array(48 * 3);
+      for (var gw = 0; gw < 48; gw++) { gx[gw * 3] = e.data.latitude; gx[gw * 3 + 1] = e.data.longitude; gx[gw * 3 + 2] = gw + 1; }
+      var gf = {};
+      gf[cfg.geoModel.inputName] = new ort.Tensor('float32', gx, [48, 3]);
+      var gall = (await geo.run(gf))[cfg.geoModel.outputName].data;
+      var gn = gall.length / 48;
+      var profiles = {};
+      (e.data.species || []).forEach(function (sci) {
+        var li = labels.findIndex(function (l) { return l && l.scientific === sci; });
+        var gi = li >= 0 ? labels[li].geoIx : -1;
+        if (gi < 0) return;
+        var arr = new Array(48);
+        for (var w = 0; w < 48; w++) arr[w] = gall[w * gn + gi];
+        profiles[sci] = arr;
+      });
+      self.postMessage({ id: id, type: 'geo-profile', profiles: profiles });
+    } catch (err) {
+      self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
   if (type === 'clear-location') {
     geoscores = null;
     self.postMessage({ id: id, type: 'location-cleared' });
@@ -426,6 +541,7 @@ self.onmessage = async (e) => {
         scientific: labels[j].scientific,
         common:     labels[j].common,
         geoscore:   geoscores ? geoscores[j] : null,
+        hasGeo:     labels[j].geoIx >= 0,
       });
     }
     self.postMessage({ id: id, type: 'species-list', species: specList });
@@ -506,6 +622,7 @@ export class BirdNETInference {
   #nextId = 0;
   #loaded = false;
   #hasAreaModel = false;
+  #geoModelName: string | null = null;
   #sampleRate = TFJS_SR;
   #format: 'onnx' | 'tfjs' | null = null;
   #onLoadProgress: ((...args: any[]) => void) | null = null;
@@ -515,6 +632,8 @@ export class BirdNETInference {
 
   /** Whether the area (geo) model was found and loaded alongside the main model. */
   get hasAreaModel() { return this.#hasAreaModel; }
+  /** Name of the loaded area model (file name without extension), null without one. */
+  get geoModelName() { return this.#geoModelName; }
 
   /** Format of the loaded model: 'onnx' (BirdNET+ V3.0) or 'tfjs' (BirdNET v2.4). */
   get format() { return this.#format; }
@@ -567,6 +686,7 @@ export class BirdNETInference {
     this.#sampleRate = result.sampleRate || TFJS_SR;
     this.#format = result.format || 'tfjs';
     this.#hasAreaModel = result.hasAreaModel === true;
+    this.#geoModelName = result.geoModelName || null;
     return { labelCount: result.labelCount, hasAreaModel: this.#hasAreaModel };
   }
 
@@ -583,7 +703,7 @@ export class BirdNETInference {
    */
   async setLocation(latitude: number, longitude: number, { date }: { date?: string | Date } = {}) {
     if (!this.#loaded) return { ok: false };
-    const dateStr = date instanceof Date ? date.toISOString() : (date ?? null);
+    const dateStr = workerDate(date);
     const result = await this.#send('set-location', { latitude, longitude, date: dateStr });
     if (result.type === 'area-scores-set') return { ok: true, week: result.week };
     return { ok: false };
@@ -599,6 +719,30 @@ export class BirdNETInference {
     if (!this.#loaded) return [];
     const result = await this.#send('get-species-list', {});
     return result.type === 'species-list' ? result.species : [];
+  }
+
+  /**
+   * Geomodel scores for weeks 1–48 (four per month) at one place, per species.
+   * Does not change the location set with setLocation. Species without geo output are left out.
+   * Returns null without an area model.
+   */
+  async getYearProfile(latitude: number, longitude: number, species: string[]): Promise<Record<string, number[]> | null> {
+    if (!this.#loaded || !this.hasAreaModel) return null;
+    const result = await this.#send('geo-profile', { latitude, longitude, species });
+    if (result.type === 'error') throw new Error(result.message);
+    return result.type === 'geo-profile' ? result.profiles : null;
+  }
+
+  /**
+   * Geomodel scores of one species on a grid for one week (1–48): rows at the given latitudes
+   * (north first), cols evenly from west to east (cell centres). Null without area model or
+   * when the species has no geo output.
+   */
+  async getRangeGrid(species: string, grid: { lats: number[]; west: number; east: number; cols: number }, week: number): Promise<Float32Array | null> {
+    if (!this.#loaded || !this.hasAreaModel) return null;
+    const result = await this.#send('geo-grid', { species, week, ...grid });
+    if (result.type === 'error') throw new Error(result.message);
+    return result.type === 'geo-grid' ? result.values : null;
   }
 
   /**
@@ -679,6 +823,8 @@ export class BirdNETInference {
       this.#worker.terminate();
       this.#worker = null;
     }
+    // Settle what is still waiting (callers handle type 'error'), so no request hangs forever.
+    for (const resolve of this.#pending.values()) resolve({ type: 'error', message: 'BirdNET backend was closed' });
     this.#pending.clear();
     this.#loaded = false;
     this.#hasAreaModel = false;
@@ -696,3 +842,18 @@ export class BirdNETInference {
     });
   }
 }
+
+/**
+ * Recording date for the worker (which reads it with new Date()): a "YYYY-MM-DD" calendar date
+ * becomes local midnight as an ISO timestamp, since new Date("YYYY-MM-DD") is UTC midnight and
+ * thus the previous day west of Greenwich.
+ */
+export function workerDate(date: string | Date | null | undefined): string | null {
+  if (date instanceof Date) return date.toISOString();
+  if (!date) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date).trim());
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]).toISOString() : String(date);
+}
+
+/** Worker sources, for tests only. */
+export const __workerSourcesForTests = { tfjs: TFJS_WORKER_SOURCE, onnx: ONNX_WORKER_SOURCE };

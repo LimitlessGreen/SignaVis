@@ -153,6 +153,7 @@ const en = {
   'sp.meta': (v) => `${v.det} detected · ${v.recs} rec.`,
   'sp.best': 'best example',
   'sp.more': (v) => `+ ${v.n} more`,
+  'sp.map': 'Range map over the year',
   'sp.playBest': (v) => `Play best example of ${v.name}`,
 
   'an.title': 'Analyse',
@@ -392,6 +393,7 @@ const de: Partial<Record<MKey, Entry>> = {
   'sp.meta': (v) => `${v.det} erkannt · ${v.recs} Aufn.`,
   'sp.best': 'bester Beleg',
   'sp.more': (v) => `+ ${v.n} weitere`,
+  'sp.map': 'Verbreitungskarte übers Jahr',
   'sp.playBest': (v) => `Besten Beleg von ${v.name} abspielen`,
 
   'an.title': 'Analysieren',

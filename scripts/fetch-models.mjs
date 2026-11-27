@@ -11,6 +11,8 @@
  *                      (Zenodo 15050749; CC BY-NC-SA 4.0)
  *   birdbox-just-bird  scripts/birdbox/fetch-model.mjs
  *   birdnet-v3.0-12k   scripts/fetch-birdnet-12k.mjs
+ *   geo-trunk-v3.0     scripts/fetch-geo-trunk.sh (needs uv): geomodel of birdnet-v3.0 split into
+ *                      trunk + output layer for the range map
  *   anurapam           scripts/fetch-anurapam.sh (needs curl, unzip, uv): classifier head
  *                      run on birdnet-v2.4
  *
@@ -91,12 +93,16 @@ const SCRIPTS = {
   'birdbox-just-bird': ['node', ['scripts/birdbox/fetch-model.mjs']],
   'birdnet-v3.0-12k': ['node', ['scripts/fetch-birdnet-12k.mjs']],
   'anurapam': ['bash', ['scripts/fetch-anurapam.sh']],
+  'geo-trunk-v3.0': ['bash', ['scripts/fetch-geo-trunk.sh']],
 };
 
 export const MODELS = [...Object.keys(FILES), ...Object.keys(ARCHIVES), ...Object.keys(SCRIPTS)];
 
 /** Models another model loads at run time: fetched first (skipped when already complete). */
-export const DEPENDS = { anurapam: ['birdnet-v2.4'] };  // the head runs on the v2.4 model
+export const DEPENDS = {
+  anurapam: ['birdnet-v2.4'],          // the head runs on the v2.4 model
+  'geo-trunk-v3.0': ['birdnet-v3.0'],  // split from its geomodel
+};
 
 /** Requested names with their dependencies in front, each once. */
 export function withDependencies(names) {
@@ -194,6 +200,9 @@ function runScript(name, force) {
   // The AnuraPAM conversion takes minutes and is not cached by its script.
   if (name === 'anurapam' && !force && anurapamComplete()) {
     return console.log(`✓ ${name} (present; --force converts it again)`);
+  }
+  if (name === 'geo-trunk-v3.0' && !force && ['trunk.onnx', 'head.bin', 'head.json'].every((f) => existsSync(join(ROOT, 'models', name, f)))) {
+    return console.log(`✓ ${name} (present; --force splits it again)`);
   }
   console.log(`→ ${name}: ${cmd} ${args.join(' ')}`);
   const forceArg = force && (name === 'birdbox-just-bird' || name === 'birdnet-v3.0-12k') ? ['--force'] : [];

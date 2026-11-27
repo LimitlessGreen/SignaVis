@@ -15,6 +15,7 @@ mod data_cache;
 mod embed_map;
 mod hdbscan;
 mod embeddings;
+mod geo_grid;
 mod guano;
 mod launch;
 mod menu;
@@ -91,6 +92,8 @@ pub fn run() {
             launch::take_launch_requests,
             menu::set_recent_items,
             data_cache::prefetch_model,
+            geo_grid::geo_grid,
+            geo_grid::geo_grid_ep,
             embeddings::embed_model_status,
             embeddings::embed_model_download,
             embeddings::embed_info,
@@ -165,6 +168,7 @@ pub fn run() {
         .manage(launch::LaunchQueue::default())
         .manage(updater::PendingUpdate::default())
         .manage(embeddings::EmbedState::default())
+        .manage(geo_grid::GeoState::default())
         .manage(catalog::CatalogState::default())
         .setup(|app| {
             // Installers register signavis:// ; an AppImage, and a dev build on

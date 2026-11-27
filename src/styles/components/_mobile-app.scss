@@ -416,6 +416,10 @@ html.is-mobile {
   .m-ex-info { font-family: var(--m-mono); font-size: 11px; line-height: 1.4; color: var(--m-muted); min-width: 0; }
   .m-ex-info b { color: var(--m-text); }
   .m-ex-more { font-size: 11.5px; color: var(--m-muted); padding-left: 2px; }
+  .m-sp-map {
+    align-self: flex-start; margin-top: 4px; padding: 8px 12px; border-radius: 999px; min-height: 40px;
+    border: 1px solid var(--m-outline, var(--color-border)); background: transparent; color: inherit; font: inherit; font-size: 13px;
+  }
   /* ── Live ── */
   .m-live .m-appbar { gap: 10px; }
   .m-live-info {
