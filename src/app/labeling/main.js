@@ -5907,6 +5907,7 @@ async function installTopMenus(shell) {
       (lang) => { taxonomyLangSelect.value = lang; taxonomyLangSelect.dispatchEvent(new Event('change')); }),
     'xc-key': () => xcKeyIndicator.click(),
     theme: () => themeToggleBtn.click(),
+    'ai-assistants': () => void toggleAssistants(),
     'reset-layout': async () => {
       if (!await appConfirm('Put every panel of this project back where it started? Labels and saved datasets stay; a filter that is not saved as a dataset is cleared.',
         { title: 'Reset panel layout', okLabel: 'Reset layout' })) return;
@@ -5918,6 +5919,7 @@ async function installTopMenus(shell) {
     language: taxonomyLangSelect.value || state.taxonomyLang || '',
     hasXcKey: xcKeyIndicator.classList.contains('has-key'),
     dark: (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark',
+    ai: assistantBridge ? assistantBridge.enabled : undefined,
   });
   const projectContext = () => {
     const recordBtn = document.getElementById('recordBtn');
@@ -5927,8 +5929,10 @@ async function installTopMenus(shell) {
   settingsBtn.addEventListener('click', () => {
     show(below(settingsBtn), settingsMenu(settingsContext()), (id, at) => settingsActions[id]?.(at));
   });
-  installCommandPalette(shell, settingsBtn, { projectMenu: () => projectMenu(projectContext()), settingsMenu: () => settingsMenu(settingsContext()),
-    projectActions, settingsActions, menuAt: () => below(settingsBtn) });
+  void installCommandPalette(shell, settingsBtn, { projectMenu: () => projectMenu(projectContext()), settingsMenu: () => settingsMenu(settingsContext()),
+    projectActions, settingsActions, menuAt: () => below(settingsBtn) })
+    .then((palette) => installAssistantTools(shell, palette))
+    .catch((e) => console.warn('[assistant] not available:', e));
 }
 
 // ── Lite: Ctrl K search for species, recordings, actions and panels (Annotate v2, mockup B3) ──
@@ -5989,7 +5993,7 @@ async function installCommandPalette(shell, beforeEl, menus) {
     'prev-recording': () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true })),
     shortcuts: () => showShortcuts(),
   };
-  const palette = new CommandPalette({
+  const paletteOpts = {
     species: speciesFound,
     recordings: recordingsFound,
     actions: () => {
@@ -6036,7 +6040,8 @@ async function installCommandPalette(shell, beforeEl, menus) {
       if (kind === 'settings') { menus.settingsActions[arg]?.(menus.menuAt()); return; }
       runs[id]?.();
     },
-  });
+  };
+  const palette = new CommandPalette(paletteOpts);
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'top-search-btn';
@@ -6052,6 +6057,142 @@ async function installCommandPalette(shell, beforeEl, menus) {
     e.stopPropagation();
     openPalette();
   }, true);
+  // The AI assistant tools reach the same actions (list_actions / run_action).
+  return { actions: paletteOpts.actions, run: paletteOpts.run };
+}
+// ── Lite: tools for AI assistants (MCP server in src-tauri-lite/src/mcp.rs; plan in SignaVis-lab) ──
+let assistantBridge = null;
+async function installAssistantTools(shell, palette) {
+  if (!('__TAURI_INTERNALS__' in window)) return;
+  const [{ buildAppTools }, { AssistantBridge }, { newLabelId }] = await Promise.all([
+    import('../lite/assistant-app-tools.ts'), import('../lite/assistant-bridge.ts'), import('../../app/annotation-sets.ts'),
+  ]);
+  const view = () => {
+    if (!recordingManager.getActive() || !(player.duration > 0)) return null;
+    const r = player.getVisibleTimeRange?.() || { start: 0, end: player.duration };
+    return { duration: player.duration, time: Number(player.currentTime) || 0, start: r.start, end: r.end };
+  };
+  const catalogRows = new Map();
+  const undoStep = (summary, change) => {
+    const undo = snapshotLabels();
+    const out = change();
+    syncToPlayer();
+    selectionMeta.textContent = summary;
+    showUndoToast(summary, undo);
+    return out;
+  };
+  const app = {
+    state: () => {
+      const rec = recordingManager.getActive();
+      const v = view();
+      const own = state.labels.filter((l) => !l.origin || l.origin === 'manual').length;
+      const tpl = player.getSpeciesBarSelection?.();
+      return {
+        project: { kind: projectKind, catalog: catalogView?.projectRoot || null, recordings: recordingManager.getAll().length },
+        space: shell.active,
+        recording: rec ? { id: String(rec.id), name: rec.filename || rec.xcId || 'Recording', ...(v ? { duration: +v.duration.toFixed(3), playhead: +v.time.toFixed(3), visible: [+v.start.toFixed(3), +v.end.toFixed(3)] } : {}) } : null,
+        labels: rec ? { own, suggestions: state.labels.length - own } : null,
+        labelTemplate: tpl?.name || tpl?.label || null,
+        language: taxonomyLangSelect.value || state.taxonomyLang || '',
+      };
+    },
+    recordings: async (q, limit) => {
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const active = recordingManager.getActive()?.id;
+      const out = recordingManager.getAll()
+        .filter((r) => words.every((w) => `${r.filename || ''} ${r.path || ''} ${r.xcId || ''}`.toLowerCase().includes(w)))
+        .slice(0, limit)
+        .map((r) => ({ id: `rec:${r.id}`, name: r.filename || r.xcId || 'Recording', where: 'project', ...(r.id === active ? { open: true } : {}) }));
+      const root = catalogView?.projectRoot;
+      if (root && out.length < limit) {
+        const page = await catalogApi.list(root, { pathContains: q.trim() }, 'path', null, limit - out.length).catch(() => null);
+        for (const row of page?.rows || []) {
+          catalogRows.set(row.id, row);
+          out.push({ id: `cat:${row.id}`, name: String(row.path || '').split(/[\\/]/).pop() || `#${row.id}`,
+            where: ['catalog', row.site, row.device].filter(Boolean).join(' · ') });
+        }
+      }
+      return out;
+    },
+    openRecording: async (id) => {
+      const [kind, rest] = [id.slice(0, id.indexOf(':')), id.slice(id.indexOf(':') + 1)];
+      if (kind === 'rec') {
+        const entry = recordingManager.getAll().find((r) => String(r.id) === rest);
+        if (!entry) throw new Error(`No recording ${id} in the project.`);
+        await shell.reveal('editor');
+        await activateRecordingEntry(entry);
+      } else if (kind === 'cat') {
+        const row = catalogRows.get(Number(rest));
+        if (!row) throw new Error(`Unknown catalog id ${id}; search again.`);
+        await libraryOpenRow(row);
+      } else throw new Error(`Unknown recording id ${id}.`);
+      await player.ready;
+    },
+    labels: () => state.labels,
+    addLabels: (list, summary) => undoStep(summary, () => {
+      const made = list.map((l) => {
+        const color = colorForName(l.species);
+        return { id: newLabelId(), start: l.start, end: l.end, label: l.species, ...(l.scientificName ? { scientificName: l.scientificName } : {}),
+          color, origin: 'manual', author: 'AI assistant', ...(l.tags ? { tags: l.tags } : {}),
+          ...(l.freqMin != null ? { freqMin: l.freqMin, freqMax: l.freqMax } : { fullBand: true }) };
+      });
+      for (const m of made) upsertLabel(m);
+      return made.map((m) => m.id);
+    }),
+    updateLabels: (changes, summary) => undoStep(summary, () => {
+      for (const { id, patch } of changes) {
+        const prev = state.labels.find((l) => l.id === id);
+        const next = { ...patch, id };
+        if (patch.label && !patch.color) next.color = colorForName(patch.label);
+        if (patch.freqMin != null || patch.freqMax != null) next.fullBand = false;
+        if (prev) upsertLabel(next);
+      }
+      return changes.length;
+    }),
+    deleteLabels: (ids, summary) => undoStep(summary, () => {
+      for (const id of ids) { snrComputer.invalidate(id); touchOwnSet(state.labels.find((l) => l.id === id)?.setId); }
+      labelStore.remove(new Set(ids));
+      return ids.length;
+    }),
+    view,
+    seek: (t) => player.seekTo?.(t),
+    zoom: (a, b) => player.zoomToTimeRange?.(a, b),
+    species: (q, n) => (player.getLabelEditorSuggestions?.(q, n) || []).map((sp) => ({ name: sp.name, ...(sp.scientificName ? { scientificName: sp.scientificName } : {}) })),
+    actions: () => palette.actions(),
+    runAction: (id) => palette.run(id, palette.actions().find((it) => it.id === id)),
+    canBirdnet: () => !!birdnetPanel?.canAnalyze,
+    runBirdnet: async () => { await shell.reveal('analyse'); return !!await birdnetPanel.analyze(); },
+    spectrogramPng: async (maxWidth) => {
+      const src = player.root?.querySelector('canvas[data-aw="spectrogramCanvas"]');
+      if (!src || !src.width) return null;
+      const scale = Math.min(1, maxWidth / src.width);
+      const c = document.createElement('canvas');
+      c.width = Math.round(src.width * scale);
+      c.height = Math.round(src.height * scale);
+      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+      return c.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
+    },
+  };
+  const reg = buildAppTools(app, {
+    confirm: (msg, title) => appConfirm(msg, { title, okLabel: 'Allow', danger: true }),
+  });
+  reg.onCall = (e) => console.info(`[assistant] ${e.name} ${e.ok ? 'ok' : 'failed'}: ${e.summary}`);
+  assistantBridge = new AssistantBridge(reg, prefsStorage);
+  await assistantBridge.start();
+}
+
+async function toggleAssistants() {
+  if (!assistantBridge) return;
+  const on = !assistantBridge.enabled;
+  try {
+    const st = await assistantBridge.setEnabled(on);
+    if (!on) { selectionMeta.textContent = 'AI assistants switched off'; return; }
+    const cfg = JSON.stringify(st.clientConfig, null, 2);
+    await appAlert(`AI assistants can now use SignaVis Lite while it is open.\n\nAdd this to your MCP client (e.g. claude_desktop_config.json):\n\n${cfg}\n\nOr connect by HTTP: ${st.url} with the token from\n${st.configPath}`,
+      { title: 'AI assistants (MCP)' });
+  } catch (e) {
+    await appAlert(`Could not switch AI assistants ${on ? 'on' : 'off'}: ${e?.message || e}`, { title: 'AI assistants (MCP)' });
+  }
 }
 // ── Lite: editor head (recording, state, place in the view) and label bar (template, tools, Mark done) ──
 let editorHead = null;

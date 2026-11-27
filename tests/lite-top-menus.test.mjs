@@ -36,4 +36,7 @@ test('settingsMenu: shows language, key state and theme', () => {
     assert.equal(m.find((e) => e.id === 'xc-key').hint, 'saved ✓');
     assert.equal(m.find((e) => e.id === 'theme').checked, false);
     assert.equal(settingsMenu({ language: 'en', hasXcKey: false, dark: true }).find((e) => e.id === 'xc-key').hint, 'not set');
+    // AI assistants only where the app can run the MCP server
+    assert.equal(m.find((e) => e.id === 'ai-assistants'), undefined);
+    assert.equal(settingsMenu({ language: 'en', hasXcKey: false, dark: true, ai: true }).find((e) => e.id === 'ai-assistants').checked, true);
 });
