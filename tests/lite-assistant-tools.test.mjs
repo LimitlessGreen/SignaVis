@@ -85,6 +85,7 @@ function fakeApp() {
     recordings: async (q) => [{ id: 'r1', name: q }],
     openRecording: async (id) => calls.push(['open', id]),
     labels: () => labels,
+    labelsReady: () => true,
     addLabels: (list, s) => { calls.push(['add', s]); const ids = list.map((_, i) => `n${i}`); labels = [...labels, ...list.map((l, i) => ({ ...l, label: l.species, id: ids[i] }))]; return ids; },
     updateLabels: (ch, s) => { calls.push(['upd', s, ch]); return ch.length; },
     deleteLabels: (ids, s) => { calls.push(['del', s]); return ids.length; },
@@ -94,7 +95,7 @@ function fakeApp() {
     species: () => [{ name: 'Robin', scientificName: 'Erithacus rubecula' }],
     actions: () => [{ id: 'space:review', group: 'actions', label: 'Go to Review', sub: 'space' }, { id: 'project:new-session', group: 'actions', label: 'New session' }],
     runAction: (id) => calls.push(['action', id]),
-    runBirdnet: async () => true,
+    runBirdnet: async () => ({ ok: true, added: 1 }),
     canBirdnet: () => true,
     spectrogramPng: async (w, withLabels) => { calls.push(['png', w, withLabels]); return 'AA=='; },
   };
@@ -129,7 +130,12 @@ test('app tools: update maps species to label; unknown ids and no recording are 
   const app = fakeApp();
   const r = buildAppTools(app, { confirm: async () => true });
   await r.call('update_labels', { changes: [{ id: 'b', species: 'Dunnock', origin: 'manual' }] });
-  assert.deepEqual(app.calls.at(-1)[2], [{ id: 'b', patch: { origin: 'manual', label: 'Dunnock' } }]);
+  // A new species drops the old scientific name (not in the taxonomy here → none).
+  assert.deepEqual(app.calls.at(-1)[2], [{ id: 'b', patch: { origin: 'manual', label: 'Dunnock', scientificName: undefined } }]);
+  await r.call('update_labels', { changes: [{ id: 'a', species: 'robin' }] });
+  assert.equal(app.calls.at(-1)[2][0].patch.scientificName, 'Erithacus rubecula');
+  await r.call('update_labels', { changes: [{ id: 'a', species: 'Tengmalm\'s Owl', tags: { type: 'song' } }] });
+  assert.deepEqual(app.calls.at(-1)[2][0].patch, { tags: { type: 'song' } });
   assert.match((await r.call('update_labels', { changes: [{ id: 'zz' }] })).content[0].text, /Unknown label ids/);
   app.view = () => null;
   assert.match((await r.call('list_labels')).content[0].text, /No recording is open/);
@@ -156,4 +162,35 @@ test('app tools: delete asks; run_action refuses session-wiping actions; image c
   assert.deepEqual(app.calls.filter((c) => c[0] === 'zoom' || c[0] === 'seek'), [['zoom', 10, 20], ['seek', 12]]);
   assert.equal((await r.call('navigate', { start: 10 })).isError, true);
   assert.ok(r.list().every((t) => t.description.length > 20));
+});
+
+test('app tools: add rejects a label that is empty after clamping to the recording', async () => {
+  const app = fakeApp();
+  const r = buildAppTools(app, { confirm: async () => true });
+  assert.equal((await r.call('add_labels', { labels: [{ start: 60, end: 61, species: 'Robin' }] })).isError, true);
+  assert.equal(app.calls.filter((c) => c[0] === 'add').length, 0);
+});
+
+test('app tools: update checks the merged bounds and clamps the end', async () => {
+  const app = fakeApp();
+  const r = buildAppTools(app, { confirm: async () => true });
+  for (const bad of [{ end: 0.5 }, { start: 3 }, { start: 70, end: 80 }, { freqMin: 1000 }, { freqMax: 400 }]) {
+    const res = await r.call('update_labels', { changes: [{ id: 'a', ...bad }] });
+    assert.equal(res.isError, true, JSON.stringify(bad));
+  }
+  assert.equal(app.calls.filter((c) => c[0] === 'upd').length, 0);
+  await r.call('update_labels', { changes: [{ id: 'a', end: 99 }] });
+  assert.deepEqual(app.calls.at(-1)[2], [{ id: 'a', patch: { end: 60 } }]);
+});
+
+test('app tools: label writes wait until the recording has loaded its labels', async () => {
+  const app = fakeApp();
+  app.labelsReady = () => false;
+  const r = buildAppTools(app, { confirm: async () => true });
+  assert.match((await r.call('add_labels', { labels: [{ start: 1, end: 2, species: 'Robin' }] })).content[0].text, /still loading/);
+  assert.equal((await r.call('update_labels', { changes: [{ id: 'a', species: 'Robin' }] })).isError, true);
+  assert.equal((await r.call('delete_labels', { ids: ['a'] })).isError, true);
+  assert.equal((await r.call('run_birdnet')).isError, true);
+  assert.equal(app.calls.filter((c) => ['add', 'upd', 'del'].includes(c[0])).length, 0);
+  assert.equal((await r.call('list_labels')).isError, undefined);
 });

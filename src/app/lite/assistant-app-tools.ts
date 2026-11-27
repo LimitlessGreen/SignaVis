@@ -22,6 +22,8 @@ export interface AppPort {
     recordings(query: string, limit: number): Promise<{ id: string; name: string; where: string; open?: boolean }[]>;
     openRecording(id: string): Promise<void>;
     labels(): PortLabel[];
+    /** False while a recording is still loading: its saved labels are not in the live list yet. */
+    labelsReady(): boolean;
     /** One undo step; returns the new ids. */
     addLabels(labels: NewLabel[], summary: string): string[];
     /** One undo step; returns how many changed. */
@@ -34,7 +36,8 @@ export interface AppPort {
     species(query: string, limit: number): { name: string; scientificName?: string }[];
     actions(): PaletteItem[];
     runAction(id: string): void;
-    runBirdnet(): Promise<boolean>;
+    /** One undo step for what the run adds. */
+    runBirdnet(): Promise<{ ok: boolean; added: number }>;
     canBirdnet(): boolean;
     /** PNG (base64, no data: prefix) of the visible spectrogram, or null. */
     spectrogramPng(maxWidth: number, withLabels: boolean): Promise<string | null>;
@@ -73,6 +76,28 @@ export function buildAppTools(app: AppPort, ctx: ToolContext): ToolRegistry {
         const v = app.view();
         if (!v) throw new Error('No recording is open. Use search_recordings and open_recording first.');
         return v;
+    };
+    // Label writes only once the open recording's saved labels are loaded, else they would replace them.
+    const needLabels = () => {
+        const v = needView();
+        if (!app.labelsReady()) throw new Error('The recording is still loading. Try again in a moment.');
+        return v;
+    };
+    /** Bounds of a label as given (or merged): same rules for add_labels and update_labels; returns the clamped end. */
+    const checkBounds = (l: { start: number; end: number; freqMin?: number; freqMax?: number }, duration: number, what = '') => {
+        if (!Number.isFinite(l.start) || !Number.isFinite(l.end)) throw new Error(`${what}start and end are required numbers.`);
+        if (l.start < 0) throw new Error(`${what}start must not be negative.`);
+        if (!(l.end > l.start)) throw new Error(`${what}end must be after start (${l.start}..${l.end}).`);
+        const end = Math.min(l.end, duration);
+        if (!(end > l.start)) throw new Error(`${what}start ${l.start} is not before the end of the recording (${r3(duration)} s).`);
+        if ((l.freqMin == null) !== (l.freqMax == null)) throw new Error(`${what}give both freqMin and freqMax, or neither.`);
+        if (l.freqMin != null && !(l.freqMax! > l.freqMin)) throw new Error(`${what}freqMax must be above freqMin.`);
+        return end;
+    };
+    /** Scientific name for a common name from the taxonomy (exact match), else undefined. */
+    const sciFor = (name: string) => {
+        const n = name.trim().toLowerCase();
+        return app.species(name, 10).find((sp) => sp.name.toLowerCase() === n || sp.scientificName?.toLowerCase() === n)?.scientificName;
     };
     const known = (ids: string[]) => {
         const have = new Set(app.labels().map((l) => l.id));
@@ -152,16 +177,11 @@ export function buildAppTools(app: AppPort, ctx: ToolContext): ToolRegistry {
         description: 'Add labels to the open recording (own labels, active set). All in one undo step. Returns the new ids.',
         input: { required: ['labels'], properties: { labels: { type: 'array', items: labelItem } } },
         run: (a) => {
-            const v = needView();
+            const v = needLabels();
             const list = a.labels as NewLabel[];
             if (!list.length) throw new Error('labels is empty.');
-            for (const l of list) {
-                if (!(l.end > l.start)) throw new Error(`end must be after start (${l.start}..${l.end}).`);
-                if (l.start > v.duration) throw new Error(`start ${l.start} is after the end of the recording (${r3(v.duration)} s).`);
-                if ((l.freqMin == null) !== (l.freqMax == null)) throw new Error('Give both freqMin and freqMax, or neither.');
-                if (l.freqMin != null && !(l.freqMax! > l.freqMin)) throw new Error('freqMax must be above freqMin.');
-            }
-            const ids = app.addLabels(list.map((l) => ({ ...l, end: Math.min(l.end, v.duration) })), `AI: added ${plural(list.length, 'label')}`);
+            const ends = list.map((l, i) => checkBounds(l, v.duration, list.length > 1 ? `labels[${i}]: ` : ''));
+            const ids = app.addLabels(list.map((l, i) => ({ ...l, end: ends[i] })), `AI: added ${plural(list.length, 'label')}`);
             return { added: ids.length, ids };
         },
     });
@@ -177,9 +197,24 @@ export function buildAppTools(app: AppPort, ctx: ToolContext): ToolRegistry {
             },
         } } } },
         run: (a) => {
-            needView();
+            const v = needLabels();
             known(a.changes.map((c: { id: string }) => c.id));
-            const changes = a.changes.map(({ id, species, ...rest }: Record<string, any>) => ({ id, patch: { ...rest, ...(species != null ? { label: species } : {}) } }));
+            const byId = new Map(app.labels().map((l) => [l.id, l]));
+            const changes = a.changes.map(({ id, species, ...rest }: Record<string, any>, i: number) => {
+                const prev = byId.get(id)!;
+                const patch: Partial<PortLabel> = { ...rest };
+                if (species != null && species !== prev.label) {
+                    // A new species: its own scientific name, never the old one's.
+                    patch.label = species;
+                    patch.scientificName = rest.scientificName ?? sciFor(species);
+                }
+                if (['start', 'end', 'freqMin', 'freqMax'].some((k) => k in rest)) {
+                    const merged = { ...prev, ...rest };
+                    const end = checkBounds(merged, v.duration, a.changes.length > 1 ? `changes[${i}]: ` : '');
+                    if ('end' in rest || end !== prev.end) patch.end = end;
+                }
+                return { id, patch };
+            });
             const n = app.updateLabels(changes, `AI: changed ${plural(changes.length, 'label')}`);
             return { updated: n };
         },
@@ -190,18 +225,19 @@ export function buildAppTools(app: AppPort, ctx: ToolContext): ToolRegistry {
         description: 'Delete labels of the open recording by id. The person is asked in SignaVis first; undo is possible.',
         input: { required: ['ids'], properties: { ids: { type: 'array', items: { type: 'string' } } } },
         confirmText: (a) => `An AI assistant wants to delete ${plural(a.ids.length, 'label')} of the open recording. Allow?`,
-        run: (a) => { needView(); known(a.ids); return { deleted: app.deleteLabels(a.ids, `AI: deleted ${plural(a.ids.length, 'label')}`) }; },
+        run: (a) => { needLabels(); known(a.ids); return { deleted: app.deleteLabels(a.ids, `AI: deleted ${plural(a.ids.length, 'label')}`) }; },
     });
 
     reg.add({
         name: 'run_birdnet', title: 'Run BirdNET', tier: 'write',
-        description: 'Run BirdNET on the open recording. Detections appear as labels with origin "birdnet"; list them with list_labels.',
+        description: 'Run BirdNET on the open recording (one undo step). Detections appear as labels with origin "birdnet"; list them with list_labels.',
         run: async () => {
-            needView();
+            needLabels();
             if (!app.canBirdnet()) throw new Error('BirdNET cannot run now (model not loaded or a run is going).');
-            if (!await app.runBirdnet()) throw new Error('BirdNET did not finish (see the app).');
+            const run = await app.runBirdnet();
+            if (!run.ok) throw new Error('BirdNET did not finish (see the app).');
             const det = app.labels().filter((l) => l.origin && l.origin !== 'manual');
-            return { detections: det.length };
+            return { added: run.added, detections: det.length };
         },
     });
 

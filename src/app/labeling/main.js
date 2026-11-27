@@ -3994,6 +3994,7 @@ if (isLite()) {
     if (!root || !row?.id) return;
     const entry = await openCatalogRecording(catalogRowPath(root, row.id), () => spaces?.reveal('editor'));
     if (entry) noteOpened(row, entry);
+    return entry || null;
   };
   /** The file of a catalog row, or null (load error shown) when its folder is not on this computer. */
   async function catalogRowPath(root, id) {
@@ -6125,15 +6126,20 @@ async function installAssistantTools(shell, palette) {
         const entry = recordingManager.getAll().find((r) => String(r.id) === rest);
         if (!entry) throw new Error(`No recording ${id} in the project.`);
         await shell.reveal('editor');
-        await activateRecordingEntry(entry);
+        if (!await activateRecordingEntry(entry)) throw new Error(`Could not load the audio of ${id} (see the app).`);
       } else if (kind === 'cat') {
         const row = catalogRows.get(Number(rest));
         if (!row) throw new Error(`Unknown catalog id ${id}; search again.`);
-        await libraryOpenRow(row);
+        if (!await libraryOpenRow(row)) throw new Error(`Could not open ${id}: the file is missing or not readable (see the app).`);
       } else throw new Error(`Unknown recording id ${id}.`);
       await player.ready;
     },
     labels: () => state.labels,
+    // The live labels belong to the open recording only after its saved ones are loaded.
+    labelsReady: () => {
+      const active = recordingManager.getActive()?.id;
+      return active != null && labelStore.entryId != null && String(labelStore.entryId) === String(active);
+    },
     addLabels: (list, summary) => undoStep(summary, () => {
       const made = list.map((l) => {
         const color = colorForName(l.species);
@@ -6149,8 +6155,17 @@ async function installAssistantTools(shell, palette) {
         const prev = state.labels.find((l) => l.id === id);
         const next = { ...patch, id };
         if (patch.label && !patch.color) next.color = colorForName(patch.label);
+        // A new species: the old localized name must not come back (relocalizeAllLabels, exports).
+        if ('label' in patch) next.commonName = undefined;
         if (patch.freqMin != null || patch.freqMax != null) next.fullBand = false;
-        if (prev) upsertLabel(next);
+        if (!prev) continue;
+        upsertLabel(next);
+        // Same as the properties panel: new bounds, new SNR.
+        if (['start', 'end', 'freqMin', 'freqMax'].some((k) => k in patch)) {
+          const ab = player._state?.audioBuffer;
+          const now = state.labels.find((l) => l.id === id);
+          if (ab && now) snrComputer.request(now, ab, ab.sampleRate);
+        }
       }
       return changes.length;
     }),
@@ -6166,7 +6181,31 @@ async function installAssistantTools(shell, palette) {
     actions: () => palette.actions(),
     runAction: (id) => palette.run(id, palette.actions().find((it) => it.id === id)),
     canBirdnet: () => !!birdnetPanel?.canAnalyze,
-    runBirdnet: async () => { await shell.reveal('analyse'); return !!await birdnetPanel.analyze(); },
+    // Undo removes only what the run added: edits the person makes while it runs are kept.
+    runBirdnet: async () => {
+      const recId = recordingManager.activeId;
+      const before = new Set(state.labels.map((l) => l.id));
+      await shell.reveal('analyse');
+      const ok = !!await birdnetPanel.analyze();
+      if (!ok || recordingManager.activeId !== recId) return { ok, added: 0 };
+      const added = state.labels.filter((l) => !before.has(l.id)).map((l) => l.id);
+      if (added.length) {
+        const summary = `AI: BirdNET added ${added.length} detection${added.length === 1 ? '' : 's'}`;
+        selectionMeta.textContent = summary;
+        showUndoToast(summary, () => {
+          const ids = new Set(added);
+          if (recordingManager.activeId === recId) {
+            for (const id of ids) snrComputer.invalidate(id);
+            labelStore.remove(ids);
+            syncToPlayer();
+          } else {
+            const entry = recordingManager.getById(recId);
+            if (entry) recordingManager.update(recId, { annotations: (entry.annotations || []).filter((a) => !ids.has(a.id)) });
+          }
+        });
+      }
+      return { ok, added: added.length };
+    },
     spectrogramPng: async (maxWidth, withLabels) => {
       const src = player.root?.querySelector('canvas[data-aw="spectrogramCanvas"]');
       if (!src || !src.width) return null;
