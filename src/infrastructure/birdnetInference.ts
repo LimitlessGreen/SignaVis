@@ -703,7 +703,7 @@ export class BirdNETInference {
    */
   async setLocation(latitude: number, longitude: number, { date }: { date?: string | Date } = {}) {
     if (!this.#loaded) return { ok: false };
-    const dateStr = date instanceof Date ? date.toISOString() : (date ?? null);
+    const dateStr = workerDate(date);
     const result = await this.#send('set-location', { latitude, longitude, date: dateStr });
     if (result.type === 'area-scores-set') return { ok: true, week: result.week };
     return { ok: false };
@@ -838,6 +838,18 @@ export class BirdNETInference {
       if (this.#worker) (this.#worker as Worker).postMessage({ type, id, ...data }, transferables);
     });
   }
+}
+
+/**
+ * Recording date for the worker (which reads it with new Date()): a "YYYY-MM-DD" calendar date
+ * becomes local midnight as an ISO timestamp, since new Date("YYYY-MM-DD") is UTC midnight and
+ * thus the previous day west of Greenwich.
+ */
+export function workerDate(date: string | Date | null | undefined): string | null {
+  if (date instanceof Date) return date.toISOString();
+  if (!date) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date).trim());
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]).toISOString() : String(date);
 }
 
 /** Worker sources, for tests only. */

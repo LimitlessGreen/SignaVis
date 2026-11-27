@@ -21,3 +21,14 @@ for (const kind of ['tfjs', 'onnx']) {
     assert.equal(wk(new Date(2026, 11, 31)), 48);
   });
 }
+
+test('recording date "YYYY-MM-DD" reaches the worker as that calendar day in every time zone', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const mod = new URL('../src/infrastructure/birdnetInference.ts', import.meta.url).href;
+  // The worker does new Date(date) and reads local month/day.
+  const code = `import('${mod}').then((m) => { const d = new Date(m.workerDate('2026-01-01')); process.stdout.write(d.getMonth() + '-' + d.getDate()); })`;
+  for (const tz of ['America/Los_Angeles', 'Pacific/Auckland', 'UTC']) {
+    const out = execFileSync(process.execPath, ['--experimental-strip-types', '-e', code], { env: { ...process.env, TZ: tz } }).toString();
+    assert.equal(out, '0-1', tz);
+  }
+});
