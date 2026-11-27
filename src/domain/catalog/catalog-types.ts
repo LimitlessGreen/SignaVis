@@ -227,7 +227,8 @@ export interface DeploymentInfo {
 }
 export interface DeriveReport { deployments: number; recordings: number; keptNotes: number }
 export interface TagInfo { id: number; name: string; recordings: number }
-export interface Selection { ids?: number[] | null; filter?: CatalogFilter | null }
+/** Explicit ids, or everything the filter matches minus `exclude`. */
+export interface Selection { ids?: number[] | null; filter?: CatalogFilter | null; exclude?: number[] | null }
 export interface BulkEdit {
     /** Absent = keep, null = clear. */
     siteId?: number | null; deviceId?: number | null;

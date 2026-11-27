@@ -226,3 +226,55 @@ test('view list texts: position and review state', async () => {
     assert.equal(reviewText({}), 'new');
     assert.equal(reviewText({ review: 'done' }), 'done');
 });
+
+test('ctrl-click after select all leaves only that row out, also for unloaded pages', async () => {
+    const { api } = fakeApi(1200);
+    const v = new CatalogView('/p', api);
+    await v.reload();
+    v.selectAllShown();
+    v.select(3, { ctrl: true });
+    assert.equal(v.pickAll, true);
+    assert.equal(v.isPicked(4), false);
+    assert.equal(v.isPicked(5), true);
+    assert.equal(v.pickedCount, 1199);
+    assert.deepEqual(v.selection.exclude, [4]);
+    v.select(3, { ctrl: true });
+    assert.equal(v.isPicked(4), true);
+    assert.equal(v.selection.exclude, undefined);
+});
+
+test('an older openDataset finishing late does not replace a newer "all recordings"', async () => {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const { api } = fakeApi(30, { datasets: [{ id: 7, kind: 'filter', filter: { siteIds: [1] } }] });
+    const slow = { ...api, async datasets() { await gate; return [{ id: 7, kind: 'filter', filter: { siteIds: [1] } }]; } };
+    const v = new CatalogView('/p', slow);
+    const a = v.openDataset(7);
+    const b = v.openDataset(null);
+    release();
+    await Promise.all([a, b]);
+    assert.equal(v.activeDs, null);
+    assert.deepEqual(v.filter, {});
+});
+
+test('a failing first page is the view error, not an empty result', async () => {
+    const { api } = fakeApi(30);
+    const v = new CatalogView('/p', { ...api, async list() { throw new Error('disk gone'); } });
+    await v.reload();
+    assert.match(String(v.error), /disk gone/);
+});
+
+test('a new query does not wait for the page request of the old one', async () => {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const { api } = fakeApi(30);
+    let first = true;
+    const v = new CatalogView('/p', { ...api, async list(...a) { if (first) { first = false; await gate; } return api.list(...a); } });
+    const old = v.reload();
+    await new Promise((r) => setTimeout(r, 0));
+    await v.setFilter({ siteIds: [1] });
+    assert.equal(v.rows.length, 10, 'new rows are there while the old request still hangs');
+    release();
+    await old;
+    assert.ok(v.rows.every((r) => r.id % 3 === 1), 'old rows were dropped');
+});

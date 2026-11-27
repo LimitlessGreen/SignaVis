@@ -490,7 +490,7 @@ export class LibraryView {
 
     /** Picks the selection panel shows (to skip redundant updates). */
     #sideKey = '';
-    get #pickKey(): string { return this.#v.pickAll ? '*' : [...this.#v.picked].join(); }
+    get #pickKey(): string { return this.#v.pickAll ? `*-${[...this.#v.unpicked].join()}` : [...this.#v.picked].join(); }
 
     #updateSide() {
         const f = this.#v.facets;
@@ -758,7 +758,7 @@ export class LibraryView {
         for (let i = first; i < Math.min(last, this.#v.rows.length); i++) {
             const r = this.#v.rows[i];
             const gone = r.status === 'missing';
-            html += `<div class="lib-r${this.#v.picked.has(r.id) || this.#v.pickAll ? ' is-sel' : ''}${i === this.#v.current ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}" title="${esc(r.path)}${gone ? ' — not found at the last import' : ''}">
+            html += `<div class="lib-r${this.#v.isPicked(r.id) ? ' is-sel' : ''}${i === this.#v.current ? ' is-cur' : ''}${gone ? ' is-missing' : ''}" data-i="${i}" title="${esc(r.path)}${gone ? ' — not found at the last import' : ''}">
               <span class="c-path">${esc(r.path ?? '')}</span><span class="c-time">${esc(localTime(r))}</span>
               <span class="c-site">${esc(r.site ?? '')}</span><span class="c-dev">${esc(r.device ?? '')}</span>
               <span class="c-size">${r.size != null ? formatBytes(r.size) : ''}</span><span class="c-lab">${r.labels || ''}</span></div>`;
@@ -941,7 +941,7 @@ export class LibraryView {
             const thumb = this.#thumbs.get(r.id);
             if (thumb === undefined && !gone) wanted.push(r.id);
             const [date, time] = localTime(r).split(' ');
-            const sel = this.#v.picked.has(r.id) || this.#v.pickAll;
+            const sel = this.#v.isPicked(r.id);
             const pills = [
                 this.#tile.show.site && r.site ? `<span class="lib-pill" style="--pill:${valueColor('site', r.site)}">${esc(r.site)}</span>` : '',
                 this.#tile.show.device && r.device ? `<span class="lib-pill" style="--pill:${valueColor('device', r.device)}">${esc(r.device)}</span>` : '',

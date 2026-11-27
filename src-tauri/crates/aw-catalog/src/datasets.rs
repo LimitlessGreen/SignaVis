@@ -285,7 +285,7 @@ pub fn duplicate(cat: &mut Catalog, id: i64, name: &str, freeze: bool) -> Result
         cat.conn.execute("INSERT INTO dataset_member(dataset_id, recording_id, t0, t1)
             SELECT ?1, recording_id, t0, t1 FROM dataset_member WHERE dataset_id = ?2", params![new_id, id])?;
     } else if freeze {
-        add_members_in(cat, new_id, &Selection { ids: None, filter: Some(Filter { dataset_id: Some(id), ..Default::default() }) }, None)?;
+        add_members_in(cat, new_id, &Selection { ids: None, filter: Some(Filter { dataset_id: Some(id), ..Default::default() }), exclude: None }, None)?;
     }
     tx.commit()?;
     Ok(new_id)
@@ -416,7 +416,7 @@ mod tests {
         let mut cat = fixture();
         let d = create(&cat, "static", &named("R")).unwrap();
         let r = ids(&cat, &Filter::default()).unwrap()[0];
-        let sel = Selection { ids: Some(vec![r]), filter: None };
+        let sel = Selection { ids: Some(vec![r]), filter: None, exclude: None };
         add_members(&mut cat, d, &sel, Some((5.0, 8.0))).unwrap();
         add_members(&mut cat, d, &sel, Some((5.000_000_5, 8.000_000_5))).unwrap();
         assert_eq!(remove_range(&cat, d, r, 5.0, 8.0).unwrap(), 1);
@@ -428,7 +428,7 @@ mod tests {
         let mut cat = fixture();
         let d = create(&cat, "static", &named("Training")).unwrap();
         let all = ids(&cat, &Filter::default()).unwrap();
-        let sel = |v: &[i64]| Selection { ids: Some(v.to_vec()), filter: None };
+        let sel = |v: &[i64]| Selection { ids: Some(v.to_vec()), filter: None, exclude: None };
         assert_eq!(add_members(&mut cat, d, &sel(&all[0..3]), None).unwrap(), 3);
         assert_eq!(add_members(&mut cat, d, &sel(&all[0..4]), None).unwrap(), 1, "already there are skipped");
         assert_eq!(add_members(&mut cat, d, &sel(&all[10..11]), Some((5.0, 8.0))).unwrap(), 1);

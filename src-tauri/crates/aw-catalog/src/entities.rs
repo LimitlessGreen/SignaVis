@@ -277,6 +277,8 @@ fn tag_id(tx: &rusqlite::Transaction, name: &str) -> Result<i64> {
 pub struct Selection {
     pub ids: Option<Vec<i64>>,
     pub filter: Option<query::Filter>,
+    /// With `filter`: recordings left out (everything shown, minus a few ctrl-clicked ones).
+    pub exclude: Option<Vec<i64>>,
 }
 
 /// Changes for all selected recordings. `None` = leave as is.
@@ -323,7 +325,12 @@ pub struct BulkReport {
 pub fn selected_ids(cat: &Catalog, sel: &Selection) -> Result<Vec<i64>> {
     if let Some(ids) = &sel.ids { return Ok(ids.clone()); }
     let f = sel.filter.clone().unwrap_or_default();
-    query::ids(cat, &f)
+    let mut ids = query::ids(cat, &f)?;
+    if let Some(ex) = sel.exclude.as_ref().filter(|e| !e.is_empty()) {
+        let ex: std::collections::HashSet<i64> = ex.iter().copied().collect();
+        ids.retain(|id| !ex.contains(id));
+    }
+    Ok(ids)
 }
 
 pub fn bulk_edit(cat: &mut Catalog, sel: &Selection, e: &BulkEdit) -> Result<BulkReport> {
@@ -453,7 +460,7 @@ pub(crate) mod tests {
         let before: i64 = cat.conn.query_row("SELECT device_id FROM recording WHERE id = ?1", [rec], |r| r.get(0)).unwrap();
         let other = *devs.iter().find(|&&d| d != before).unwrap();
         let e = BulkEdit { device_id: Some(Some(other)), position: Some(Some([95.0, 8.0])), ..Default::default() };
-        assert!(bulk_edit(&mut cat, &Selection { ids: Some(vec![rec]), filter: None }, &e).is_err());
+        assert!(bulk_edit(&mut cat, &Selection { ids: Some(vec![rec]), filter: None, exclude: None }, &e).is_err());
         let after: i64 = cat.conn.query_row("SELECT device_id FROM recording WHERE id = ?1", [rec], |r| r.get(0)).unwrap();
         assert_eq!(after, before);
     }
@@ -465,12 +472,12 @@ pub(crate) mod tests {
         let rec = ids_of(&cat, "SELECT id FROM recording WHERE deployment_id IS NOT NULL ORDER BY id LIMIT 1")[0];
         let site: i64 = cat.conn.query_row("SELECT site_id FROM recording WHERE id = ?1", [rec], |r| r.get(0)).unwrap();
         let other = ids_of(&cat, "SELECT id FROM site").into_iter().find(|&s| s != site).unwrap();
-        bulk_edit(&mut cat, &Selection { ids: Some(vec![rec]), filter: None }, &BulkEdit { site_id: Some(Some(other)), ..Default::default() }).unwrap();
+        bulk_edit(&mut cat, &Selection { ids: Some(vec![rec]), filter: None, exclude: None }, &BulkEdit { site_id: Some(Some(other)), ..Default::default() }).unwrap();
         let dep: Option<i64> = cat.conn.query_row("SELECT deployment_id FROM recording WHERE id = ?1", [rec], |r| r.get(0)).unwrap();
         assert_eq!(dep, None);
         // An edit that does not move it keeps the deployment.
         let rec2 = ids_of(&cat, "SELECT id FROM recording WHERE deployment_id IS NOT NULL ORDER BY id LIMIT 1")[0];
-        bulk_edit(&mut cat, &Selection { ids: Some(vec![rec2]), filter: None }, &BulkEdit { add_tags: vec!["x".into()], ..Default::default() }).unwrap();
+        bulk_edit(&mut cat, &Selection { ids: Some(vec![rec2]), filter: None, exclude: None }, &BulkEdit { add_tags: vec!["x".into()], ..Default::default() }).unwrap();
         let dep2: Option<i64> = cat.conn.query_row("SELECT deployment_id FROM recording WHERE id = ?1", [rec2], |r| r.get(0)).unwrap();
         assert!(dep2.is_some());
     }
@@ -576,6 +583,18 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn selection_by_filter_leaves_out_excluded() {
+        let cat = fixture();
+        let s1 = id(&cat, "site", "Site 1");
+        let f = Filter { site_ids: vec![s1], ..Default::default() };
+        let all = selected_ids(&cat, &Selection { filter: Some(f.clone()), ..Default::default() }).unwrap();
+        let ex = vec![all[0], all[2]];
+        let got = selected_ids(&cat, &Selection { filter: Some(f), exclude: Some(ex.clone()), ..Default::default() }).unwrap();
+        assert_eq!(got.len(), all.len() - 2);
+        assert!(!got.iter().any(|i| ex.contains(i)));
+    }
+
+    #[test]
     fn bulk_edit_by_filter() {
         let mut cat = fixture();
         let s1 = id(&cat, "site", "Site 1");
@@ -592,12 +611,12 @@ pub(crate) mod tests {
         let ids: Vec<i64> = crate::query::ids(&cat, &by_tag).unwrap().into_iter().take(3).collect();
         let s2 = id(&cat, "site", "Site 2");
         let e = BulkEdit { site_id: Some(Some(s2)), remove_tags: vec!["checked".into()], meta: vec![("habitat".into(), None)], ..Default::default() };
-        let r = bulk_edit(&mut cat, &Selection { ids: Some(ids.clone()), filter: None }, &e).unwrap();
+        let r = bulk_edit(&mut cat, &Selection { ids: Some(ids.clone()), filter: None, exclude: None }, &e).unwrap();
         assert_eq!((r.site_changed, r.tags_removed, r.meta_set), (3, 3, 3));
         let d = recording_detail(&cat, ids[0]).unwrap();
         assert_eq!((d.site_id, d.tags.len(), d.meta.iter().any(|m| m.0 == "habitat")), (Some(s2), 0, false));
         assert!(bulk_edit(&mut cat, &sel, &BulkEdit { site_id: Some(Some(999)), ..Default::default() }).is_err());
-        let r = bulk_edit(&mut cat, &Selection { ids: Some(vec![ids[0]]), filter: None }, &BulkEdit { position: Some(Some([52.1, 8.2])), ..Default::default() }).unwrap();
+        let r = bulk_edit(&mut cat, &Selection { ids: Some(vec![ids[0]]), filter: None, exclude: None }, &BulkEdit { position: Some(Some([52.1, 8.2])), ..Default::default() }).unwrap();
         assert_eq!(r.positioned, 1);
         let d = recording_detail(&cat, ids[0]).unwrap();
         assert_eq!((d.lat, d.pos_origin.as_deref()), (Some(52.1), Some("manual")));

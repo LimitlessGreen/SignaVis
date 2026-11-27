@@ -63,11 +63,15 @@ export class CatalogView {
     anchor: number | null = null;
     /** Everything the filter shows is picked (bulk edit). */
     pickAll = false;
+    /** With pickAll: recordings ctrl-clicked off again. */
+    unpicked = new Set<number>();
 
     #next: CatalogCursor | null = null;
     /** The page request in flight and the query generation it belongs to. */
     #page: { gen: number; p: Promise<void> } | null = null;
     #gen = 0;
+    /** Latest openDataset call; an older one finishing later must not reopen its dataset. */
+    #navGen = 0;
     /** Dataset counts are reloaded only after changes (a dynamic dataset over a big catalog can take a second). */
     #dsStale = true;
     /** The catalog changed (import, first load): count all recordings again on the next reload. */
@@ -102,15 +106,17 @@ export class CatalogView {
         const a = this.active;
         return a?.kind === 'filter' && !sameFilter(this.filter, a.filter ?? {});
     }
-    get pickedCount(): number { return this.pickAll ? this.total : this.picked.size; }
+    get pickedCount(): number { return this.pickAll ? Math.max(0, this.total - this.unpicked.size) : this.picked.size; }
 
     /** What bulk actions apply to: everything shown, the picked ids, or nothing. A copy, so later filter edits do not widen it. */
     get selection(): Selection {
-        if (this.pickAll) return { filter: structuredClone(this.filter) };
+        if (this.pickAll) return this.unpicked.size
+            ? { filter: structuredClone(this.filter), exclude: [...this.unpicked] }
+            : { filter: structuredClone(this.filter) };
         return this.picked.size ? { ids: [...this.picked] } : {};
     }
 
-    isPicked(id: number | undefined): boolean { return id != null && (this.pickAll || this.picked.has(id)); }
+    isPicked(id: number | undefined): boolean { return id != null && (this.pickAll ? !this.unpicked.has(id) : this.picked.has(id)); }
 
     /** Dataset list changed elsewhere (dialog, large view): counts are fetched on the next reload. */
     datasetsChanged() { this.#dsStale = true; }
@@ -147,9 +153,12 @@ export class CatalogView {
 
     /** Open a dataset (null: all recordings). Re-reads the list first, so a just-created one is found. */
     async openDataset(id: number | null): Promise<void> {
+        const nav = ++this.#navGen;
         if (id == null) return this.setFilter({}, { activeDs: null });
         this.#dsStale = true;
-        this.datasets = await this.#api.datasets(this.projectRoot).catch(() => this.datasets);
+        const datasets = await this.#api.datasets(this.projectRoot).catch(() => this.datasets);
+        if (nav !== this.#navGen) return;   // a later openDataset call wins
+        this.datasets = datasets;
         const d = this.datasets.find((x) => x.id === id);
         if (!d) return this.setFilter(this.filter, { activeDs: null });
         return this.setFilter(d.kind === 'filter' ? structuredClone(d.filter ?? {}) : { datasetId: d.id }, { activeDs: d.id });
@@ -160,7 +169,7 @@ export class CatalogView {
         this.rows = [];
         this.#next = null;
         this.current = -1;
-        if (!opts.keepPicks) { this.picked = new Set(); this.pickAll = false; this.anchor = null; }
+        if (!opts.keepPicks) { this.picked = new Set(); this.pickAll = false; this.unpicked = new Set(); this.anchor = null; }
         this.loading = true;
         this.#emit('loading');
         try { await this.#reload(gen, opts); } finally {
@@ -199,7 +208,11 @@ export class CatalogView {
             return;
         }
         this.#emit('query');
-        await this.loadMore(gen);
+        try { await this.loadMore(gen); } catch (e) {
+            if (gen !== this.#gen) return;
+            this.error = String(e);
+            this.#emit('query');
+        }
     }
 
     /**
@@ -208,11 +221,10 @@ export class CatalogView {
      * the current one, its rows are dropped.
      */
     async loadMore(gen = this.#gen): Promise<void> {
-        while (this.#page) {
-            if (this.#page.gen === gen) return this.#page.p;
-            await this.#page.p.catch(() => {});
-            if (gen !== this.#gen) return;
-        }
+        // A request of this generation in flight: join it. One of an older generation does not
+        // block: this request takes over (its rows are dropped by the generation check, and its
+        // cleanup only clears its own entry).
+        if (this.#page?.gen === gen) return this.#page.p;
         if (gen !== this.#gen || (this.rows.length && !this.#next)) return;
         const entry = { gen, p: Promise.resolve() };
         this.#page = entry;
@@ -254,11 +266,17 @@ export class CatalogView {
         this.current = i;
         if (mods.keepPicks) {
             this.anchor = i;
+        } else if (mods.ctrl && !mods.shift && this.pickAll) {
+            // Everything shown is picked: ctrl toggles this one row off (or on again), the rest stays.
+            const id = this.rows[i]?.id;
+            if (id != null) { if (this.unpicked.has(id)) this.unpicked.delete(id); else this.unpicked.add(id); }
+            this.anchor = i;
         } else {
             const r = pickRows(this.rows.map((x) => x.id), this.picked, this.anchor, i, mods);
             this.picked = r.picked;
             this.anchor = r.anchor;
             this.pickAll = false;
+            this.unpicked = new Set();
         }
         this.#emit('selection');
     }
@@ -274,6 +292,7 @@ export class CatalogView {
     pickIds(ids: Iterable<number>) {
         this.picked = new Set(ids);
         this.pickAll = false;
+        this.unpicked = new Set();
         this.anchor = null;
         this.#emit('selection');
     }
@@ -302,6 +321,6 @@ export class CatalogView {
         if (changed) this.#emit('review');
     }
 
-    selectAllShown() { this.picked = new Set(); this.pickAll = true; this.#emit('selection'); }
-    selectNone() { this.picked = new Set(); this.pickAll = false; this.anchor = null; this.#emit('selection'); }
+    selectAllShown() { this.picked = new Set(); this.pickAll = true; this.unpicked = new Set(); this.#emit('selection'); }
+    selectNone() { this.picked = new Set(); this.pickAll = false; this.unpicked = new Set(); this.anchor = null; this.#emit('selection'); }
 }

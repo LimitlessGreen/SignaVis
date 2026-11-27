@@ -360,7 +360,7 @@ mod tests {
         let tr = save_track(&mut cat, "walk", Some("walk.gpx"), None, &pts).unwrap();
         // One recording has a manual position, one a header position.
         let ids = crate::query::ids(&cat, &Filter::default()).unwrap();
-        set_positions(&mut cat, &Selection { ids: Some(vec![ids[0]]), filter: None }, Some((1.0, 2.0))).unwrap();
+        set_positions(&mut cat, &Selection { ids: Some(vec![ids[0]]), filter: None, exclude: None }, Some((1.0, 2.0))).unwrap();
         cat.conn.execute("INSERT INTO meta(recording_id, key, value, origin) VALUES (?1, 'guano:Loc Position', '48.5 11.25', 'header')", [ids[1]]).unwrap();
         assert_eq!(positions_from_header(&mut cat).unwrap(), 1);
         let r = match_track(&mut cat, tr, &Selection::default(), 3.0 * 3600.0).unwrap();
