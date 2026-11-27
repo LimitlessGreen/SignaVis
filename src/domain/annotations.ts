@@ -2654,6 +2654,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             if (keep) this.player?.setSpeciesBar?.(region.label, { color: region.color, scientificName: region.scientificName, tags: { ...tags } });
             return id;
         };
+        /** Template tags plus the picked ones; a chosen sound type replaces an old `sound_type` key (Raven reads that first). */
+        const pickTags = (base: Record<string, string> | null | undefined, picked: Record<string, string> | undefined) => {
+            const t: Record<string, string> = { ...(base || {}), ...(picked || {}) };
+            if (t.soundType) delete t.sound_type;
+            return t;
+        };
         // How often each name occurs here and its most frequent sound type (row hint "2× · song")
         const counts = new Map<string, { n: number; sounds: Map<string, number> }>();
         for (const l of this._items) {
@@ -2661,7 +2667,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             if (!k) continue;
             const c = counts.get(k) || { n: 0, sounds: new Map() };
             c.n += 1;
-            const st = l.tags?.soundType;
+            const st = l.origin === 'xeno-canto' ? '' : l.tags?.soundType;   // that recording's metadata, not a habit here
             if (st) c.sounds.set(st, (c.sounds.get(st) || 0) + 1);
             counts.set(k, c);
         }
@@ -2679,13 +2685,13 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             soundTypes,
             initialSoundType: initialTags?.soundType || '',
             offerTemplate,
-            onPick: (p) => { ghost.remove(); save(p.name, p.color, p.scientificName, { ...(initialTags || {}), ...p.tags }, p.keepAsTemplate); },
+            onPick: (p) => { ghost.remove(); save(p.name, p.color, p.scientificName, pickTags(initialTags, p.tags), p.keepAsTemplate); },
             onCancel: () => ghost.remove(),
             onMore: (query, sound, pick) => {
                 ghost.remove();
                 // Lite with the label window: keep the box with what was picked, then open M2 on it
                 if (pick && this.player?.onLabelOpen) {
-                    const id = save(pick.name, pick.color, pick.scientificName, { ...(initialTags || {}), ...pick.tags }, false);
+                    const id = save(pick.name, pick.color, pick.scientificName, pickTags(initialTags, pick.tags), false);
                     if (id) this.player.onLabelOpen(id);
                     return;
                 }

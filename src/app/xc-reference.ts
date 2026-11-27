@@ -72,7 +72,9 @@ export function boxAround(c: LatLon, km: number): [number, number, number, numbe
     const dLat = km / 111.2;
     const dLon = km / (111.2 * Math.max(0.05, Math.cos(c.lat * Math.PI / 180)));
     const clamp = (v: number, m: number) => Math.max(-m, Math.min(m, v));
-    return [clamp(c.lat - dLat, 90), clamp(c.lon - dLon, 180), clamp(c.lat + dLat, 90), clamp(c.lon + dLon, 180)];
+    // Across the antimeridian a lat/lon box cannot wrap: take every longitude (refineRefs keeps the exact radius).
+    const wraps = c.lon - dLon < -180 || c.lon + dLon > 180;
+    return [clamp(c.lat - dLat, 90), wraps ? -180 : c.lon - dLon, clamp(c.lat + dLat, 90), wraps ? 180 : c.lon + dLon];
 }
 
 /** XC length tag for "at most `s` seconds" (XC takes seconds, `len:"<60"`). */

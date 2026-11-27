@@ -112,7 +112,7 @@ export class QuickLabelPicker {
         document.body.append(el);
         this.render();
         this.place();
-        this.input.addEventListener('input', () => { this.active = 0; this.render(); });
+        this.input.addEventListener('input', () => { this.active = 0; this.render(); this.place(); });   // taller with more results: keep it on screen
         el.addEventListener('keydown', (e) => this.key(e));
         setTimeout(() => document.addEventListener('pointerdown', this.onDocDown, true), 0);
         this.input.focus();

@@ -115,8 +115,8 @@ export class CommandPalette {
 
     private refresh() {
         const q = this.input.value;
-        // Recordings of an older query are kept until the new ones arrive only while they still match the start.
-        if (!q.trim() || !q.toLowerCase().startsWith(this.recFor.toLowerCase()) || !this.recFor) this.recordings = [];
+        // Recordings of another query are not kept (Enter could open one that does not match what is typed now).
+        if (q !== this.recFor) this.recordings = [];
         this.render();
         if (this.recTimer) clearTimeout(this.recTimer);
         if (!q.trim()) return;

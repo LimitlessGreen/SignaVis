@@ -71,3 +71,10 @@ test('similarity order: ranked first, the rest keep their order', async () => {
     const list = [{ id: 'a' }, { id: 'b', sim: 0.4 }, { id: 'c' }, { id: 'd', sim: 0.9 }];
     assert.deepEqual(bySimilarity(list).map((x) => x.id), ['d', 'b', 'a', 'c']);
 });
+
+test('box across the antimeridian takes every longitude', () => {
+    const [, lo0, , lo1] = boxAround({ lat: 0, lon: 179 }, 500);
+    assert.deepEqual([lo0, lo1], [-180, 180]);
+    const [, a, , b] = boxAround({ lat: 0, lon: 10 }, 500);
+    assert.ok(a > 5 && b < 15);
+});
