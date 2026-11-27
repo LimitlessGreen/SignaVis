@@ -358,8 +358,11 @@ export class SimilarPanel {
     async #classMark(label: Label) {
         const root = this.#opts.getRoot();
         if (!root || !this.#cls) return;
+        // All picks go to the class they were picked for, even if the class changes while this runs.
+        const cls = this.#cls;
         for (const h of this.#picked()) {
-            this.#labels = await this.#call<LabelsFile>('agile_label_set', { root, class: this.#cls, path: h.path, start: h.start, label });
+            const next = await this.#call<LabelsFile>('agile_label_set', { root, class: cls, path: h.path, start: h.start, label });
+            if (cls === this.#cls) this.#labels = next;   // a late answer must not replace the new class's labels
         }
         this.#render();
     }
@@ -424,9 +427,13 @@ export class SimilarPanel {
     async #trainNow() {
         const root = this.#opts.getRoot();
         if (!root || !this.#cls) return;
+        const cls = this.#cls;
         await this.#run('Training…', async () => {
-            this.#train = await this.#call<TrainResult>('agile_train', { root, class: this.#cls });
-            this.#clfInfo = await this.#call<ClassifierInfo>('agile_classifier_info', { root, class: this.#cls });
+            const train = await this.#call<TrainResult>('agile_train', { root, class: cls });
+            const info = await this.#call<ClassifierInfo>('agile_classifier_info', { root, class: cls });
+            if (cls !== this.#cls) return;   // another class was chosen meanwhile
+            this.#train = train;
+            this.#clfInfo = info;
             await this.#fetchRank();
         });
     }
@@ -434,10 +441,13 @@ export class SimilarPanel {
     async #fetchRank() {
         const root = this.#opts.getRoot();
         if (!root || !this.#cls) return;
-        this.#rank = await this.#call<RankResult>('agile_rank', {
-            root, class: this.#cls, mode: this.#rankMode, k: this.#k, threshold: this.#threshold, skipLabeled: true,
+        const cls = this.#cls;
+        const rank = await this.#call<RankResult>('agile_rank', {
+            root, class: cls, mode: this.#rankMode, k: this.#k, threshold: this.#threshold, skipLabeled: true,
         });
-        this.#setHits(this.#rank.hits);
+        if (cls !== this.#cls) return;   // suspects of the old class must not show (and be labelled) under the new one
+        this.#rank = rank;
+        this.#setHits(rank.hits);
         this.#listKind = 'rank';
     }
 
