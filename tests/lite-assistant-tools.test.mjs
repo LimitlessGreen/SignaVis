@@ -194,3 +194,15 @@ test('app tools: label writes wait until the recording has loaded its labels', a
   assert.equal(app.calls.filter((c) => ['add', 'upd', 'del'].includes(c[0])).length, 0);
   assert.equal((await r.call('list_labels')).isError, undefined);
 });
+
+test('app tools: "no questions" mode runs destructive tools without the question; run_action still refuses session resets', async () => {
+  const app = fakeApp();
+  let asked = 0, noAsk = true;
+  const r = buildAppTools(app, { confirm: async () => { asked++; return false; }, askFirst: () => !noAsk });
+  assert.deepEqual((await r.call('delete_labels', { ids: ['a'] })).structuredContent, { deleted: 1 });
+  assert.equal(asked, 0);
+  assert.equal((await r.call('run_action', { id: 'project:new-session' })).isError, true);
+  noAsk = false;   // switched back: asks again (and the person declines here)
+  assert.equal((await r.call('delete_labels', { ids: ['b'] })).isError, true);
+  assert.equal(asked, 1);
+});

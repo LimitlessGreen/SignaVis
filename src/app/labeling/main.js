@@ -5909,6 +5909,7 @@ async function installTopMenus(shell) {
     'xc-key': () => xcKeyIndicator.click(),
     theme: () => themeToggleBtn.click(),
     'ai-assistants': () => void toggleAssistants(),
+    'ai-no-ask': () => setAssistantsNoAsk(!assistantsNoAsk),
     'reset-layout': async () => {
       if (!await appConfirm('Put every panel of this project back where it started? Labels and saved datasets stay; a filter that is not saved as a dataset is cleared.',
         { title: 'Reset panel layout', okLabel: 'Reset layout' })) return;
@@ -5921,6 +5922,7 @@ async function installTopMenus(shell) {
     hasXcKey: xcKeyIndicator.classList.contains('has-key'),
     dark: (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark',
     ai: assistantBridge ? assistantBridge.enabled : undefined,
+    aiNoAsk: assistantsNoAsk,
   });
   const projectContext = () => {
     const recordBtn = document.getElementById('recordBtn');
@@ -6246,18 +6248,32 @@ async function installAssistantTools(shell, palette) {
   };
   const reg = buildAppTools(app, {
     confirm: (msg, title) => appConfirm(msg, { title, okLabel: 'Allow', danger: true }),
+    askFirst: () => !assistantsNoAsk,
   });
   reg.onCall = (e) => console.info(`[assistant] ${e.name} ${e.ok ? 'ok' : 'failed'}: ${e.summary}`);
   assistantBridge = new AssistantBridge(reg, prefsStorage);
   await assistantBridge.start();
 }
 
+// "Don't ask" mode for destructive AI actions: only for this run of the app (never saved), off again
+// with the assistants; the ⚙ button shows a warning dot while it is on. Undo and the "AI: …" toast stay.
+let assistantsNoAsk = false;
+async function setAssistantsNoAsk(on) {
+  if (on && !await appConfirm('AI assistants may then delete labels without asking you first. Each change can still be undone, '
+    + 'and actions that reset the session stay blocked. This lasts until SignaVis restarts.',
+  { title: 'Don\'t ask before AI deletes', okLabel: 'Don\'t ask', danger: true })) return;
+  assistantsNoAsk = on;
+  const btn = document.querySelector('.top-settings-btn');
+  btn?.classList.toggle('ai-no-ask', on);
+  if (btn) btn.title = on ? 'Settings – AI assistants may delete without asking' : 'Settings';
+  selectionMeta.textContent = on ? 'AI assistants: no questions before deleting (until restart)' : 'AI assistants ask again before deleting';
+}
 async function toggleAssistants() {
   if (!assistantBridge) return;
   const on = !assistantBridge.enabled;
   try {
     const st = await assistantBridge.setEnabled(on);
-    if (!on) { selectionMeta.textContent = 'AI assistants switched off'; return; }
+    if (!on) { if (assistantsNoAsk) void setAssistantsNoAsk(false); selectionMeta.textContent = 'AI assistants switched off'; return; }
     const cfg = JSON.stringify(st.clientConfig, null, 2);
     const exe = st.clientConfig?.mcpServers?.signavis?.command || 'signavis-lite';
     const copy = await appConfirm('AI assistants (Claude, Cursor, …) can now use SignaVis Lite while it is open.\n\n'

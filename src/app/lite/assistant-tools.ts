@@ -32,6 +32,8 @@ export interface ToolResult { content: ToolContent[]; isError?: boolean; structu
 export interface ToolContext {
     /** Ask the person (destructive tools); false = declined. */
     confirm: (message: string, title: string) => Promise<boolean>;
+    /** "Don't ask" mode: false = destructive tools run without the question (undo stays). Default: ask. */
+    askFirst?: () => boolean;
 }
 
 export interface ToolDef {
@@ -136,7 +138,7 @@ export class ToolRegistry {
         const errs = checkArgs({ type: 'object', ...(def.input || {}) }, a);
         if (errs.length) return this.done(def, false, text(`Invalid arguments: ${errs.join('; ')}`, true));
         try {
-            if (def.tier === 'destructive') {
+            if (def.tier === 'destructive' && this.ctx.askFirst?.() !== false) {
                 const q = def.confirmText?.(a) || `An AI assistant wants to run "${def.title || def.name}".`;
                 if (!await this.ctx.confirm(q, 'AI assistant')) return this.done(def, false, text('The person declined this action in SignaVis.', true));
             }

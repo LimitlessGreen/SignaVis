@@ -39,4 +39,9 @@ test('settingsMenu: shows language, key state and theme', () => {
     // AI assistants only where the app can run the MCP server
     assert.equal(m.find((e) => e.id === 'ai-assistants'), undefined);
     assert.equal(settingsMenu({ language: 'en', hasXcKey: false, dark: true, ai: true }).find((e) => e.id === 'ai-assistants').checked, true);
+    // "Don't ask" only while the assistants are on
+    assert.equal(m.find((e) => e.id === 'ai-no-ask'), undefined);
+    assert.equal(settingsMenu({ language: 'en', hasXcKey: false, dark: true, ai: false }).find((e) => e.id === 'ai-no-ask'), undefined);
+    assert.equal(settingsMenu({ language: 'en', hasXcKey: false, dark: true, ai: true }).find((e) => e.id === 'ai-no-ask').checked, false);
+    assert.equal(settingsMenu({ language: 'en', hasXcKey: false, dark: true, ai: true, aiNoAsk: true }).find((e) => e.id === 'ai-no-ask').checked, true);
 });
