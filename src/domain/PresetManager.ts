@@ -697,6 +697,7 @@ export class PresetManager {
         this.saveUserPresetsToStorage(presets);
         this.populatePresetDropdown();
         if (d.presetSelect) d.presetSelect.value = `user:${clean}`;
+        this.persistCurrentSettings();   // a restart shows this preset (not "Custom" from the edit before saving)
         this.updatePresetButtons();
         d.presetSaveRow.hidden = true;
         this.#renderPresetManagerList();
