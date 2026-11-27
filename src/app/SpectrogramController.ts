@@ -48,6 +48,7 @@ import {
 } from '../domain/spectrogram.ts';
 
 import { GpuSpectrogramView } from '../domain/spectrogramGpu.ts';
+import { contrastFromTop } from '../domain/dsp/hostSpectrogramSettings.ts';
 import { computeSpectralFeatures, computeRidges, type SpectralFeatures, type Ridge } from '../domain/spectralFeatures.ts';
 import { spectrogramCache } from '../infrastructure/SpectrogramCache.ts';
 import { setOverlayContent } from '../ui/loadingOverlay.ts';
@@ -99,6 +100,8 @@ export class SpectrogramController extends EventTarget {
     _lastView: { t0: number; t1: number; pps: number } | null = null;
     /** Auto gain mode: redo auto contrast once the first drawn view has tiles. */
     _autoContrastPending = false;
+    /** Host-set dynamic range of the automatic dB contrast, down from the loudest level; null: own. */
+    contrastRangeDb: number | null = null;
     /** Floor/ceil sliders in dB (v2) or % (legacy); null until first synced. */
     _gainDbMode: boolean | null = null;
     /** Stage-1 image holds raw dB values (window applied in stage 2). */
@@ -123,7 +126,6 @@ export class SpectrogramController extends EventTarget {
     _sfGeneration: number;
     _sampleRateHz: number;
     _zoomRedrawRafId: number;
-    _freqAxisRafId: number | undefined;
     _lastFreqAxisH: number;
     value: any;
     constructor(d: any) {
@@ -171,7 +173,6 @@ export class SpectrogramController extends EventTarget {
         // Internal redraw debounce rAF id
         this._zoomRedrawRafId = 0;
         // Freq-axis height sync rAF id
-        this._freqAxisRafId = /** @type {number|undefined} */ (undefined);
         this._lastFreqAxisH = 0;
     }
 
@@ -199,6 +200,8 @@ export class SpectrogramController extends EventTarget {
     get activeScale()         { return this._activeScale; }
     get colourScale()         { return this._colourScale; }
     get externalMode()        { return this._externalMode; }
+    /** An injected picture: no values behind it to recolour. */
+    get externalImage()       { return this._externalMode && !(this._data as Float32Array | null)?.length; }
     get externalImageConfig() { return this._externalImageConfig; }
     /** True when there is valid spectrogram data to render. */
     get hasData()             { return this._tileManager ? this._tileManager.hasTiles : (this._data !== null && this._nFrames > 0); }
@@ -1280,9 +1283,16 @@ export class SpectrogramController extends EventTarget {
             const pts = vis && visibleContrastPoints(vis.values, AUTO_CONTRAST.blackMarginDb, AUTO_CONTRAST.whitePercentile, !this._gainDbMode);
             if (pts && vis) {
                 if (this._gainDbMode) {
-                    // Black a little above the visible noise floor, white above its p99.9.
-                    const floor = this._clamp(Math.round(pts.black - vis.noise), DB_CONTRAST.floor.min, DB_CONTRAST.floor.max);
-                    const range = this._clamp(Math.round(pts.white + AUTO_CONTRAST.headroomDb - (vis.noise + floor)), DB_CONTRAST.range.min, DB_CONTRAST.range.max);
+                    // Black a little above the visible noise floor, white above its p99.9;
+                    // with a host-set range, black that far below white.
+                    const white = pts.white + AUTO_CONTRAST.headroomDb;
+                    let floor: number, range: number;
+                    if (this.contrastRangeDb != null) {
+                        ({ floor, range } = contrastFromTop(white, vis.noise, this.contrastRangeDb));
+                    } else {
+                        floor = this._clamp(Math.round(pts.black - vis.noise), DB_CONTRAST.floor.min, DB_CONTRAST.floor.max);
+                        range = this._clamp(Math.round(white - (vis.noise + floor)), DB_CONTRAST.range.min, DB_CONTRAST.range.max);
+                    }
                     if (this._d.floorSlider) this._d.floorSlider.value = String(floor);
                     if (this._d.ceilSlider)  this._d.ceilSlider.value  = String(range);
                 } else {
@@ -1458,7 +1468,6 @@ export class SpectrogramController extends EventTarget {
 
     destroy() {
         if (this._zoomRedrawRafId) { cancelAnimationFrame(this._zoomRedrawRafId); this._zoomRedrawRafId = 0; }
-        if (typeof this._freqAxisRafId === 'number') { cancelAnimationFrame(this._freqAxisRafId); this._freqAxisRafId = undefined; }
         this._sfProcessor.dispose();
         this.colorizer.dispose();
         this._wasmSvc?.then((svc) => svc.dispose(), () => {});
@@ -1553,15 +1562,10 @@ export class SpectrogramController extends EventTarget {
         if (!h || !this._d.freqAxisSpacer) return;
         if (this._lastFreqAxisH === h) return;
         this._lastFreqAxisH = h;
-        if (typeof this._freqAxisRafId === 'number') cancelAnimationFrame(this._freqAxisRafId);
-        this._freqAxisRafId = requestAnimationFrame(() => {
-            this._freqAxisRafId = undefined;
-            const ch = this._d.spectrogramCanvas?.height;
-            if (ch > 0) {
-                this._d.freqAxisSpacer.style.height = `${ch}px`;
-                if (this._d.crosshairCanvas) this._d.crosshairCanvas.style.marginTop = `-${ch}px`;
-            }
-        });
+        // In the same frame as the canvas: a frame later the crosshair layer would
+        // still sit below the canvas and the player would briefly grow by its height.
+        this._d.freqAxisSpacer.style.height = `${h}px`;
+        if (this._d.crosshairCanvas) this._d.crosshairCanvas.style.marginTop = `-${h}px`;
     }
 
     _clamp(v: number, lo: number, hi: number) { return v < lo ? lo : v > hi ? hi : v; }

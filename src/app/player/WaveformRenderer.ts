@@ -21,6 +21,13 @@ import {
     renderFrequencyLabels,
 } from '../../ui/components/waveform/waveform.ts';
 import type { CoordinateSystem } from '../../domain/coordinateSystem.ts';
+import { amplitudeMap, amplitudeTicks, formatBand, DEFAULT_WAVEFORM_DISPLAY, type WaveformDisplay } from '../../domain/waveformScale.ts';
+import type { WaveformBandSource } from '../../ui/components/waveform/waveform.ts';
+import type { ChannelPeaks } from '../../domain/waveformEnvelope.ts';
+
+type BandModule = typeof import('../../domain/bandFilter.ts');
+/** Wait this long after the last band change (frequency zoom drags) before filtering the file. */
+const BAND_DEBOUNCE_MS = 250;
 
 export interface WaveformRendererDeps {
     d: {
@@ -50,6 +57,8 @@ export interface WaveformRendererDeps {
     getOverviewMode?:        () => OverviewMode;
     /** Whole-file spectrogram image `cols` wide; null → the waveform is shown instead. */
     getOverviewImage?:       (cols: number) => Promise<CanvasImageSource | null>;
+    /** Amplitude scale, reference, dB range and RMS body (default: linear, normalized, RMS). */
+    getWaveformDisplay?:     () => WaveformDisplay;
 }
 
 export type OverviewMode = 'waveform' | 'spectrogram';
@@ -70,12 +79,25 @@ export class WaveformRenderer {
     #getViewportWidth: () => number;
     #getOverviewMode: () => OverviewMode;
     #getOverviewImage: (cols: number) => Promise<CanvasImageSource | null>;
+    #getWaveformDisplay: () => WaveformDisplay;
     #overviewToken = 0;
     /** True while the strip shows a spectrogram image (kept on redraws until a new one is ready). */
     #overviewHasImage = false;
     /** What the strip's waveform was drawn for; skips rescanning every sample when nothing changed. */
-    #overviewWaveKey: { samples: Float32Array; w: number; h: number; peak: number } | null = null;
+    #overviewWaveKey: { samples: Float32Array; w: number; h: number; peak: number; display: WaveformDisplay; bandPeaks: ChannelPeaks | null } | null = null;
     #overviewImage: CanvasImageSource | null = null;
+
+    // ── Band-filtered waveform (Settings → Waveform → Band) ──
+    #bandModule: BandModule | null = null;
+    #bandModuleLoading = false;
+    /** Last finished band: shown (marked pending) while a newer one is computed. */
+    #bandReady: { samples: Float32Array; key: string; source: WaveformBandSource } | null = null;
+    /** Band being computed (samples identity + band key); a change of either restarts it. */
+    #bandWanted: { samples: Float32Array; key: string } | null = null;
+    #bandTimer: ReturnType<typeof setTimeout> | null = null;
+    #bandToken = 0;
+    /** Band being computed while nothing (or another band) is ready: shown in the badge with "…". */
+    #bandPendingLabel = '';
 
     constructor(deps: WaveformRendererDeps) {
         this.#d = deps.d;
@@ -93,9 +115,95 @@ export class WaveformRenderer {
         this.#getViewportWidth = deps.getViewportWidth ?? (() => 0);
         this.#getOverviewMode = deps.getOverviewMode ?? (() => 'waveform');
         this.#getOverviewImage = deps.getOverviewImage ?? (async () => null);
+        this.#getWaveformDisplay = deps.getWaveformDisplay ?? (() => DEFAULT_WAVEFORM_DISPLAY);
     }
 
     // ── Public rendering API ─────────────────────────────────────────
+
+    /**
+     * The band source to draw, or null for the raw signal. Starts loading the filter and
+     * computing the band's pyramid when needed; redraws when that is done.
+     */
+    #band(): WaveformBandSource | null {
+        this.#bandPendingLabel = '';
+        const display = this.#getWaveformDisplay();
+        const audioBuffer = this.#getAudioBuffer();
+        if (display.band !== 'visible' || !audioBuffer) { this.#cancelBand(); return null; }
+        const coords = this.#getCoords();
+        const requested = { lo: coords?.freqViewMin ?? 0, hi: coords?.freqViewMax ?? coords?.boundedMaxFreq ?? 0 };
+        const mod = this.#bandModule;
+        if (!mod) {
+            // Raw signal until the filter is loaded, but the badge already names the band.
+            if (requested.lo > 0 || requested.hi > 0) this.#bandPendingLabel = formatBand(requested.lo, requested.hi);
+            if (!this.#bandModuleLoading) {
+                this.#bandModuleLoading = true;
+                import('../../domain/bandFilter.ts').then((m) => {
+                    this.#bandModule = m;
+                    this.#redrawAll();
+                }).catch((err) => console.warn('Waveform band filter failed to load:', err))
+                    .finally(() => { this.#bandModuleLoading = false; });
+            }
+            return null;
+        }
+        const sr = audioBuffer.sampleRate;
+        const band = mod.effectiveBand(requested, sr);
+        if (!band) { this.#cancelBand(); return null; }
+        const samples = selectedSamples(audioBuffer);
+        const key = mod.bandKey(band);
+        // A ready band of other samples (another recording or channel) is useless now: let it go.
+        if (this.#bandReady && this.#bandReady.samples !== samples) this.#bandReady = null;
+        const ready = this.#bandReady;
+        if (ready && ready.key === key) return ready.source;
+        const cached = mod.cachedBandPeaks(samples, band);
+        if (cached) return this.#setBandReady(mod, samples, sr, band, cached).source;
+        const wanted = this.#bandWanted;
+        if (!wanted || wanted.samples !== samples || wanted.key !== key) {
+            this.#bandWanted = { samples, key };
+            const token = ++this.#bandToken;
+            if (this.#bandTimer) clearTimeout(this.#bandTimer);
+            this.#bandTimer = setTimeout(() => {
+                this.#bandTimer = null;
+                mod.bandPeaksAsync(samples, sr, band, { isCancelled: () => token !== this.#bandToken }).then((peaks) => {
+                    if (!peaks || token !== this.#bandToken) return;
+                    this.#bandWanted = null;
+                    this.#setBandReady(mod, samples, sr, band, peaks);
+                    this.#redrawAll();
+                }).catch((err) => console.warn('Waveform band filter failed:', err));
+            }, BAND_DEBOUNCE_MS);
+        }
+        this.#bandPendingLabel = formatBand(band.lo, band.hi);
+        // Meanwhile the previous band of the same samples, marked as pending; else the raw signal.
+        return ready ? { ...ready.source, pending: true, label: this.#bandPendingLabel } : null;
+    }
+
+    /** Band state for tests: what would be drawn now, the band shown as pending, the ready band's samples. */
+    inspectBand(): { source: WaveformBandSource | null; pendingLabel: string; readySamples: Float32Array | null } {
+        const source = this.#band();
+        return { source, pendingLabel: this.#bandPendingLabel, readySamples: this.#bandReady?.samples ?? null };
+    }
+
+    #setBandReady(mod: BandModule, samples: Float32Array, sr: number, band: { lo: number; hi: number }, peaks: ChannelPeaks) {
+        const source: WaveformBandSource = {
+            peaks,
+            peakAbs: mod.peaksAbsMax(peaks),
+            filterRange: (start, end) => mod.filterRange(samples, sr, band, start, end),
+            label: formatBand(band.lo, band.hi),
+        };
+        this.#bandReady = { samples, key: mod.bandKey(band), source };
+        return this.#bandReady;
+    }
+
+    #cancelBand(): void {
+        this.#bandToken++;
+        this.#bandWanted = null;
+        if (this.#bandTimer) { clearTimeout(this.#bandTimer); this.#bandTimer = null; }
+    }
+
+    #redrawAll(): void {
+        this.updateAmplitudeLabels();
+        this.drawMainWaveform();
+        this.drawOverviewWaveform();
+    }
 
     drawMainWaveform(): void {
         if (!this.#getShowWaveform()) return;
@@ -114,6 +222,9 @@ export class WaveformRenderer {
             showTimeline:      this.#getShowWaveformTimeline(),
             scrollLeft:        this.#getScrollLeft(),
             viewportWidth:     this.#getViewportWidth(),
+            display:           this.#getWaveformDisplay(),
+            band:              this.#band(),
+            bandPendingLabel:  this.#bandPendingLabel,
         });
         this.#scheduleUiUpdate();
     }
@@ -137,6 +248,8 @@ export class WaveformRenderer {
             amplitudePeakAbs: this.#getAmplitudePeakAbs(),
             startNorm: r.startNorm,
             endNorm: r.endNorm,
+            display: this.#getWaveformDisplay(),
+            band: this.#band(),
         });
     }
 
@@ -151,9 +264,13 @@ export class WaveformRenderer {
         const drawWaveform = (force = true) => {
             const rect = overviewContainer.getBoundingClientRect();
             // The selected samples identify buffer and channel selection.
-            const key = { samples: selectedSamples(audioBuffer), w: Math.floor(rect.width), h: Math.floor(rect.height), peak: this.#getAmplitudePeakAbs() };
+            const display = this.#getWaveformDisplay();
+            const band = this.#band();
+            const key = { samples: selectedSamples(audioBuffer), w: Math.floor(rect.width), h: Math.floor(rect.height), peak: this.#getAmplitudePeakAbs(), display, bandPeaks: band?.peaks ?? null };
             const k = this.#overviewWaveKey;
-            const same = !this.#overviewHasImage && k && k.samples === key.samples && k.w === key.w && k.h === key.h && k.peak === key.peak;
+            const same = !this.#overviewHasImage && k && k.samples === key.samples && k.w === key.w && k.h === key.h && k.peak === key.peak
+                && k.display.scale === display.scale && k.display.reference === display.reference && k.display.dbRange === display.dbRange
+                && k.bandPeaks === key.bandPeaks;
             this.#overviewHasImage = false;
             this.#overviewImage = null;
             if (same && !force) return;
@@ -163,6 +280,8 @@ export class WaveformRenderer {
                 overviewCanvas,
                 overviewContainer,
                 amplitudePeakAbs: this.#getAmplitudePeakAbs(),
+                display,
+                band,
             });
         };
         if (this.#getOverviewMode() !== 'spectrogram') {
@@ -195,6 +314,9 @@ export class WaveformRenderer {
 
     /** A new file is loading: the old spectrogram image must not stay on screen. */
     resetOverview(): void {
+        // A new file: the ready band (and the samples its filter holds) belongs to the old one.
+        this.#bandReady = null;
+        this.#cancelBand();
         this.#overviewHasImage = false;
         this.#overviewImage = null;
         this.#overviewWaveKey = null;
@@ -223,27 +345,36 @@ export class WaveformRenderer {
         if (!el) return;
         el.innerHTML = '';
 
-        const peak     = Math.max(1e-6, this.#getAmplitudePeakAbs() || 1);
+        const display  = this.#getWaveformDisplay();
         const clampedH = this.#getEffectiveWaveformHeight();
         const timelineH = this.#getShowWaveformTimeline()
             ? clamp(Math.round(clampedH * 0.22), 18, 32)
             : 0;
         const ampH = Math.max(32, clampedH - timelineH);
+        const band = this.#band();
+        const ticks = amplitudeTicks(amplitudeMap(display, band ? band.peakAbs : this.#getAmplitudePeakAbs()), ampH);
+        el.parentElement?.setAttribute('title', (display.scale === 'db'
+            ? `Amplitude in dBFS (${display.reference === 'full' ? 'full scale' : 'fit to peak'}, ${display.dbRange} dB from edge to centre)`
+            : `Sample value (${display.reference === 'full' ? 'full scale ±1' : 'fit to peak'})`)
+            + (band ? `, filtered to ${band.label}` : ''));
+        el.classList?.toggle('amplitude-labels--db', display.scale === 'db');
 
-        const fmt = (v: number) => {
-            const a = Math.abs(v);
-            return a >= 1 ? v.toFixed(1) : a >= 0.01 ? v.toFixed(2) : v.toFixed(3);
-        };
-
-        const values = [peak, peak / 2, 0, -peak / 2, -peak];
-        values.forEach((value, i) => {
-            const frac = i / (values.length - 1);
+        // Centred on the tick, kept inside the view (edge labels would stick out).
+        const LABEL_H = 9;
+        for (const t of ticks) {
+            const y = t.frac * ampH;
+            const top = clamp(y - LABEL_H / 2, 1, ampH - LABEL_H - 1);
             const span = document.createElement('span');
-            span.textContent = value === 0 ? '0' : `${value > 0 ? '+' : '\u2212'}${fmt(Math.abs(value))}`;
-            span.style.top = `${frac * ampH}px`;
-            span.style.transform = `translateY(${-frac * 100}%)`;
-            span.style.setProperty?.('--tick-pos', `${frac * 100}%`);
+            span.textContent = t.text;
+            span.style.top = `${top}px`;
+            span.style.setProperty?.('--tick-pos', `${y - top}px`);
             el.appendChild(span);
-        });
+        }
+        if (display.scale === 'db') {
+            const unit = document.createElement('span');
+            unit.className = 'amplitude-unit';
+            unit.textContent = 'dB';
+            el.appendChild(unit);
+        }
     }
 }

@@ -7,7 +7,7 @@
 
 import type { CatalogFilter, DayCount } from './catalog-types.ts';
 import { filterDays, hourIn } from './histogram.ts';
-import { crossing, dayOfYear, daysInYear, SUN_ALT } from '../sun.ts';
+import { crossing, dayOfYear, daysInYear, SUN_ALT } from '../../../packages/sun-charts/src/sun.ts';
 
 export interface CalCell { i: number; hour: number }
 

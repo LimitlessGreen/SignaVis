@@ -21,8 +21,9 @@ import { speciesImageUrl } from '../../infrastructure/tauri/runtime.ts';
 import { normalizeSearch, matchTier, MATCH } from '../components/taxonomy-ui/species-ranking.ts';
 import { TAG_PRESETS } from './label-table.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
+import { buildSetBar, buildSetControls, openSetMenu, setKeyAction, startInlineRename, type SetDesc, type SetHandlers } from './set-actions.ts';
+import { setDisplayName } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID } from '../../app/label-sources.ts';
-import { appConfirm } from '../components/modal/dialogs.ts';
 import { ANNOTA_FIELD_KEYS } from '../../domain/labelFields.ts';
 import { formatMinSecTenths } from '../../shared/utils.ts';
 import { prefs } from '../../infrastructure/storage/prefs.ts';
@@ -115,7 +116,6 @@ export class LabelList {
     _accordion: any;
     _badgeEl: any;
     _bulkToolbar: any;
-    _canDeleteSet: any;
     /** Layer callbacks of the own source (see LayerOptions). */
     _layers: LayerOptions | null;
     _cardMap: any;
@@ -137,7 +137,14 @@ export class LabelList {
     _onAssignSpecies: any;
     _onConvertSetToManual: any;
     _onCreateSet: any;
-    _onDeleteSet: any;
+    _onRemoveSet: ((id: string, where: 'recording' | 'all') => void) | null;
+    _onSoloSet: ((id: string) => void) | null;
+    _isSetSolo: ((id: string) => boolean) | null;
+    _setRecordingCount: ((id: string) => number) | null;
+    /** Labels of a set "Copy to mine" would still copy (recording on screen). */
+    _countPending: ((id: string) => number) | null;
+    /** Set whose action bar is open (click on its header). */
+    _selectedSetKey: string | null = null;
     _onEdit: any;
     _onFocus: any;
     _onHover: any;
@@ -186,14 +193,16 @@ export class LabelList {
    * @param {() => Map<string,object>}  [opts.getSets]           Returns state.labelSets
    * @param {(partial: object) => void} [opts.onCreateSet]
    * @param {(id: string, name: string) => void} [opts.onRenameSet]
-   * @param {(id: string) => void}      [opts.onDeleteSet]
+   * @param {(id: string, where: 'recording'|'all') => void} [opts.onRemoveSet]  remove a set's labels (host offers Undo)
+   * @param {(id: string) => void}      [opts.onSoloSet]     show only this set / show all again
+   * @param {(id: string) => number}    [opts.setRecordingCount] recordings with labels of the set
+   * @param {(id: string) => number}    [opts.countPending]  labels "Copy to mine" would still copy
    * @param {(labelId: string, setId: string|null) => void} [opts.onAssignSet]
    * @param {(setId: string) => void}   [opts.onConvertSetToManual]
    * @param {(setId: string) => void}   [opts.onAdoptSet]   copy an imported set's labels into the own set
    * @param {{get(): boolean, set(on: boolean): void, hiddenIn?(setId: string): number}} [opts.adoptedToggle] show detections already converted into my labels
    * @param {(labelId: string) => void} [opts.onAdoptLabel] copy one imported label into the own set
    * @param {(lbl: any) => void}        [opts.onPlaySegment] play start–end of a label (toggle)
-   * @param {(setId: string) => boolean} [opts.canDeleteSet]
    */
   constructor(opts: any) {
     this._container = opts.container;
@@ -216,7 +225,11 @@ export class LabelList {
     this._getSets = opts.getSets || null;
     this._onCreateSet = opts.onCreateSet || null;
     this._onRenameSet = opts.onRenameSet || null;
-    this._onDeleteSet = opts.onDeleteSet || null;
+    this._onRemoveSet = opts.onRemoveSet || null;
+    this._onSoloSet = opts.onSoloSet || null;
+    this._isSetSolo = opts.isSetSolo || null;
+    this._setRecordingCount = opts.setRecordingCount || null;
+    this._countPending = opts.countPending || null;
     this._onAssignSet = opts.onAssignSet || null;
     this._onAssignSpecies = opts.onAssignSpecies || null;
     this._onConvertSetToManual = opts.onConvertSetToManual || null;
@@ -227,7 +240,6 @@ export class LabelList {
     this._onPlaySegment = opts.onPlaySegment || null;
     /** Enter opens the editor (`onEdit`) instead of playing. */
     this._enterEdits = opts.enterEdits === true;
-    this._canDeleteSet = opts.canDeleteSet || null;
     this._layers = opts.layers || null;
     this._speciesSearchFactory = opts.speciesSearchFactory || null;
     this._onOpenRefCalls = opts.onOpenRefCalls || null;
@@ -530,48 +542,85 @@ export class LabelList {
     const isOwn = setKey === OWN_SOURCE_ID;
     badge.title = isOwn ? 'Your own labels' : origin === 'manual' ? 'Own set' : origin;
     hdr.appendChild(badge);
-    const name = el('span', 'lt-src-name', isOwn ? 'My labels' : (setInfo?.name || (setKey ? 'Annotation set' : 'Labels without set')));
-    name.title = isOwn ? 'Your own labels — the XC set is built from them in the Upload tab' : (setInfo?.name || '');
-    if (this._onRenameSet && setKey && !locked && !isOwn) {
-      name.title = `${setInfo?.name || ''} — double-click to rename`;
-      name.addEventListener('dblclick', (e: MouseEvent) => { e.stopPropagation(); this._startSetRename(name, setKey, setInfo); });
-    }
+    const shownName = setDisplayName(setInfo, isOwn ? 'My labels' : (setKey ? 'Annotation set' : 'Labels without set'));
+    const name = el('span', 'lt-src-name', shownName);
+    name.title = isOwn ? `${shownName} — your own labels; the XC set is built from them in the Upload tab` : shownName;
     hdr.appendChild(name);
-
-    const hover = el('span', 'lt-hover-acts');
-    if (this._onAdoptSet && setKey && external && g.total > 0) {
-      hover.appendChild(iconBtn('lt-adopt', ICON.adopt, 'Copy all labels into my labels', () => this._onAdoptSet(setKey)));
-    }
-    if (setKey) hover.appendChild(iconBtn('lt-more', ICON.more, 'More…', (e) => this._openSetMenu(e, setKey, setInfo, locked, external, g.total, name)));
-    hdr.appendChild(hover);
 
     const n = labels.length, k = bySpecies.size;
     const meta = el('span', 'lt-src-meta', n ? `${n} · ${k} ${k === 1 ? 'species' : 'species'}` : '0');
     meta.title = `${n} label${n === 1 ? '' : 's'}, ${k} species`;
     hdr.appendChild(meta);
 
-    if (this._onToggleSetVisibility && setKey) {
-      const eye = iconBtn(`lt-eye${hidden ? ' lt-eye--off' : ''}`, hidden ? ICON.eyeOff : ICON.eye,
-        hidden ? 'Show set on spectrogram' : 'Hide set on spectrogram',
-        () => this._onToggleSetVisibility(setKey, !hidden));
-      hdr.appendChild(eye);
+    let desc: SetDesc | null = null, h: SetHandlers = {};
+    if (setKey) {
+      const kind = isOwn ? 'own' : external ? 'imported' : 'manual';
+      const pending = external && this._onAdoptSet ? (this._countPending ? this._countPending(setKey) : g.total) : 0;
+      desc = {
+        id: setKey, name: shownName, kind, hidden, locked,
+        lockable: kind !== 'own' && setInfo?.origin !== 'xeno-canto',
+        solo: !!this._isSetSolo?.(setKey),
+        uri: setInfo?.uri || '', sourceName: origin === 'xeno-canto' ? 'xeno-canto' : origin,
+        pending, total: g.total,
+        recordings: this._setRecordingCount ? this._setRecordingCount(setKey) : 1,
+        scope: 'recording',
+        showAdopted: this._adoptedToggle ? this._adoptedToggle.get() : null,
+      };
+      const layers = isOwn ? this._layerInfo() : null;
+      h = {
+        rename: this._onRenameSet ? () => startInlineRename(name, shownName, (val) => this._onRenameSet(setKey, val)) : undefined,
+        toggleHidden: this._onToggleSetVisibility ? () => this._onToggleSetVisibility(setKey, !hidden) : undefined,
+        solo: this._onSoloSet ? () => this._onSoloSet!(setKey) : undefined,
+        adopt: this._onAdoptSet && external && g.total > 0 ? () => this._onAdoptSet(setKey) : undefined,
+        toggleAdopted: this._adoptedToggle && external ? () => { const on = this._adoptedToggle!.get(); this._adoptedToggle!.set(!on); } : undefined,
+        toggleLock: this._onToggleLockSet ? () => this._onToggleLockSet(setKey, !locked) : undefined,
+        openSource: setInfo?.uri ? () => window.open(setInfo.uri, '_blank', 'noopener') : undefined,
+        remove: this._onRemoveSet ? (where) => this._onRemoveSet!(setKey, where) : undefined,
+        addLayer: layers ? () => this._layers!.onAdd() : undefined,
+        extraItems: layers ? () => { const items: any[] = []; this._ownMenuItems(items); return items; } : undefined,
+      };
+      hdr.appendChild(buildSetControls(desc, h));
+      name.addEventListener('dblclick', (e: MouseEvent) => { e.stopPropagation(); h.rename?.(); });
     }
 
-    const toggle = () => {
-      const nowOpen = !section.classList.contains('lt-open');
+    const setOpen = (nowOpen: boolean) => {
       section.classList.toggle('lt-open', nowOpen);
       hdr.setAttribute('aria-expanded', String(nowOpen));
       if (nowOpen) this._collapsedSets.delete(setKey); else this._collapsedSets.add(setKey);
     };
-    hdr.addEventListener('click', toggle);
+    const toggle = () => setOpen(!section.classList.contains('lt-open'));
+    const showBar = (on: boolean) => {
+      section.querySelector(':scope > .set-bar')?.remove();
+      section.classList.toggle('lt-src--selected', on);
+      if (on && desc) { const bar = buildSetBar(desc, h); if (bar) hdr.after(bar); }
+    };
+    const select = () => {
+      if (!setKey) { toggle(); return; }
+      const on = this._selectedSetKey !== setKey;
+      this._container.querySelectorAll('.lt-src--selected').forEach((sec: HTMLElement) => {
+        sec.classList.remove('lt-src--selected');
+        sec.querySelector(':scope > .set-bar')?.remove();
+      });
+      this._selectedSetKey = on ? setKey : null;
+      showBar(on);
+      if (on) setOpen(true);
+    };
+    chev.addEventListener('click', (e: MouseEvent) => { e.stopPropagation(); toggle(); });
+    hdr.addEventListener('click', select);
     hdr.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.target !== hdr) return;
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(); return; }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); setOpen(false); return; }
+      if (e.key === 'ArrowRight') { e.preventDefault(); setOpen(true); return; }
+      if (!desc) return;
+      if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); openSetMenu(e, desc, h); return; }
+      const act = setKeyAction(desc, h, e);
+      if (act) { e.preventDefault(); act(); }
     });
     hdr.addEventListener('contextmenu', (e: MouseEvent) => {
-      if (!setKey) return;
+      if (!desc) return;
       e.preventDefault();
-      this._openSetMenu(e, setKey, setInfo, locked, external, g.total, name);
+      openSetMenu(e, desc, h);
     });
 
     // Drop a label on the header → move it into this set
@@ -588,6 +637,7 @@ export class LabelList {
       });
     }
     section.appendChild(hdr);
+    if (setKey && this._selectedSetKey === setKey) showBar(true);
     if (isOwn) { const bar = this._buildLayerBar(); if (bar) section.appendChild(bar); }
 
     // ── Info line (imported sets): creator · license · link ──
@@ -631,8 +681,7 @@ export class LabelList {
 
   _ownMenuItems(items: any[]) {
     const info = this._layerInfo();
-    if (!info) { items.push({ label: 'No actions', disabled: true }); return; }
-    items.push({ label: 'New layer…', action: () => this._layers!.onAdd() });
+    if (!info) return;
     for (const ly of info.layers) {
       if (ly.id === DEFAULT_LAYER_ID && info.layers.length === 1) continue;
       items.push({ label: `Rename layer “${ly.name}”…`, action: () => this._layers!.onRename(ly.id) });
@@ -678,69 +727,6 @@ export class LabelList {
     add.addEventListener('click', (e: MouseEvent) => { e.stopPropagation(); this._layers!.onAdd(); });
     bar.appendChild(add);
     return bar;
-  }
-
-  _openSetMenu(e: MouseEvent, setKey: string, setInfo: any, locked: boolean, external: boolean, total: number, nameEl: any) {
-    const items: any[] = [];
-    if (setKey === OWN_SOURCE_ID) {
-      this._ownMenuItems(items);
-      const t0 = (e.currentTarget || e.target) as HTMLElement;
-      const r0 = e.type === 'contextmenu' ? null : t0?.getBoundingClientRect?.();
-      showContextMenu({ x: r0 ? r0.left : e.clientX, y: r0 ? r0.bottom + 2 : e.clientY, items });
-      return;
-    }
-    if (this._onRenameSet && !locked) items.push({ label: 'Rename set', action: () => this._startSetRename(nameEl, setKey, setInfo) });
-    if (this._onAdoptSet && external && total > 0) items.push({ label: 'Copy all labels into my labels', action: () => this._onAdoptSet(setKey) });
-    if (this._adoptedToggle && external) {
-      const on = this._adoptedToggle.get();
-      items.push({ label: on ? 'Hide labels already in my labels' : 'Show labels already in my labels', action: () => this._adoptedToggle!.set(!on) });
-    }
-    if (this._onConvertSetToManual && setInfo?.origin === 'xeno-canto') items.push({ label: 'Convert to manual set', action: () => this._onConvertSetToManual(setKey) });
-    if (this._onToggleLockSet && setInfo?.origin !== 'xeno-canto') {
-      items.push({ label: locked ? 'Unlock set (allow editing)' : 'Lock set (prevent editing)', action: () => this._onToggleLockSet(setKey, !locked) });
-    }
-    if (setInfo?.uri) items.push({ label: 'Open source page ↗', action: () => window.open(setInfo.uri, '_blank', 'noopener') });
-    const deletable = this._onDeleteSet && (this._canDeleteSet ? this._canDeleteSet(setKey) : true);
-    if (deletable) {
-      if (items.length) items.push({ separator: true });
-      items.push({
-        label: 'Delete set…', danger: true,
-        action: async () => {
-          const msg = total > 0
-            ? `Delete set "${setInfo?.name || setKey}" and its ${total} label${total === 1 ? '' : 's'}? This cannot be undone.`
-            : `Delete set "${setInfo?.name || setKey}"?`;
-          if (await appConfirm(msg, { title: 'Delete set', okLabel: 'Delete', danger: true })) this._onDeleteSet(setKey);
-        },
-      });
-    }
-    if (!items.length) items.push({ label: 'No actions', disabled: true });
-    const t = (e.currentTarget || e.target) as HTMLElement;
-    const r = e.type === 'contextmenu' ? null : t?.getBoundingClientRect?.();
-    showContextMenu({ x: r ? r.left : e.clientX, y: r ? r.bottom + 2 : e.clientY, items });
-  }
-
-  _startSetRename(nameEl: any, setKey: string, setInfo: any) {
-    if (!this._onRenameSet || nameEl.querySelector('input')) return;
-    const oldName = setInfo?.name || '';
-    const inp = el('input', 'inline-name-input');
-    inp.value = oldName;
-    nameEl.textContent = '';
-    nameEl.appendChild(inp);
-    inp.focus(); inp.select();
-    let done = false;
-    const commit = (save: boolean) => {
-      if (done) return; done = true;
-      const val = inp.value.trim();
-      if (save && val && val !== oldName) this._onRenameSet(setKey, val);
-      nameEl.textContent = (save && val) || oldName;
-    };
-    inp.addEventListener('blur', () => commit(true));
-    inp.addEventListener('keydown', (ev: KeyboardEvent) => {
-      ev.stopPropagation();
-      if (ev.key === 'Enter') { ev.preventDefault(); commit(true); }
-      if (ev.key === 'Escape') { ev.preventDefault(); commit(false); }
-    });
-    inp.addEventListener('click', (ev: MouseEvent) => ev.stopPropagation());
   }
 
   // ── Species group ─────────────────────────────────────────────────

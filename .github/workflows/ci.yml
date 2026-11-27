@@ -379,6 +379,7 @@ jobs:
           path: |
             src-tauri-lite/target/release/bundle/appimage/*.AppImage
             src-tauri-lite/target/release/bundle/deb/*.deb
+            src-tauri-lite/target/release/bundle/deb/*.deb.sig
             src-tauri-lite/target/release/bundle/appimage/*.AppImage.sig
             src-tauri-lite/target/release/bundle/dmg/*.dmg
             src-tauri-lite/target/release/bundle/macos/*.app.tar.gz

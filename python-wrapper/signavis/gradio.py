@@ -20,8 +20,9 @@ The component's value is a plain dict (see :func:`player_value`):
 ``detections``   list of ``{start, end, label, confidence?, freqMin?, freqMax?,
                  scientificName?, commonName?, color?, id?}``
 ``showConfidence`` show the confidence next to the detection names
-``select``       ``{start, end, play, id?}`` — plays the span, or without ``play``
-                 selects the detection ``id`` and scrolls it into view;
+``spectrogram``  spectrogram settings the app fixes (see :func:`player_value`)
+``select``       ``{start, end, play, id?}`` — selects the detection ``id`` and
+                 scrolls it into view, and with ``play`` plays the span;
                  a new dict each time re-triggers it
 """
 
@@ -72,11 +73,13 @@ def player_value(
     select_id: Optional[str] = None,
     show_confidence: Optional[bool] = None,
     view_mode: Optional[str] = None,
+    spectrogram: Optional[Mapping[str, Any]] = None,
+    auto_freq_view: Optional[bool] = None,
 ) -> dict:
     """Build a value for :class:`SignaVisPlayer`.
 
-    ``select`` is ``(start_s, end_s)``; with ``play`` the span is played,
-    otherwise the detection ``select_id`` is selected and scrolled into view.
+    ``select`` is ``(start_s, end_s)``; the detection ``select_id`` is selected
+    and scrolled into view, and with ``play`` the span is played as well.
     Without ``detections`` the player keeps the labels it shows, so a value
     that only selects a detection need not resend all of them.
     ``show_confidence`` switches the confidence next to the detection names on
@@ -84,12 +87,27 @@ def player_value(
     ``view_mode`` shows ``"both"`` analysis views, or only the ``"waveform"``
     or the ``"spectrogram"``; a hidden spectrogram is not computed, which
     saves time and memory for long recordings. ``None`` keeps the current view.
+    ``spectrogram`` sets the spectrogram settings the app fixes, e.g. from its
+    own settings page: ``colorScheme`` (``'viridis'``, ``'magma'``, ``'plasma'``,
+    ``'inferno'``, ``'jet'``, ``'grayscale'``, …), ``windowSize`` (256 … 8192),
+    ``overlapLevel`` (0 none, 1 25 %, 2 50 %, 3 75 %, 4 87.5 %, 5 93.75 %),
+    ``oversamplingLevel`` (0 … 3), ``scale`` (``'linear'``, ``'mel'``,
+    ``'cqt'`` = logarithmic) and ``contrastRangeDb`` (dynamic range down from
+    the loudest level, 20 … 120). They replace the previous ones and apply
+    before the file loads; ``None`` keeps them.
+    ``auto_freq_view`` zooms the frequency view to where the recording has
+    content (the default) or, with ``False``, shows the full range; ``None``
+    keeps the player's setting.
     """
     if view_mode not in (None, "both", "waveform", "spectrogram"):
         raise ValueError(f"view_mode must be 'both', 'waveform' or 'spectrogram', not {view_mode!r}")
     value: dict = {"src": src}
     if view_mode is not None:
         value["viewMode"] = view_mode
+    if spectrogram is not None:
+        value["spectrogram"] = dict(spectrogram)
+    if auto_freq_view is not None:
+        value["autoFreqView"] = bool(auto_freq_view)
     if show_confidence is not None:
         value["showConfidence"] = bool(show_confidence)
     if detections is not None:
@@ -132,7 +150,7 @@ if (!window.__signavisTheme) {
   observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 }
-const state = { player: null, src: null, labels: null, select: null, chain: Promise.resolve() };
+const state = { player: null, src: null, labels: null, select: null, spectrogram: null, chain: Promise.resolve() };
 
 async function ensurePlayer() {
   if (state.player) return state.player;
@@ -145,6 +163,10 @@ async function ensurePlayer() {
   state.player = new mod.BirdNETPlayer(host, opts);
   await state.player.ready;
   state.player.on('ready', () => trigger('load'));
+  // The page can follow the playhead (e.g. mark the table rows it is in).
+  state.player.on('timeupdate', (e) => element.dispatchEvent(new CustomEvent('signavis-timeupdate', {
+    bubbles: true, detail: { currentTime: Number(e.detail?.currentTime ?? state.player.currentTime) || 0 },
+  })));
   return state.player;
 }
 
@@ -175,6 +197,19 @@ async function sync() {
   const player = await ensurePlayer();
   // Before loading, so a hidden spectrogram is never computed.
   if (v.viewMode && v.viewMode !== player.viewMode) player.setViewMode(v.viewMode);
+  // Before loading too, so the file is computed once, with these settings.
+  if (v.spectrogram) {
+    const key = JSON.stringify(v.spectrogram);
+    if (key !== state.spectrogram) {
+      state.spectrogram = key;
+      // A new file computes with them anyway; the old one must not start a run.
+      player.setSpectrogramSettings(v.spectrogram, { redraw: v.src === state.src });
+    }
+  }
+  // Before loading, so the new spectrogram is framed as asked.
+  if (v.autoFreqView != null && v.autoFreqView !== (player.options.autoFreqView !== false)) {
+    player.setAutoFreqView(v.autoFreqView);
+  }
   if (v.src !== state.src) {
     state.src = v.src;
     state.labels = null;
@@ -196,8 +231,9 @@ async function sync() {
   const sel = v.select;
   if (sel && sel.n !== state.select) {
     state.select = sel.n;
+    // Select first: selecting seeks, which would stop a segment already playing.
+    if (sel.id != null) player.selectLabel(sel.id);
     if (sel.play) player.playSegment(sel.start, sel.end);
-    else if (sel.id != null) player.selectLabel(sel.id);
   }
 }
 

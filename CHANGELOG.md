@@ -2,15 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.4.3] - 2026-11-24
+
+### Fixed
+- **SignaVis Lite: updating a .deb install** failed with "invalid updater
+  binary format" (the updater downloaded the AppImage). The release now
+  publishes the .deb signature and lists the .deb for .deb installs.
+
+## [1.4.2] - 2026-11-24
 
 ### Added
+- **Waveform scale** (Settings → Waveform): linear or dB (a mirrored loudness
+  envelope in dBFS with a selectable range), height fitted to the peak or full
+  scale (±1 / 0 dBFS, comparable between files); also in the overview strip.
+  Player API: `waveformDisplay` option, `setWaveformDisplay()`,
+  `waveformDisplay` and the `waveformdisplaychange` event.
+- **RMS** body inside the min/max outline of the waveform (can be turned off).
+- **Waveform band** (Settings → Waveform → Band → Visible band): the waveform
+  and the overview strip are filtered (4th-order Butterworth) to the frequency
+  range the spectrogram shows, so calls stand out from wind and traffic
+  rumble; zoom the frequency axis to pick the band. Clipping is still judged
+  on the unfiltered signal. The filter is loaded only when the band is on.
+- **Clipping** marked red in the waveform and the overview strip; a badge
+  shows the file's peak in dBFS.
 - **Channel selection**: also under Settings → Display. Player API: `channel`
   option, `setChannel()`, `getChannel()` and the `channelselectionchange` event.
 - Labels remember the **channel** they were made on (drawn, stamped, pasted,
   BirdNET, BirdBox); labels on the mix or on mono recordings carry none. The
   Raven export writes it to the Channel column (1-based), the JSON exports as
   `channel` (0-based); the label table has an optional "Ch" column.
+- Player options for host apps (used by the BirdNET-Analyzer GUI):
+  `locale` (German translation, loaded on demand; English otherwise),
+  `spectrogramSettings` / `setSpectrogramSettings()` (colour map, FFT size,
+  overlap, oversampling, scale and contrast range set by the host; colour
+  changes only recolour), `autoFreqView` / `setAutoFreqView()` and
+  `playOnLabelClick`. New colour map **jet**.
+- Read-only lanes: hovering the spectrogram below a strip highlights its
+  label, a click plays it.
+- Gradio wrapper: `player_value(spectrogram=…, auto_freq_view=…)`; the player
+  sends `signavis-timeupdate` so the host can mark the table row being played.
+
+### Changed
+- **Lanes** are calm again: framed strips in the species colour with a
+  confidence fill; no dashes, dot or bar meter. Label colours come from a
+  palette with clearly distinct neighbours. Tooltip says `[read-only]`.
+
+### Fixed
+- Playback starts without the output start-up delay and resumes where it was
+  paused (Chromium jumped ~0.3 s ahead); smoother playhead without run-up,
+  stop and leap.
+- Gradio wrapper: ▶ in the table selects the detection and plays it.
+- Log frequency scale: no empty strip below 32.7 Hz.
+- The spectrogram no longer grows for one frame and shrinks after loading.
+- Amplitude axis: round values at their true positions, as many as fit; the
+  old labels were rounded differently (0.01 at the top over 0.006 at half).
+  Positive samples are drawn upwards (they were drawn downwards).
 
 ## [1.4.1] - 2026-11-23
 

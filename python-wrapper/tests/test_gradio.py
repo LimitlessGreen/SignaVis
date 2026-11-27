@@ -44,6 +44,17 @@ class TestPlayerValue(unittest.TestCase):
         with self.assertRaises(ValueError):
             player_value("a.wav", view_mode="spectrum")
 
+    def test_the_frequency_auto_view_can_be_turned_off(self):
+        self.assertIs(player_value("a.wav", auto_freq_view=False)["autoFreqView"], False)
+        self.assertNotIn("autoFreqView", player_value("a.wav"))
+
+    def test_spectrogram_settings_are_passed_on(self):
+        self.assertNotIn("spectrogram", player_value("a.wav"))
+        settings = {"colorScheme": "viridis", "windowSize": 2048}
+        value = player_value("a.wav", spectrogram=settings)
+        self.assertEqual(value["spectrogram"], settings)
+        self.assertIsNot(value["spectrogram"], settings)
+
 
 @unittest.skipIf(gr is None, "gradio not installed")
 class TestFileUrl(unittest.TestCase):
@@ -70,6 +81,9 @@ class TestSignaVisPlayer(unittest.TestCase):
         self.assertEqual(opts["viewMode"], "both")
         self.assertFalse(opts["readOnly"])
         self.assertFalse(opts["showFileOpen"])
+
+    def test_the_playhead_time_reaches_the_page(self):
+        self.assertIn("new CustomEvent('signavis-timeupdate'", SignaVisPlayer().js_on_load)
 
     def test_assets_are_served_locally(self):
         head = SignaVisPlayer().head

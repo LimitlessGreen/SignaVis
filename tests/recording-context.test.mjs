@@ -55,3 +55,10 @@ test('resolveRecordingContext: manual > XC > GUANO > file name, with sources', (
     assert.deepEqual(r.device, { value: 'AudioMoth', source: 'guano' });
     assert.deepEqual(r.locality, { value: null, source: null });
 });
+
+test('resolveRecordingContext: a picked clock zone (also UTC = 0) comes from manual only', () => {
+    const utc = resolveRecordingContext({ manual: { utcOffset: 0 }, filename: '20240621_041000.WAV' });
+    assert.deepEqual(utc.utcOffset, { value: 0, source: 'manual' });
+    const none = resolveRecordingContext({ filename: '20240621_041000.WAV' });
+    assert.deepEqual(none.utcOffset, { value: null, source: null });
+});

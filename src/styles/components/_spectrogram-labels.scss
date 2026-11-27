@@ -538,20 +538,20 @@
     display: none;
 }
 
-/* ── Lanes: labels without frequency bounds (BirdNET) as tag-style strips along the top ──
-   Species colour as dot + bottom edge; suggestion = dashed bottom edge, accepted = solid.
-   The hovered / selected strip marks its time span below with its two edges only.
-   Doubled class: wins over .suggestion / --readonly. */
+/* ── Lanes: labels without frequency bounds (BirdNET) as framed strips along the top ──
+   Calm on purpose (many overlapping 3 s windows): a thin frame in the species colour with a
+   colour edge on the left, name and plain confidence, no dashes, dot or meter. Accepted
+   labels get a stronger frame. The hovered / selected strip marks its time span below
+   with its two edges only. Doubled class: wins over .suggestion / --readonly. */
 .spectrogram-label-region.spectrogram-label-region--lane.spectrogram-label-region--lane {
     --label-c: var(--spectrogram-label-edge);
-    border: 1px solid var(--label-tag-border);
-    border-bottom: 2px solid var(--label-c);
+    border: 1px solid color-mix(in srgb, var(--label-c) 70%, transparent);
     border-radius: 3px;
-    background: var(--label-tag-bg);
-    box-shadow: var(--label-tag-shadow);
+    background: rgba(0, 0, 0, 0.62);
+    box-shadow: inset 3px 0 0 var(--label-c);
     opacity: 1;
 
-    &.suggestion { border-bottom-style: dashed; }
+    &:not(.suggestion):not(.spectrogram-label-region--readonly) { border-width: 1.5px; border-color: var(--label-c); }
 
     .spectrogram-label-text {
         position: static;
@@ -561,9 +561,32 @@
         border: 0;
         background: none;
         box-shadow: none;
-        padding: 0 6px 0 5px;
+        padding: 0 6px 0 7px;
+        color: var(--label-tag-text);
     }
-    .spectrogram-label-conf { margin-left: auto; }
+    // No colour dot (the left edge is the colour); ▶ still shows while playing
+    &:not(.active) .spectrogram-label-text::before { display: none; }
+    .spectrogram-label-conf { margin-left: auto; padding-left: 6px; border-left: 0; font-weight: 500; opacity: 0.85; }
+    .spectrogram-label-conf-meter { display: none; }
+
+    // Confidence as the strip itself: tinted in the species colour up to the confidence,
+    // with a 2 px edge along the bottom, so 90 % and 40 % differ at a glance
+    &.has-conf {
+        --lane-bg: rgba(0, 0, 0, 0.62);
+        --lane-fill: color-mix(in srgb, var(--label-c) 32%, var(--lane-bg));
+        background: linear-gradient(90deg, var(--lane-fill) 0 calc(var(--label-conf, 0) * 100%), var(--lane-bg) 0);
+        &::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            height: 2px;
+            width: calc(var(--label-conf, 0) * 100%);
+            background: var(--label-c);
+            pointer-events: none;
+        }
+        &.selected, &.focused { --lane-bg: rgba(0, 0, 0, 0.8); }
+    }
 
     &::after {
         content: '';
@@ -583,10 +606,10 @@
     // Playing strips only get ▶ (several overlap at once); hover / selection expand
     &.selected, &.focused {
         border: 1.5px solid var(--label-c);
-        border-bottom-width: 2px;
-        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 10px color-mix(in srgb, var(--label-c) 50%, transparent);
+        background: rgba(0, 0, 0, 0.8);
+        box-shadow: inset 3px 0 0 var(--label-c), 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 10px color-mix(in srgb, var(--label-c) 50%, transparent);
+        .spectrogram-label-text { color: #fff; }
     }
-    &.suggestion.selected, &.suggestion.focused { border-bottom-style: dashed; }
     .label-handle { display: none; }
     // Buttons in a row right of the strip: a column would cover the lanes below
     .label-actions,
@@ -602,8 +625,7 @@
    become thin strokes; the name shows on hover / selection / once accepted. */
 .label-lanes-dense .spectrogram-label-region--lane.spectrogram-label-region--lane.suggestion:not(:hover):not(.selected):not(.focused) {
     height: 7px !important;
-    border: 0;
-    border-bottom: 2px dashed var(--label-c);
+    border: 1px solid color-mix(in srgb, var(--label-c) 70%, transparent);
     background: color-mix(in srgb, var(--label-c) 35%, rgba(2, 6, 23, 0.7));
     box-shadow: none;
     .spectrogram-label-text { display: none; }

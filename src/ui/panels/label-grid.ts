@@ -1175,12 +1175,16 @@ export class LabelGrid {
     }
 
     const original = input.value;
+    let stepped = false;
     let done = false;
     const finish = (commit: boolean, move?: { dRow: number; dCol: number }) => {
       if (done) return;
       done = true;
       cleanup();
-      if (commit && input.value !== original) this.applyValue(id, c, input.value);
+      if (commit && input.value !== original) {
+        if (stepped) this.applyTo(this.editableTargets(id), c, input.value.trim());   // undo step taken at the first ↑/↓
+        else this.applyValue(id, c, input.value);
+      }
       this.editing = null;
       this.focus();
       if (move) this.moveCursor(move.dRow, move.dCol);
@@ -1199,7 +1203,9 @@ export class LabelGrid {
         if (!Number.isFinite(v)) return;
         const digits = c.edit === 'freq' ? 2 : 3;
         input.value = (v + step).toFixed(digits);
-        this.applyTo(this.editableTargets(id), c, input.value.trim());   // live: the box follows each step (no undo step each)
+        // live: the box follows each step; one undo step for the whole edit, taken before the first
+        if (stepped) this.applyTo(this.editableTargets(id), c, input.value.trim());
+        else { stepped = true; this.applyValue(id, c, input.value); }
         input.select();
       }
     };
@@ -1225,6 +1231,8 @@ export class LabelGrid {
     const key = c.key.slice(4);
     const store = this.opts.tagStore;
     const original = String(l.tags?.[key] ?? '');
+    // Several rows with different values: picking this row's value still sets it on all
+    const mixed = new Set(this.editableTargets(id).map((t) => String(this.byId.get(t)?.tags?.[key] ?? ''))).size > 1;
     let done = false;
     let es: ReturnType<typeof createEditableSelect> | null = null;
     const finish = (val: string | undefined) => {
@@ -1234,7 +1242,7 @@ export class LabelGrid {
       queueMicrotask(() => {
         try { es?.destroy(); } catch { /* ignore */ }
         cell.classList.remove('editing');
-        if (val !== undefined && val !== original) this.applyValue(id, c, val);
+        if (val !== undefined && (val !== original || mixed)) this.applyValue(id, c, val);
         const fresh = this.byId.get(id);
         if (fresh && cell.isConnected) cell.textContent = c.text(fresh, this);
         this.focus();

@@ -32,6 +32,7 @@
  * @property {boolean}     [danger]    Red/destructive styling.
  * @property {boolean}     [disabled]  Greyed out, not interactive.
  * @property {boolean}     [separator] Renders a divider line instead of an item.
+ * @property {string}      [shortcut]  Key hint shown on the right (e.g. "F2").
  * @property {string}      [heading]   Renders a small section title instead of an item.
  * @property {string}      [hint]      Short text at the right (shortcut, current value, scope).
  * @property {boolean}     [checked]   A toggle: shows on/off (role menuitemcheckbox).
@@ -98,6 +99,12 @@ function buildMenu(items: any[], open: (lvl: Level, row: HTMLElement, sub: any[]
     labelEl.textContent = item.label ?? '';
     row.appendChild(labelEl);
 
+    if (item.shortcut) {
+      const kbd = document.createElement('span');
+      kbd.className = 'ctx-item-kbd';
+      kbd.textContent = item.shortcut;
+      row.appendChild(kbd);
+    }
     if (item.hint) {
       const hintEl = document.createElement('span');
       hintEl.className = 'ctx-item-hint';
@@ -201,6 +208,7 @@ export function showContextMenu({ x, y, items }: any) {
   };
 
   const open = (parent: Level, row: HTMLElement, sub: any[], focusFirst = false) => {
+    if (_current?.levels !== levels) return;   // menu already dismissed (late hover timer)
     const depth = levels.indexOf(parent) + 1;
     if (levels[depth]?.owner === row) {   // already open
       if (focusFirst) setActive(levels[depth], 0);
@@ -225,12 +233,14 @@ export function showContextMenu({ x, y, items }: any) {
   function onKey(e: any) {
     const lvl = levels[levels.length - 1];
     const cur = lvl.focusable[lvl.activeIdx] as any;
+    // Menu keys stay in the menu (the label table would move its cursor or start an edit)
+    if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape'].includes(e.key)) e.stopPropagation();
     if (e.key === 'Escape') {
       e.stopPropagation();
       if (levels.length > 1) { closeFrom(levels.length - 1); levels[levels.length - 1].focusable[levels[levels.length - 1].activeIdx]?.focus({ preventScroll: true }); }
       else closeContextMenu();
-    } else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(lvl, lvl.activeIdx < 0 ? 0 : lvl.activeIdx + 1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(lvl, lvl.activeIdx < 0 ? lvl.focusable.length - 1 : lvl.activeIdx - 1); }
+    } else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setActive(lvl, lvl.activeIdx < 0 ? 0 : lvl.activeIdx + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setActive(lvl, lvl.activeIdx < 0 ? lvl.focusable.length - 1 : lvl.activeIdx - 1); }
     else if (e.key === 'ArrowRight' && cur?._openSub) {
       e.preventDefault();
       cur._openSub();

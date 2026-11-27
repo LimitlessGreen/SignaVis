@@ -1,0 +1,514 @@
+/*
+ * @signavis/sun-charts – styles for the light charts and dials.
+ *
+ * Themable through custom properties; each has a fallback, so none is required.
+ *   Surroundings: --color-text-primary, --color-text-secondary, --color-text-muted,
+ *                 --color-border, --color-bg-surface, --color-accent
+ *   Light phases: --sun-phase-night, -astronomical, -nautical, -civil, -golden, -day
+ *   Seasons:      --sun-season-winter, -spring, -summer, -autumn
+ *   Marks:        --sun-color-sun, --sun-color-sun-disc, --sun-color-daylight, --sun-color-line,
+ *                 --sun-color-span, --sun-color-sky, --sun-color-sky-night, --sun-color-earth,
+ *                 --sun-color-moon, --sun-color-moon-lit
+ */
+
+.sun-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.sun-charts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sun-charts-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary, #5b606b);
+}
+
+.sun-charts-zone {
+  max-width: 130px;
+  min-width: 0;
+  font-size: 11px;
+  padding: 1px 4px;
+  border: 1px solid var(--color-border, rgba(128, 128, 128, .35));
+  border-radius: 4px;
+  background: var(--color-bg-surface, #fff);
+  color: inherit;
+}
+
+.sun-dials {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 4px;
+}
+
+.sun-dial {
+  position: relative;
+  max-width: 300px;
+  justify-self: center;
+  width: 100%;
+}
+.sun-dial svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  cursor: crosshair;
+}
+
+.sun-dial-tip {
+  position: absolute;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  background: rgba(10, 14, 30, 0.92);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.sun-sky {
+  fill: var(--sun-color-sky, #16224a);
+}
+
+.sun-sky--night {
+  fill: var(--sun-color-sky-night, #0e1736);
+}
+
+.sun-below {
+  fill: var(--sun-color-earth, #0b1430);
+}
+
+.sun-sweep {
+  fill: var(--sun-color-daylight, #f4c56e);
+}
+
+.sun-horizon {
+  fill: none;
+  stroke: rgba(120, 140, 190, 0.9);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.sun-twl {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 0.8;
+}
+
+.sun-curve {
+  fill: none;
+  stroke: var(--sun-color-sun, #ffb347);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.sun-daylight {
+  fill: var(--sun-color-daylight, #f4c56e);
+  stroke: var(--sun-color-sun, #ffb347);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.sun-tick {
+  stroke: var(--color-text-muted, #888);
+  stroke-width: 1;
+}
+
+.sun-hour {
+  font-size: 8px;
+  fill: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.sun-ev {
+  font-size: 8.5px;
+  fill: var(--color-text-secondary, #5b606b);
+  font-variant-numeric: tabular-nums;
+}
+
+.sun-ev--sun {
+  font-weight: 700;
+  fill: var(--color-text-primary, #1d1f24);
+}
+
+.sun-ev-line {
+  stroke: rgba(255, 255, 255, 0.5);
+  stroke-width: 0.8;
+}
+
+.sun-ev-line--sun {
+  stroke: var(--sun-color-sun, #ffb347);
+  stroke-width: 1.2;
+}
+
+.sun-noon {
+  fill: var(--sun-color-sun, #ffb347);
+}
+
+.sun-hand {
+  stroke: #fff;
+  stroke-width: 1.2;
+  opacity: 0.85;
+}
+
+.sun-disc {
+  fill: var(--sun-color-sun-disc, #ffcf6e);
+  stroke: #fff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 4px rgba(255, 190, 80, 0.9));
+}
+
+.sun-disc--down {
+  fill: #8fa6d6;
+  filter: none;
+}
+
+.sun-core {
+  fill: var(--color-bg-surface, #fff);
+  stroke: var(--color-border, rgba(128, 128, 128, .35));
+  stroke-width: 1;
+}
+
+.sun-c-big {
+  font-size: 17px;
+  font-weight: 700;
+  fill: var(--color-text-primary, #1d1f24);
+  font-variant-numeric: tabular-nums;
+}
+
+.sun-c-mid {
+  font-size: 9.5px;
+  font-weight: 600;
+  fill: var(--color-text-primary, #1d1f24);
+  text-transform: capitalize;
+}
+
+.sun-c-small {
+  font-size: 8.5px;
+  fill: var(--color-text-secondary, #5b606b);
+  font-variant-numeric: tabular-nums;
+}
+
+.sun-season {
+  opacity: 0.78;
+}
+
+.sun-season--now {
+  opacity: 1;
+}
+
+.sun-season-label {
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  fill: #14203d;
+  pointer-events: none;
+}
+
+.sun-month {
+  font-size: 8px;
+  fill: var(--color-text-muted, #888);
+}
+
+.sun-month--now {
+  fill: var(--color-text-primary, #1d1f24);
+  font-weight: 700;
+}
+
+.sun-mark {
+  fill: #fff;
+  stroke: #14203d;
+  stroke-width: 0.8;
+}
+
+.sun-dial-cursor {
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  pointer-events: none;
+}
+
+.sun-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sun-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sun-chart-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary, inherit);
+}
+
+.sun-chart-zone {
+  font-size: 11px;
+  padding: 1px 4px;
+  border: 1px solid var(--color-border, rgba(128, 128, 128, .35));
+  border-radius: 4px;
+  background: var(--color-bg-surface, #fff);
+  color: inherit;
+}
+
+.sun-chart-plot {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--color-border, rgba(128, 128, 128, .35));
+  cursor: crosshair;
+}
+.sun-chart-plot svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.sun-chart-axis {
+  font-size: 8px;
+  fill: var(--color-text-secondary, #888);
+}
+
+.sun-chart-ref {
+  stroke: var(--color-border, rgba(128, 128, 128, .35));
+  stroke-dasharray: 2 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.sun-chart-horizon {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.sun-chart-cross {
+  stroke: rgba(255, 255, 255, 0.8);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.sun-chart-marker {
+  stroke: var(--color-text-primary, #222);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.sun-chart-dot {
+  fill: var(--sun-color-line, #d9822b);
+  stroke: var(--color-bg-surface, #fff);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.sun-chart-tip {
+  position: absolute;
+  top: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  background: rgba(20, 22, 30, 0.88);
+  color: #fff;
+}
+
+.sun-chart-summary {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.sun-chart-events {
+  display: grid;
+  grid-template-columns: auto repeat(4, 1fr);
+  gap: 1px 6px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary, inherit);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sun-chart-events .sun-ev-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.sun-chart-events .sun-ev-row {
+  color: var(--color-text-muted, inherit);
+}
+.sun-chart-events i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+  flex: none;
+}
+
+.sun-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sun-charts-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sun-view-switch {
+  display: inline-flex;
+  border: 1px solid var(--color-border, rgba(128, 128, 128, .35));
+  border-radius: 5px;
+  overflow: hidden;
+  flex: none;
+}
+.sun-view-switch button {
+  font-size: 11px;
+  padding: 1px 7px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary, #5b606b);
+  cursor: pointer;
+}
+.sun-view-switch button + button {
+  border-left: 1px solid var(--color-border, rgba(128, 128, 128, .35));
+}
+.sun-view-switch button[aria-pressed=true] {
+  background: var(--color-accent, #3b6fd8);
+  color: #fff;
+}
+
+.sun-chart-span {
+  fill: rgba(255, 255, 255, 0.28);
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.sun-chart-span-curve {
+  fill: none;
+  stroke: var(--sun-color-span, #b5520f);
+  stroke-width: 3.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.sun-chart-marker--end {
+  stroke-dasharray: 3 2;
+}
+
+.sun-span {
+  fill: rgba(255, 255, 255, 0.3);
+  stroke: #fff;
+  stroke-width: 1.2;
+}
+
+.sun-span--full {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.3);
+}
+
+.sun-span-curve {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sun-hand--end {
+  stroke-dasharray: 3 2;
+  opacity: 0.7;
+}
+
+.sun-spans {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sun-spans-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sun-spans-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  gap: 1px;
+  background: var(--color-bg-surface, #fff);
+}
+.sun-spans-bar span {
+  min-width: 2px;
+}
+
+.sun-spans-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  font-size: 11px;
+  color: var(--color-text-secondary, #5b606b);
+  font-variant-numeric: tabular-nums;
+}
+.sun-spans-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sun-spans-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.sun-chart-events i, .sun-spans-legend i {
+  box-shadow: inset 0 0 0 1px var(--color-border, rgba(128, 128, 128, .35));
+}
+
+.sun-spans-bar {
+  box-shadow: inset 0 0 0 1px var(--color-border, rgba(128, 128, 128, .35));
+}
+/* Moon (day dial, optional) */
+.sun-moon-curve {
+  fill: none;
+  stroke: var(--sun-color-moon, #d7deef);
+  stroke-width: 1.3;
+  stroke-dasharray: 3 2;
+  stroke-linejoin: round;
+  opacity: .85;
+}
+.sun-moon-tick { stroke: var(--sun-color-moon, #d7deef); stroke-width: 1.6; }
+.sun-moon-dark { fill: #2a3557; }
+.sun-moon-lit { fill: var(--sun-color-moon-lit, #f3f1e4); }
+.sun-moon-rim { fill: none; stroke: var(--sun-color-moon-lit, #f3f1e4); stroke-width: .8; }
+.sun-moon--down { opacity: .55; }
+
+/* Linear charts: day-length area and sun line */
+.sun-chart-daylight { fill: var(--sun-color-daylight, #f1cf94); fill-opacity: .45; }
+.sun-chart-line { fill: none; stroke: var(--sun-color-line, #d9822b); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.sun-moon-leader { stroke: var(--sun-color-moon-lit, #f3f1e4); stroke-width: .8; opacity: .8; }
+.sun-moon-dot { fill: var(--sun-color-moon-lit, #f3f1e4); }

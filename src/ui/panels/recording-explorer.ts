@@ -29,7 +29,8 @@ import { toXcId } from '../../domain/xc/xcId.ts';
 import { buildRecordingTree, folderPathOf, countRecordings, recordingName, isXcDownload, folderContents, type TreeNode, type TreeFolder } from '../../app/recording-tree.ts';
 import { showContextMenu } from '../components/context-menu/context-menu.ts';
 import { appAlert, appPrompt } from '../components/modal/dialogs.ts';
-import { labelsToAdopt } from '../../app/annotation-sets.ts';
+import { labelsToAdopt, setDisplayName } from '../../app/annotation-sets.ts';
+import { buildSetBar, buildSetControls, openSetMenu, setKeyAction, startInlineRename, type SetDesc, type SetHandlers } from './set-actions.ts';
 import { prefs } from '../../infrastructure/storage/prefs.ts';
 
 const MULTI_MODE_KEY = 'signavis.multi-recording.v1';
@@ -58,6 +59,10 @@ export class RecordingExplorer {
     _countAdoptable: ((labels: any[], all: any[]) => number) | null = null;
     _onToggleSetHidden: any;
     _onAdoptSet: any;
+    _onRemoveSet: ((id: string) => void) | null;
+    _onSoloSet: ((id: string) => void) | null;
+    _isSetSolo: ((id: string) => boolean) | null;
+    _onToggleLockSet: ((id: string) => void) | null;
     _multiMode: boolean;
     _openFolders: Set<string>;
     _getProjectName: any;
@@ -100,6 +105,10 @@ export class RecordingExplorer {
         this._countAdoptable   = opts.countAdoptable || null;
         this._onToggleSetHidden = opts.onToggleSetHidden || null;
         this._onAdoptSet       = opts.onAdoptSet || null;
+        this._onRemoveSet      = opts.onRemoveSet || null;
+        this._onSoloSet        = opts.onSoloSet || null;
+        this._isSetSolo        = opts.isSetSolo || null;
+        this._onToggleLockSet  = opts.onToggleLockSet || null;
         this._collapsed        = false;
         this._getProjectName   = opts.getProjectName || null;
         /** Audio files of the project folder without a recording entry yet ({ path, size }[]). */
@@ -191,7 +200,7 @@ export class RecordingExplorer {
         const chevron = document.createElement('span');
         chevron.className = 'rec-session-chevron';
         chevron.setAttribute('aria-hidden', 'true');
-        chevron.textContent = this._collapsed ? '▸' : '▾';
+        chevron.textContent = '▸';   // CSS turns it down when open
 
         const nameEl = document.createElement('span');
         nameEl.className = 'rec-session-name';
@@ -217,7 +226,7 @@ export class RecordingExplorer {
             inp.focus(); inp.select();
             const commit = () => {
                 const val = inp.value.trim();
-                if (val && val !== oldName) this._onRenameSet(val);
+                if (val && val !== oldName) this._onRenameSet(this._getOwnSetId?.(), val);
                 nameEl.textContent = val || oldName;
             };
             inp.addEventListener('blur', commit);
@@ -264,7 +273,7 @@ export class RecordingExplorer {
 
         const toggle = () => {
             this._collapsed = !this._collapsed;
-            chevron.textContent = this._collapsed ? '▸' : '▾';
+            chevron.textContent = '▸';   // CSS turns it down when open
             header.setAttribute('aria-expanded', String(!this._collapsed));
             body.hidden = this._collapsed;
         };
@@ -522,7 +531,7 @@ export class RecordingExplorer {
     _collectSets(entries: any[]) {
         const ownSetId = this._getOwnSetId?.();
         const out = new Map<string, any>();
-        if (ownSetId) out.set(ownSetId, { info: { name: this._getSetName() }, own: true, recs: [] });
+        if (ownSetId) out.set(ownSetId, { info: { ...(this._getSetInfo?.(ownSetId) || {}), name: this._getSetName() }, own: true, recs: [] });
         for (const entry of entries) {
             const all: any[] = (this._getEntryLabels ? this._getEntryLabels(entry) : entry.annotations) || [];
             const bySet = new Map<string, any[]>();
@@ -586,24 +595,24 @@ export class RecordingExplorer {
             const li = document.createElement('li');
             li.className = 'rec-set';
             if (set.recs.some((r: any) => r.entry.id === activeId)) li.classList.add('rec-set--current');
-            if (this._focusSetId === setId) li.classList.add('rec-set--focus');
+            const selected = this._focusSetId === setId;
+            if (selected) li.classList.add('rec-set--focus');
             if (hidden) li.classList.add('rec-set--hidden');
             li.tabIndex = 0;
+            li.setAttribute('aria-selected', String(selected));
             li.style.setProperty('--set-color', this._setColor(setId));
 
-            const sw = document.createElement('button');
-            sw.type = 'button';
+            const sw = document.createElement('span');
             sw.className = 'rec-set-swatch';
-            sw.title = hidden ? 'Show these labels' : 'Hide these labels';
-            sw.setAttribute('aria-pressed', String(!hidden));
-            sw.addEventListener('click', (e) => { e.stopPropagation(); this._onToggleSetHidden?.(setId); });
+            sw.setAttribute('aria-hidden', 'true');
 
             const text = document.createElement('div');
             text.className = 'rec-set-text';
             const nm = document.createElement('div');
             nm.className = 'rec-set-title';
-            nm.textContent = info.name || (set.own ? 'My labels' : 'Imported labels');
-            const origin = info.origin === 'xeno-canto' ? 'XC' : info.origin === 'birdnet' ? 'BirdNET' : (readOnly ? (info.origin || 'import') : '');
+            const shownName = setDisplayName(info, set.own ? 'My labels' : 'Imported labels');
+            nm.textContent = shownName;
+            const origin = info.origin === 'xeno-canto' ? 'XC' : (info.origin === 'birdnet' || info.origin === 'BirdNET') ? 'BirdNET' : (readOnly ? (info.origin || 'import') : '');
             if (origin) {
                 const b = document.createElement('span');
                 b.className = 'rec-set-origin';
@@ -613,77 +622,56 @@ export class RecordingExplorer {
             }
             const sub = document.createElement('div');
             sub.className = 'rec-set-sub';
-            sub.textContent = [set.own ? 'editable' : info.creator, `${nRec} recording${nRec === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+            sub.textContent = [set.own ? 'editable' : info.creator, `${nRec} recording${nRec === 1 ? '' : 's'}`,
+                readOnly && pending ? `${pending} not copied` : ''].filter(Boolean).join(' · ');
             text.append(nm, sub);
-            text.title = `${nm.textContent} — ${sub.textContent}`;
+            text.title = `${shownName} — ${sub.textContent}`;
 
             const cnt = document.createElement('span');
             cnt.className = 'recording-explorer-meta';
             cnt.textContent = String(nLabels);
             cnt.title = `${nLabels} label${nLabels === 1 ? '' : 's'}`;
 
-            const actions = document.createElement('span');
-            actions.className = 'rec-set-actions';
-            if (readOnly && this._onAdoptSet && nLabels) {
-                if (pending) {
-                    const copy = document.createElement('button');
-                    copy.type = 'button';
-                    copy.className = 'link-btn rec-set-adopt';
-                    copy.textContent = pending < nLabels ? `Copy ${pending}` : 'Copy to mine';
-                    copy.title = `Copy ${pending} label${pending === 1 ? '' : 's'} of all recordings of this set into your own labels (editable, undo possible)`;
-                    copy.addEventListener('click', (e) => { e.stopPropagation(); copy.disabled = true; this._onAdoptSet(setId); });
-                    actions.appendChild(copy);
-                } else {
-                    const done = document.createElement('span');
-                    done.className = 'rec-set-adopted';
-                    done.textContent = '✓';
-                    done.title = 'All labels of this set are copied into your own labels';
-                    actions.appendChild(done);
-                }
-            }
-            // Own set: rename inline (✎ on hover, or F2)
-            const startRename = () => {
-                if (nm.querySelector('input')) return;
-                const old = info.name || '';
-                const inp = document.createElement('input');
-                inp.type = 'text';
-                inp.className = 'inline-name-input rec-set-rename';
-                inp.value = old;
-                inp.setAttribute('aria-label', 'Set name');
-                nm.replaceChildren(inp);
-                li.classList.add('rec-set--editing');
-                inp.focus(); inp.select();
-                let done = false;
-                const finish = (save: boolean) => {
-                    if (done) return;
-                    done = true;
-                    const val = inp.value.trim();
-                    if (save && val && val !== old) this._onRenameSet(val);   // host re-renders via change
-                    else this.render();
-                };
-                inp.addEventListener('blur', () => finish(true));
-                inp.addEventListener('keydown', (ev) => {
-                    ev.stopPropagation();
-                    if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
-                    if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
-                });
-                inp.addEventListener('click', (ev) => ev.stopPropagation());
+            const kind = set.own ? 'own' : (info.origin || 'manual') === 'manual' ? 'manual' : 'imported';
+            const desc: SetDesc = {
+                id: setId, name: shownName, kind, hidden,
+                locked: !!(info.locked || info.origin === 'xeno-canto'),
+                lockable: kind !== 'own' && info.origin !== 'xeno-canto',
+                solo: !!this._isSetSolo?.(setId),
+                uri: info.uri || '', sourceName: info.origin === 'xeno-canto' ? 'xeno-canto' : (info.origin || ''),
+                pending, total: nLabels, recordings: nRec, scope: 'session',
             };
-            if (set.own && this._onRenameSet) {
-                const edit = document.createElement('button');
-                edit.type = 'button';
-                edit.className = 'rec-set-edit';
-                edit.textContent = '✎';
-                edit.title = 'Rename (F2)';
-                edit.addEventListener('click', (e) => { e.stopPropagation(); startRename(); });
-                actions.appendChild(edit);
-                li.addEventListener('keydown', (e) => { if (e.key === 'F2') { e.preventDefault(); startRename(); } });
+            const rename = () => startInlineRename(nm, shownName, (val) => this._onRenameSet?.(setId, val));
+            const h: SetHandlers = {
+                rename: this._onRenameSet ? rename : undefined,
+                toggleHidden: this._onToggleSetHidden ? () => this._onToggleSetHidden(setId) : undefined,
+                solo: this._onSoloSet ? () => this._onSoloSet!(setId) : undefined,
+                adopt: this._onAdoptSet && readOnly && nLabels ? () => this._onAdoptSet(setId) : undefined,
+                toggleLock: this._onToggleLockSet ? () => this._onToggleLockSet!(setId) : undefined,
+                openSource: info.uri ? () => window.open(info.uri, '_blank', 'noopener') : undefined,
+                remove: this._onRemoveSet ? () => this._onRemoveSet!(setId) : undefined,
+            };
+            const top = document.createElement('div');
+            top.className = 'rec-set-top';
+            top.append(sw, text, cnt, buildSetControls(desc, h));
+            li.appendChild(top);
+            if (readOnly && nLabels && !pending && this._onAdoptSet) li.title = 'All labels of this set are in your own labels';
+            if (selected) {
+                const bar = buildSetBar(desc, h);
+                if (bar) li.appendChild(bar);
             }
-            li.append(sw, text, actions, cnt);
 
             const focus = () => { this._focusSetId = this._focusSetId === setId ? null : setId; this.render(); };
-            li.addEventListener('click', focus);
-            li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focus(); } });
+            li.addEventListener('click', (e) => { if (!(e.target as HTMLElement).closest('.set-bar, input')) focus(); });
+            li.addEventListener('dblclick', (e) => { if (!(e.target as HTMLElement).closest('.set-bar, .set-ctl, input')) { e.stopPropagation(); h.rename?.(); } });
+            li.addEventListener('contextmenu', (e) => { e.preventDefault(); openSetMenu(e, desc, h); });
+            li.addEventListener('keydown', (e) => {
+                if (e.target !== li) return;
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focus(); return; }
+                if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); openSetMenu(e, desc, h); return; }
+                const act = setKeyAction(desc, h, e);
+                if (act) { e.preventDefault(); act(); }
+            });
             ul.appendChild(li);
         }
         wrap.appendChild(ul);
@@ -702,7 +690,7 @@ export class RecordingExplorer {
             d.style.setProperty('--set-color', this._setColor(setId));
             if (this._isSetHidden?.(setId)) d.className = 'is-hidden';
             span.appendChild(d);
-            names.push(`${set.info?.name || (set.own ? 'My labels' : 'Imported')}: ${r.labels.length}`);
+            names.push(`${setDisplayName(set.info, set.own ? 'My labels' : 'Imported')}: ${r.labels.length}`);
         }
         span.title = names.join('\n');
         return names.length ? span : null;

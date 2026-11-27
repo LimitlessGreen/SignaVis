@@ -101,3 +101,33 @@ test('channelPeaksAsync in the peaks worker equals the main-thread pyramid', asy
     }
     assert.equal(channelPeaks(v), p, 'cached');
 });
+
+test('envelopeStats: min/max like envelopeMinMax, RMS like a scan of the samples', async () => {
+    const { envelopeStats } = await import('../src/domain/waveformEnvelope.ts');
+    const v = signal(200_003, 9);
+    let s = 7;
+    const rnd = (n) => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s % n; };
+    for (let k = 0; k < 500; k++) {
+        const a = rnd(v.length), b = Math.min(v.length, a + 1 + rnd(k % 2 ? 300 : 80_000));
+        const st = envelopeStats(v, a, b);
+        assert.deepEqual([st.lo, st.hi], envelopeMinMax(v, a, b), `${a}..${b}`);
+        let acc = 0;
+        for (let i = a; i < b; i++) if (v[i] === v[i]) acc += v[i] * v[i];
+        const rms = Math.sqrt(acc / (b - a));
+        assert.ok(Math.abs(st.rms - rms) < 1e-4 * Math.max(1, rms), `${a}..${b}: ${st.rms} vs ${rms}`);
+    }
+    assert.equal(envelopeStats(v, 5, 5).rms, 0);
+});
+
+test('the pyramid keeps sums of squares; async and worker-shaped builds agree', async () => {
+    const { channelPeaks, channelPeaksAsync } = await import('../src/domain/waveformEnvelope.ts');
+    const v = signal(1_000_003, 12), ref = signal(1_000_003, 12);
+    const p = await channelPeaksAsync(v, 512, null);
+    const sync = channelPeaks(ref);
+    for (const lvl of ['fine', 'coarse']) assert.deepEqual(p[lvl].sq, sync[lvl].sq, lvl);
+    // A coarse block is the sum of its fine blocks.
+    const f = sync.fine.sq, c = sync.coarse.sq;
+    let sum = 0;
+    for (let i = 0; i < 32; i++) sum += f[i];
+    assert.ok(Math.abs(c[0] - sum) < 1e-3);
+});

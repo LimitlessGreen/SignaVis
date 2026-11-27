@@ -33,6 +33,7 @@
 
 // Labeling app UI
 @use "components/labeling-app";
+@use "../../packages/sun-charts/src/sun-charts";
 @use "components/species-search";
 @use "components/geo-map";
 @use "components/species-cards";
@@ -80,6 +81,7 @@
 @use "components/theme-tokens";
 @use "components/player-clarity";
 @use "components/ui-clarity";
+@use "components/set-actions";
 // Shared tab building blocks (section header, field grid, mode tiles)
 @use "components/tab-layout";
 @use "components/species-lists";

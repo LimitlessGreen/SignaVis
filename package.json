@@ -1,6 +1,6 @@
 {
   "name": "signavis",
-  "version": "1.4.1",
+  "version": "1.4.3",
   "description": "DAW-like audio player with waveform + spectrogram for analysis",
   "readme": "README.md",
   "type": "module",
@@ -93,6 +93,7 @@
     "size:check": "node ./scripts/check-bundle-size.mjs",
     "deps:core": "node ./scripts/module-graph.mjs src/core.ts --sizes",
     "test": "node ./scripts/run-tests.mjs",
+    "models:fetch": "node scripts/fetch-models.mjs",
     "models:birdbox": "node scripts/birdbox/fetch-model.mjs",
     "models:anurapam": "bash scripts/fetch-anurapam.sh",
     "test:birdbox-stream": "node --import tsx scripts/birdbox/stream-parity.mjs",
