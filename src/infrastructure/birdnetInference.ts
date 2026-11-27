@@ -18,7 +18,7 @@ import { patchWebglComplexCast } from './tfjsComplexCastFix.ts';
 const TFJS_CDN = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4';
 const TFJS_URL = vendorUrl('tfjs/tf.min.js', TFJS_CDN);
 const ORT_VERSION = '1.30.0';
-const ORT_BASE = vendorUrl('ort/', `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`);
+export const ORT_BASE = vendorUrl('ort/', `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`);
 const TFJS_SR = 48000;
 const CHUNK_SECONDS = 3;
 const TFJS_CHUNK_SAMPLES = TFJS_SR * CHUNK_SECONDS; // 144 000

@@ -29,6 +29,7 @@ test('a model is fetched after the models it runs on', async () => {
     const { withDependencies, DEPENDS } = await import('../scripts/fetch-models.mjs');
     assert.deepEqual(withDependencies(['anurapam']), ['birdnet-v2.4', 'anurapam']);
     assert.deepEqual(withDependencies(['birdnet-v2.4', 'anurapam']), ['birdnet-v2.4', 'anurapam']);
+    assert.deepEqual(withDependencies(['geo-trunk-v3.0']), ['birdnet-v3.0', 'geo-trunk-v3.0']);
     for (const [name, deps] of Object.entries(DEPENDS)) for (const d of [name, ...deps]) assert.ok(MODELS.includes(d), d);
 });
 

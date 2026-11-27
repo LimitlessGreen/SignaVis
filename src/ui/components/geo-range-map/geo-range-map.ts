@@ -13,6 +13,9 @@ export interface RangeMapOptions {
   place?: { lat: number; lon: number } | null;
   week?: number | null;
   modelName?: string | null;
+  /** Grid of the second pass (default ~10 px per cell, 4,500 cells) and whether play uses it too (fast backend). */
+  fine?: { cellPx: number; max: number };
+  playFine?: boolean;
   /** Scores below are not coloured (area filter threshold). */
   minScore?: number;
   /** Score grid for the given week. */
@@ -72,12 +75,13 @@ export async function openRangeMap(opts: RangeMapOptions): Promise<void> {
 
   const viewKey = (g: ViewGrid) => `${g.north.toFixed(3)},${g.south.toFixed(3)},${g.west.toFixed(3)},${g.east.toFixed(3)},${g.lats.length}x${g.cols}`;
 
-  const COARSE = { cellPx: 22, max: 1500 }, FINE = { cellPx: 10, max: 4500 };
+  const COARSE = { cellPx: 22, max: 1500 }, FINE = opts.fine ?? { cellPx: 10, max: 4500 };
 
   /** Coarse grid first (fast), then a finer one unless playing or superseded. */
   async function render() {
     const my = ++token;
     weekLbl.textContent = `${weekLabel(week)} (week ${week})`;
+    if (playing != null && opts.playFine) { await renderPass(my, FINE); return; }
     if (!await renderPass(my, COARSE)) return;
     if (playing == null) await renderPass(my, FINE);
   }

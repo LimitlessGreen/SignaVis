@@ -899,14 +899,49 @@ async function openSpeciesRangeMap(sci, week = null) {
   if (!birdnet.hasAreaModel || !birdnet.getRangeGrid) { await appAlert('The loaded BirdNET model has no area model.', { title: 'Range map' }); return; }
   const record = taxonomy.resolve(sci);
   const title = (record && taxonomy.resolveCommonName(record, state.taxonomyLang)) || sci;
+  const gpu = (await geoGridRunner(bp._loadedModelUrl))?.ep === 'webgpu';
   await openRangeMap({
+    ...(gpu ? { fine: { cellPx: 5, max: 30000 }, playFine: true } : {}),
     scientific: sci, title,
     place: bp.getCoords?.() || null,
     week: week ?? geoWeek(bp.getRecordingDate?.()),
     modelName: birdnet.geoModelName,
     minScore: bp.getGeoThreshold(),
-    fetchGrid: (grid, w) => birdnet.getRangeGrid(sci, grid, w),
+    fetchGrid: async (grid, w) => {
+      const fast = await geoGridRunner(bp._loadedModelUrl);
+      if (fast) {
+        try { return await fast.grid(sci, grid, w); } catch (err) { console.warn('[range map] trunk failed, full model instead:', err); }
+      }
+      return birdnet.getRangeGrid(sci, grid, w);
+    },
   });
+}
+
+/**
+ * Trunk runner for the range map (WebGPU or WASM, own worker), one per model folder;
+ * null when the model has no trunk files (then the BirdNET worker computes the grid).
+ */
+const _geoRunners = new Map();
+function geoGridRunner(modelUrl) {
+  if (!modelUrl) return Promise.resolve(null);
+  if (!_geoRunners.has(modelUrl)) {
+    _geoRunners.set(modelUrl, (async () => {
+      try {
+        const base = new URL(modelUrl.endsWith('/') ? modelUrl : `${modelUrl}/`, location.href).href;
+        const cfg = await fetch(`${base}model_config.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        const { geoTrunkFor, GeoGridRunner } = await import('../../infrastructure/geo/geoGrid.ts');
+        const src = geoTrunkFor(base, cfg?.geoModel?.labelsFile || null);
+        if (!src) return null;
+        const runner = await GeoGridRunner.create(src);
+        console.info(`[range map] geomodel trunk on ${runner.ep}`);
+        return runner;
+      } catch (err) {
+        console.warn('[range map] no geomodel trunk:', err?.message || err);
+        return null;
+      }
+    })());
+  }
+  return _geoRunners.get(modelUrl);
 }
 const propsPanel = new PropertiesPanel({
   onOpenRangeMap: (sci, week) => { openSpeciesRangeMap(sci, week).catch((e) => console.warn('[range map]', e)); },
