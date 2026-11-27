@@ -481,7 +481,9 @@ export class LabelGrid {
     info.textContent = `${n} selected`;
     const edit = this.toggleBtn('Edit ▾', 'Change, fill or clear a field of all selected labels (also: right click on a row)', () => {
       const r = edit.getBoundingClientRect();
-      const id = this.cursor && this.multi.has(this.cursor.id) ? this.cursor.id : this.rows.find((l) => this.multi.has(l.id))?.id;
+      // A filter may hide every selected row: any selected label that still exists anchors the menu (no cell actions then).
+      const id = this.cursor && this.multi.has(this.cursor.id) ? this.cursor.id
+        : this.rows.find((l) => this.multi.has(l.id))?.id ?? [...this.multi].find((x) => this.byId.has(x));
       if (id) this.showRowMenu(r.left, r.bottom + 2, id, this.cursor?.id === id ? this.cursor!.col : -1);
     });
     const clear = this.toggleBtn('✕', 'Deselect (Esc)', () => this.setMulti([]));
