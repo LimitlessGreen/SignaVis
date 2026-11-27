@@ -1216,6 +1216,12 @@ const labelStore = new LabelStore({ freeze: !!import.meta.env.DEV });
 const ALL_LABEL_VIEWS = ['player', 'list', 'badge', 'explore', 'props', 'suggestions'];
 /** Views after an edit on the spectrogram / waveform (the explore panel catches up on the next full sync) */
 const EDIT_VIEWS = ['player', 'list', 'badge', 'props', 'suggestions'];
+// AI undo chain (Lite MCP): the person's input ends it. On window in capture and registered here,
+// before every shortcut handler that stops the event (e.g. A/X/U for suggestions); not the toast's Undo.
+let _aiUndoReset = null;
+for (const type of ['pointerdown', 'keydown']) {
+  window.addEventListener(type, (e) => { if (_aiUndoReset && !e.target?.closest?.('.undo-toast')) _aiUndoReset(); }, true);
+}
 labelStore.subscribe((change) => {
   if (change.kind !== 'load' && change.kind !== 'clear') saveCurrentAnnotationsIfNeeded();
   labelViews.invalidate(...(change.views ?? ALL_LABEL_VIEWS));
@@ -6073,12 +6079,10 @@ async function installAssistantTools(shell, palette) {
   ]);
   // Quick AI changes in a row share one Undo (only one undo toast shows at a time).
   const aiUndo = new AssistantUndoChain();
-  // Any input of the person ends the chain (not the toast's own Undo button).
-  const endAiChain = (e) => { if (!e.target?.closest?.('.undo-toast')) aiUndo.reset(); };
-  document.addEventListener('pointerdown', endAiChain, true);
-  document.addEventListener('keydown', endAiChain, true);
-  const aiToast = (summary, undo) => {
-    const step = aiUndo.add(summary, undo);
+  // Any input of the person ends the chain (listener registered early, see _aiUndoReset).
+  _aiUndoReset = () => aiUndo.reset();
+  const aiToast = (summary, undo, opts) => {
+    const step = aiUndo.add(summary, undo, opts);
     selectionMeta.textContent = step.summary;
     showUndoToast(step.summary, step.undo);
   };
@@ -6097,7 +6101,7 @@ async function installAssistantTools(shell, palette) {
     const undo = snapshotLabels();
     const out = change();
     syncToPlayer();
-    aiToast(summary, undo);
+    aiToast(summary, undo, { full: true });
     return out;
   };
   const app = {
