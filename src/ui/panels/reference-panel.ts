@@ -380,6 +380,9 @@ export class ReferencePanel {
     /** ←→↑↓ move the selection, Space plays, Enter compares. */
     private onKey(e: KeyboardEvent) {
         if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement) return;
+        // A focused button or link (Load more, filters, footer) keeps Enter and Space; the shortcuts are for the tiles.
+        const t = e.target as HTMLElement | null;
+        if ((e.key === 'Enter' || e.key === ' ') && t?.closest?.('button, a[href]') && !t.closest('.ref-tile')) return;
         const i = this.refs.findIndex((r) => r.id === this.selected);
         const cols = Math.max(1, Math.round(this.grid.clientWidth / 150));
         const step: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols };
