@@ -5,6 +5,8 @@
 
 use std::path::Path;
 
+pub mod geo;
+
 pub const SAMPLE_RATE: u32 = 32_000;
 pub const WINDOW: usize = 160_000;
 pub const DIM: usize = 1536;

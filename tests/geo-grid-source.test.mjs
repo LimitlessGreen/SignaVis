@@ -12,3 +12,12 @@ test('no trunk for other models or without a geomodel', () => {
   assert.equal(geoTrunkFor('https://x.org/models/birdnet-v2.4/', 'G.txt'), null);
   assert.equal(geoTrunkFor('https://x.org/models/birdnet-v3.0/', null), null);
 });
+
+import { modelSitePath } from '../src/infrastructure/geo/geoGrid.ts';
+
+test('model site path from Lite (svdata) and web URLs', () => {
+  assert.equal(modelSitePath('svdata://localhost/models/geo-trunk-v3.0/'), 'models/geo-trunk-v3.0/');
+  assert.equal(modelSitePath('http://svdata.localhost/models/birdnet-v3.0/BirdNET%2B_Geomodel.txt'), 'models/birdnet-v3.0/BirdNET+_Geomodel.txt');
+  assert.equal(modelSitePath('https://x.org/SignaVis/models/a/'), 'models/a/');
+  assert.equal(modelSitePath('nonsense'), null);
+});

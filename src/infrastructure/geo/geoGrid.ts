@@ -144,3 +144,42 @@ export class GeoGridRunner {
     });
   }
 }
+
+/** "models/…" site path of an svdata:/http URL (Lite serves models through the svdata cache). */
+export function modelSitePath(url: string): string | null {
+  try {
+    const p = decodeURIComponent(new URL(url).pathname).replace(/^\/+/, '');
+    const i = p.indexOf('models/');
+    return i >= 0 ? p.slice(i) : null;
+  } catch { return null; }
+}
+
+/**
+ * Lite: the trunk runs natively (src-tauri-lite/src/geo_grid.rs, ONNX Runtime on CUDA,
+ * DirectML or all CPU cores); same interface as GeoGridRunner.
+ */
+export class NativeGeoGridRunner {
+  ep = 'native';
+  trunk: string;
+  labels: string;
+  constructor(trunk: string, labels: string) { this.trunk = trunk; this.labels = labels; }
+
+  static async create(src: GeoGridSource): Promise<NativeGeoGridRunner> {
+    const trunk = modelSitePath(src.base), labels = modelSitePath(src.labelsUrl);
+    if (!trunk || !labels) throw new Error(`no model path: ${src.base}`);
+    const r = new NativeGeoGridRunner(trunk, labels);
+    // Load now (first grid call), so the provider is known before the map opens.
+    await r.grid('', { lats: [0], west: 0, east: 1, cols: 1 }, 1);
+    const { invoke } = await import('@tauri-apps/api/core');
+    r.ep = `native-${await invoke<string>('geo_grid_ep')}`;
+    return r;
+  }
+
+  async grid(species: string, grid: { lats: number[]; west: number; east: number; cols: number }, week: number): Promise<Float32Array | null> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const buf = await invoke<ArrayBuffer>('geo_grid', { req: { trunk: this.trunk, labels: this.labels, species, week, ...grid } });
+    return buf.byteLength ? new Float32Array(buf) : null;
+  }
+
+  dispose() { /* the trunk stays loaded in the app process */ }
+}

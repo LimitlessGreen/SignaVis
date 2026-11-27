@@ -67,7 +67,7 @@ fn respond(status: StatusCode, mime: &str, body: Vec<u8>) -> Response<Vec<u8>> {
         .expect("valid response")
 }
 
-async fn load(cache_dir: PathBuf, path: String) -> Result<Vec<u8>, (StatusCode, String)> {
+pub(crate) async fn load(cache_dir: PathBuf, path: String) -> Result<Vec<u8>, (StatusCode, String)> {
     let local = cache_dir.join(&path);
     if let Ok(bytes) = tokio::fs::read(&local).await {
         return Ok(bytes);

@@ -899,7 +899,8 @@ async function openSpeciesRangeMap(sci, week = null) {
   if (!birdnet.hasAreaModel || !birdnet.getRangeGrid) { await appAlert('The loaded BirdNET model has no area model.', { title: 'Range map' }); return; }
   const record = taxonomy.resolve(sci);
   const title = (record && taxonomy.resolveCommonName(record, state.taxonomyLang)) || sci;
-  const gpu = (await geoGridRunner(bp._loadedModelUrl))?.ep === 'webgpu';
+  const ep = (await geoGridRunner(bp._loadedModelUrl))?.ep || '';
+  const gpu = ep === 'webgpu' || ep.startsWith('native');
   await openRangeMap({
     ...(gpu ? { fine: { cellPx: 5, max: 30000 }, playFine: true } : {}),
     scientific: sci, title,
@@ -929,10 +930,14 @@ function geoGridRunner(modelUrl) {
       try {
         const base = new URL(modelUrl.endsWith('/') ? modelUrl : `${modelUrl}/`, location.href).href;
         const cfg = await fetch(`${base}model_config.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-        const { geoTrunkFor, GeoGridRunner } = await import('../../infrastructure/geo/geoGrid.ts');
+        const { geoTrunkFor, GeoGridRunner, NativeGeoGridRunner } = await import('../../infrastructure/geo/geoGrid.ts');
         const src = geoTrunkFor(base, cfg?.geoModel?.labelsFile || null);
         if (!src) return null;
-        const runner = await GeoGridRunner.create(src);
+        let runner = null;
+        if (isLite()) {
+          try { runner = await NativeGeoGridRunner.create(src); } catch (err) { console.warn('[range map] native trunk failed, WASM instead:', err); }
+        }
+        runner ??= await GeoGridRunner.create(src);
         console.info(`[range map] geomodel trunk on ${runner.ep}`);
         return runner;
       } catch (err) {
