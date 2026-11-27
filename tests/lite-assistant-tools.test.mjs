@@ -96,7 +96,7 @@ function fakeApp() {
     runAction: (id) => calls.push(['action', id]),
     runBirdnet: async () => true,
     canBirdnet: () => true,
-    spectrogramPng: async () => 'AA==',
+    spectrogramPng: async (w, withLabels) => { calls.push(['png', w, withLabels]); return 'AA=='; },
   };
   return app;
 }
@@ -150,6 +150,8 @@ test('app tools: delete asks; run_action refuses session-wiping actions; image c
   assert.equal(img.content[1].text, 'Visible 0–60 s of 60 s.');
   app.view = () => ({ duration: 60, time: 0, start: 0, end: 60, freqMin: 0, freqMax: 10000 });
   assert.match((await r.call('get_spectrogram_image')).content[1].text, /0–10000 Hz/);
+  await r.call('get_spectrogram_image', { labels: false, maxWidth: 600 });
+  assert.deepEqual(app.calls.filter((c) => c[0] === 'png').map((c) => c.slice(1)), [[1200, true], [1200, true], [600, false]]);
   assert.deepEqual(await r.call('navigate', { start: 10, end: 20, time: 12 }).then((x) => x.isError), undefined);
   assert.deepEqual(app.calls.filter((c) => c[0] === 'zoom' || c[0] === 'seek'), [['zoom', 10, 20], ['seek', 12]]);
   assert.equal((await r.call('navigate', { start: 10 })).isError, true);

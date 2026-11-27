@@ -6167,14 +6167,41 @@ async function installAssistantTools(shell, palette) {
     runAction: (id) => palette.run(id, palette.actions().find((it) => it.id === id)),
     canBirdnet: () => !!birdnetPanel?.canAnalyze,
     runBirdnet: async () => { await shell.reveal('analyse'); return !!await birdnetPanel.analyze(); },
-    spectrogramPng: async (maxWidth) => {
+    spectrogramPng: async (maxWidth, withLabels) => {
       const src = player.root?.querySelector('canvas[data-aw="spectrogramCanvas"]');
       if (!src || !src.width) return null;
       const scale = Math.min(1, maxWidth / src.width);
       const c = document.createElement('canvas');
       c.width = Math.round(src.width * scale);
       c.height = Math.round(src.height * scale);
-      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+      const g = c.getContext('2d');
+      g.drawImage(src, 0, 0, c.width, c.height);
+      if (withLabels) {
+        // The label boxes as the app shows them (their DOM regions over the canvas), so any
+        // frequency scale and zoom match what the person sees.
+        labelViews.flush();
+        const box = src.getBoundingClientRect();
+        const k = box.width ? c.width / box.width : 1;
+        const byId = new Map(state.labels.map((l) => [l.id, l]));
+        g.font = `${Math.max(11, Math.round(12 * k))}px sans-serif`;
+        g.lineWidth = Math.max(1.5, 2 * k);
+        for (const el of player.root.querySelectorAll('.spectrogram-label-region')) {
+          const lbl = byId.get(el.dataset.id);
+          const r = el.getBoundingClientRect();
+          if (!lbl || r.right < box.left || r.left > box.right || !r.width) continue;
+          const x = (r.left - box.left) * k, y = (r.top - box.top) * k, w = r.width * k, h = r.height * k;
+          const color = lbl.color || colorForName(lbl.label || '');
+          g.strokeStyle = color;
+          g.strokeRect(x, y, w, h);
+          const text = lbl.label || '?';
+          const tw = g.measureText(text).width + 6;
+          const ty = Math.max(0, y - 16 * k);
+          g.fillStyle = 'rgba(0,0,0,0.7)';
+          g.fillRect(x, ty, tw, 16 * k);
+          g.fillStyle = color;
+          g.fillText(text, x + 3, ty + 12 * k);
+        }
+      }
       return c.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
     },
   };

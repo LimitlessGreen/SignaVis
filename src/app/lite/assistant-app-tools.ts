@@ -37,7 +37,7 @@ export interface AppPort {
     runBirdnet(): Promise<boolean>;
     canBirdnet(): boolean;
     /** PNG (base64, no data: prefix) of the visible spectrogram, or null. */
-    spectrogramPng(maxWidth: number): Promise<string | null>;
+    spectrogramPng(maxWidth: number, withLabels: boolean): Promise<string | null>;
 }
 
 const num = (description: string, extra = {}) => ({ type: 'number', description, ...extra });
@@ -134,9 +134,9 @@ export function buildAppTools(app: AppPort, ctx: ToolContext): ToolRegistry {
 
     reg.add({
         name: 'search_species', title: 'Search species', tier: 'read',
-        description: 'Look up species in the app taxonomy (common name in the label language, or scientific name). Use the result names for add_labels.',
-        input: { required: ['query'], properties: { query: str('Name, part of it, or scientific name'), limit: num('Max (default 8)', { minimum: 1, maximum: 30 }) } },
-        run: (a) => app.species(a.query, a.limit ?? 8),
+        description: 'Look up species in the app taxonomy (common name in the label language, or scientific name). Search the full name ("European Robin", "Erithacus rubecula"): a single word also finds every species with a name starting with it. Use the result names for add_labels.',
+        input: { required: ['query'], properties: { query: str('Full name, part of it, or scientific name'), limit: num('Max (default 12)', { minimum: 1, maximum: 30 }) } },
+        run: (a) => app.species(a.query, a.limit ?? 12),
     });
 
     const labelItem = {
@@ -207,11 +207,11 @@ export function buildAppTools(app: AppPort, ctx: ToolContext): ToolRegistry {
 
     reg.add({
         name: 'get_spectrogram_image', title: 'Spectrogram image', tier: 'read',
-        description: 'PNG of the spectrogram as visible now (time left→right, frequency bottom→top). Use navigate first to choose the range.',
-        input: { properties: { maxWidth: num('Pixels (default 1200)', { minimum: 200, maximum: 2400 }) } },
+        description: 'PNG of the spectrogram as visible now (time left→right, frequency bottom→top), with the label boxes and names drawn in (labels: false for the bare spectrogram). Use navigate first to choose the range.',
+        input: { properties: { maxWidth: num('Pixels (default 1200)', { minimum: 200, maximum: 2400 }), labels: { type: 'boolean', description: 'Draw label boxes (default true)' } } },
         run: async (a) => {
             const v = needView();
-            const png = await app.spectrogramPng(a.maxWidth ?? 1200);
+            const png = await app.spectrogramPng(a.maxWidth ?? 1200, a.labels !== false);
             if (!png) throw new Error('The spectrogram is not drawn yet.');
             return { content: [
                 { type: 'image', data: png, mimeType: 'image/png' },
