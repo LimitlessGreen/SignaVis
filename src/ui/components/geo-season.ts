@@ -9,7 +9,10 @@ const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 /** BirdNET geo week of a date: 4 per month, 1–48 (days 22–31 are week 4). Null for invalid dates. */
 export function geoWeek(date: Date | string | null | undefined): number | null {
   if (date == null || date === '') return null;
-  const d = date instanceof Date ? date : new Date(date);
+  // "YYYY-MM-DD" is a calendar date: new Date() would read it as UTC midnight, which is the
+  // previous day west of Greenwich (2026-01-01 → week 48).
+  const ymd = typeof date === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim()) : null;
+  const d = date instanceof Date ? date : ymd ? new Date(+ymd[1], +ymd[2] - 1, +ymd[3]) : new Date(date);
   if (isNaN(d.getTime())) return null;
   return d.getMonth() * 4 + Math.min(3, Math.floor((d.getDate() - 1) / 7)) + 1;
 }
