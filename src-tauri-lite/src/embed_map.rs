@@ -1190,6 +1190,11 @@ pub struct TileWindow { pub path: String, pub start: f64, pub end: f64 }
 #[serde(rename_all = "camelCase")]
 pub struct Tile { pub w: u32, pub h: u32, pub max_hz: f64, pub data: Vec<u8>, pub error: Option<String> }
 
+/// Error tiles for the windows of a render worker that failed.
+fn failed_tiles(n: usize) -> Vec<Tile> {
+    (0..n).map(|_| Tile { w: 0, h: 0, max_hz: 0.0, data: Vec::new(), error: Some("rendering failed".into()) }).collect()
+}
+
 /// Small spectrograms of hit windows (paths relative to the project), rendered in parallel.
 #[tauri::command]
 pub async fn similar_tiles(root: String, windows: Vec<TileWindow>, spec: aw_catalog::thumb::ThumbSpec) -> Result<Vec<Tile>, String> {
@@ -1205,8 +1210,10 @@ pub async fn similar_tiles(root: String, windows: Vec<TileWindow>, spec: aw_cata
         let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8).max(1);
         let chunk = windows.len().div_ceil(threads).max(1);
         std::thread::scope(|s| {
-            let hs: Vec<_> = windows.chunks(chunk).map(|c| s.spawn(move || c.iter().map(one).collect::<Vec<_>>())).collect();
-            hs.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+            let hs: Vec<_> = windows.chunks(chunk).map(|c| (c.len(), s.spawn(move || c.iter().map(one).collect::<Vec<_>>()))).collect();
+            // One tile per requested window, in order: a worker that failed (panic) gives error tiles, so later
+            // tiles keep their place.
+            hs.into_iter().flat_map(|(n, h)| h.join().unwrap_or_else(|_| failed_tiles(n))).collect()
         })
     }).await.map_err(|e| e.to_string())
 }

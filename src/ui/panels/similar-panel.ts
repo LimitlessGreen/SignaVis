@@ -324,6 +324,8 @@ export class SimilarPanel {
             const res = await this.#call<Tile[]>('similar_tiles', {
                 root, windows: missing.map((h) => ({ path: h.path, start: h.start, end: h.end })), spec: TILE_SPEC,
             });
+            // One tile per window, in order; anything else cannot be matched safely.
+            if (!Array.isArray(res) || res.length !== missing.length) throw new Error('tile count mismatch');
             missing.forEach((h, k) => {
                 const t = res[k];
                 this.#tiles.set(tileKey(h), t && !t.error && t.w ? new ImageData(thumbPixels(t, this.#lut), t.w, t.h) : null);
