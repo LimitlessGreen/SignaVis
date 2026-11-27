@@ -2013,17 +2013,18 @@ function adoptSources(labels, all, mode) {
  * A BirdNET detection becomes its best BirdBox call box not copied yet (`mode: 'all'`: every
  * box in its window); a BirdBox box gets the species of the BirdNET detection around it.
  */
-function adoptOneLabel(labelId, { mode = 'best' } = {}) {
+/** `batch`: part of a larger adoption — no own undo step, toast or prompt; returns the number of copies. */
+function adoptOneLabel(labelId, { mode = 'best', batch = false } = {}) {
   const lbl = state.labels.find((l) => l.id === labelId);
-  if (!lbl || !OWN_SOURCE_ID || lbl.setId === OWN_SOURCE_ID) return;
+  if (!lbl || !OWN_SOURCE_ID || lbl.setId === OWN_SOURCE_ID) return 0;
   const plan = adoptionPlan(lbl, state.labels, { mode, template: adoptTemplate() });
   // Boxes not copied yet, best first: every further ✓ takes the next one
   const open = adoptSources([lbl], state.labels, 'all');
   const todo = mode === 'all' ? open : open.slice(0, 1);
-  if (!todo.length) { selectionMeta.textContent = 'This label is already in my labels'; return; }
+  if (!todo.length) { if (!batch) selectionMeta.textContent = 'This label is already in my labels'; return 0; }
   const more = mode === 'best' && open.length > 1
     ? { label: `Also the other ${open.length - 1}`, run: () => adoptOneLabel(labelId, { mode: 'all' }) } : null;
-  const undo = snapshotLabels();
+  const undo = batch ? null : snapshotLabels();
   const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   labelStore.add(copies);
   // A copied similar-call suggestion is done: drop it from the suggestions and the review
@@ -2038,6 +2039,7 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   }
   touchOwnSet(OWN_SOURCE_ID);
   const n = copies.length;
+  if (batch) return n;
   selectionMeta.textContent = `Converted into ${n === 1 ? 'my label' : `${n} of my labels`}`;
   // The detection is gone from view (converted); undo brings it back
   showUndoToast(mode === 'all' || n > 1 ? `Converted into ${n} call box${n === 1 ? '' : 'es'} as ${lbl.label}`
@@ -2048,6 +2050,7 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
       : undefined);
   // A call box nobody could name: ask right away
   if (plan.needsName) { labelViews.flush(); player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(copies[0].id); }
+  return n;
 }
 
 /** A label of my own without frequency bounds (e.g. a converted BirdNET window). */
@@ -2998,7 +3001,18 @@ document.documentElement.classList.remove('sv-booting');
 /** Copy several detections / imported labels into my labels in one step (one undo). */
 function adoptLabelIds(ids) {
   const picked = ids.map((id) => state.labels.find((l) => l.id === id)).filter((l) => l && l.setId !== OWN_SOURCE_ID);
-  if (picked.length === 1 || picked.some((l) => l.origin === SIMILAR_ORIGIN)) { for (const l of picked) adoptOneLabel(l.id); return; }
+  if (picked.length === 1) { adoptOneLabel(picked[0].id); return; }
+  if (picked.some((l) => l.origin === SIMILAR_ORIGIN)) {
+    // Similar suggestions need their review bookkeeping per label; still one undo step for the whole selection.
+    const undo = snapshotLabels();
+    let n = 0;
+    for (const l of picked) n += adoptOneLabel(l.id, { batch: true });
+    if (!n) { selectionMeta.textContent = 'These labels are already in my labels'; return; }
+    const msg = `Converted ${picked.length} labels into ${n} of my labels`;
+    selectionMeta.textContent = msg;
+    showUndoToast(msg, undo);
+    return;
+  }
   const src = adoptSources(picked, state.labels, 'best');
   if (!src.length) { selectionMeta.textContent = 'These labels are already in my labels'; return; }
   const undo = snapshotLabels();
@@ -3957,7 +3971,11 @@ async function similarHitsToView(paths) {
   const t = new Date();
   const name = `Similar ${t.toLocaleDateString()} ${t.toLocaleTimeString()}`;
   const id = await catalogApi.createDataset(root, 'static', { name, description: `${ids.length} recordings with similar windows`, color: null, filter: null });
-  await catalogApi.datasetAdd(root, id, { ids });
+  try { await catalogApi.datasetAdd(root, id, { ids }); } catch (e) {
+    // No empty dataset left behind (the next "→ View" would make another one); the add error is the one shown.
+    await catalogApi.deleteDataset(root, id).catch((d) => console.warn('[similar] could not remove the empty dataset', d));
+    throw e;
+  }
   catalogView.datasetsChanged();
   await catalogView.setFilter({ datasetId: id }, { activeDs: id });
   return `View: ${ids.length} recording${ids.length === 1 ? '' : 's'} (dataset “${name}”)${ids.length < paths.length ? ` · ${paths.length - ids.length} not in the catalog` : ''}.`;
@@ -3980,7 +3998,12 @@ if (isLite()) {
   /** The file of a catalog row, or null (load error shown) when its folder is not on this computer. */
   async function catalogRowPath(root, id) {
     const path = await catalogApi.recordingPath(root, id);
-    if (!path) showLoadError('This recording\'s source folder is not located on this computer.', 'Cannot open');
+    if (!path) {
+      const msg = 'This recording\'s source folder is not located on this computer.';
+      showLoadError(msg, 'Cannot open');
+      // The file label is not shown outside Annotate (e.g. Ctrl K from Browse): say it in a dialog there.
+      if (spaces && spaces.active !== 'annotate') void appAlert(msg, { title: 'Cannot open' });
+    }
     return path || null;
   }
   /** Spaces: the library lives in Browse (built once, stays while a recording is open in Annotate). */
@@ -5169,7 +5192,7 @@ player.on('spectrogramlabelremove', (e) => {
   const removed = state.labels.find((l) => l.id === id);
   touchOwnSet(removed?.setId);
   // the player removed it already; a deleted copy brings its detection back, so redraw the player then
-  labelStore.remove(id, { views: removed?.adoptedFrom?.id != null ? ['player', 'list', 'badge'] : ['list', 'badge'] });
+  labelStore.remove(id, { views: removed?.adoptedFrom?.id != null ? ['player', 'list', 'badge', 'suggestions'] : ['list', 'badge'] });
 });
 
 // Undo/redo inside the player: mirror the restored state into state.labels
@@ -5885,7 +5908,7 @@ async function installTopMenus(shell) {
     'xc-key': () => xcKeyIndicator.click(),
     theme: () => themeToggleBtn.click(),
     'reset-layout': async () => {
-      if (!await appConfirm('Put every panel of this project back where it started? Filters and labels stay.',
+      if (!await appConfirm('Put every panel of this project back where it started? Labels and saved datasets stay; a filter that is not saved as a dataset is cleared.',
         { title: 'Reset panel layout', okLabel: 'Reset layout' })) return;
       await shell.resetLayouts();
       window.location.reload();
@@ -6126,6 +6149,8 @@ async function installSuggestions() {
 
 // ── Reference panel: Xeno-canto recordings of the species under review (Lite, mockup R1) ──
 let refPanel = null, _refAudio = null, _refRow = null;
+/** Each reference play request; a stop or a newer request makes an older one (still downloading) void. */
+let _refPlayReq = 0;
 const XC_SEARCH_API = 'https://xeno-canto.org/api/3/recordings';
 function refCoords() {
   const c = birdnetPanel?.getCoords?.();
@@ -6137,6 +6162,7 @@ function refMonth() {
   return ms != null ? new Date(ms + (_refRow.localOffsetMin ?? 0) * 60_000).getUTCMonth() + 1 : null;
 }
 function stopRefAudio() {
+  _refPlayReq++;
   if (!_refAudio) return;
   _refAudio.pause();
   URL.revokeObjectURL(_refAudio.src);
@@ -6276,14 +6302,17 @@ async function installReference() {
     },
     play: async (ref) => {
       stopRefAudio();
+      const req = _refPlayReq;
       if (player.isPlaying) player.pause();
       try {
         const audio = await xcPanel.fetchAudio(ref.id);
+        if (req !== _refPlayReq) return;   // stopped, another reference, or the editor played meanwhile
         const a = new Audio(URL.createObjectURL(new Blob([audio.buffer], { type: 'audio/mpeg' })));
         _refAudio = a;
         a.onended = () => { if (_refAudio === a) { stopRefAudio(); refPanel.stopped(); } };
         await a.play();
       } catch (err) {
+        if (req !== _refPlayReq) return;   // a failure of an old request must not stop a newer one
         stopRefAudio();
         refPanel.stopped();
         selectionMeta.textContent = `Xeno-canto: ${err?.message || err}`;
@@ -6342,7 +6371,7 @@ async function installReference() {
     void revealReference();
   });
   // the editor plays: XC audio stops
-  player.on?.('play', () => { if (_refAudio) { stopRefAudio(); refPanel.stopped(); } });
+  player.on?.('play', () => { stopRefAudio(); if (refPanel.busy) refPanel.stopped(); });   // also a reference still downloading
 }
 
 async function refreshSuggestions() {

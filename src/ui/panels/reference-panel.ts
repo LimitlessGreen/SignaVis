@@ -147,6 +147,8 @@ export class ReferencePanel {
     }
 
     stopped() { this.playing = null; this.renderGrid(); }
+    /** A reference is playing or still being fetched to play. */
+    get busy(): boolean { return this.playing != null; }
 
     private async load(page: number) {
         const t = this.target;
