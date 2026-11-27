@@ -13,7 +13,7 @@ import {
 
 export type ChipKind =
     | 'dataset' | 'site' | 'device' | 'tag' | 'path' | 'tod' | 'period' | 'localdays'
-    | 'nosite' | 'labels' | 'pos' | 'bbox' | 'status' | 'unassigned' | 'sun' | 'review' | 'detection';
+    | 'nosite' | 'nostart' | 'labels' | 'pos' | 'bbox' | 'status' | 'unassigned' | 'sun' | 'review' | 'detection';
 
 export interface ViewChip {
     kind: ChipKind;
@@ -51,11 +51,12 @@ export function viewChips(filter: CatalogFilter, facets: Facets | null, datasets
     if (tf.hourFrom != null) chips.push({ kind: 'tod', field: 'Time', label: `${hh(tf.hourFrom)}–${hh(tf.hourTo)} h` });
     if (tf.sun) chips.push({ kind: 'sun', field: 'Sun', label: sunWindowLabel(tf.sun) });
     if (tf.fromMs != null || tf.toMs != null) {
-        chips.push({ kind: 'period', field: 'Period', label: `${tf.fromMs != null ? day(tf.fromMs) : '…'} – ${tf.toMs != null ? day(tf.toMs - 86_400_000) : '…'}` });
+        chips.push({ kind: 'period', field: 'Period', label: `${tf.fromMs != null ? day(tf.fromMs) : '…'} – ${tf.toMs != null ? day(tf.toMs - 1) : '…'}` });
     }
     if (tf.localDayFrom || tf.localDayTo) chips.push({ kind: 'localdays', field: 'Date',
         label: tf.localDayFrom && tf.localDayFrom === tf.localDayTo ? tf.localDayFrom : `${tf.localDayFrom ?? '…'} – ${tf.localDayTo ?? '…'}` });
     if (tf.noSite) chips.push({ kind: 'nosite', field: 'Site', label: 'none' });
+    if (tf.noStart) chips.push({ kind: 'nostart', field: 'Start time', label: 'unknown' });
     if (tf.hasLabels != null) chips.push({ kind: 'labels', field: 'Labels', label: tf.hasLabels ? 'some' : 'none' });
     if (tf.hasPosition != null) chips.push({ kind: 'pos', field: 'Position', label: tf.hasPosition ? 'known' : 'unknown' });
     if (tf.bbox) chips.push({ kind: 'bbox', field: 'Area', label: bboxLabel(tf.bbox) });
@@ -96,6 +97,7 @@ export function withoutChip(
         case 'period': f.fromMs = null; f.toMs = null; break;
         case 'localdays': f.localDayFrom = null; f.localDayTo = null; break;
         case 'nosite': f.noSite = false; break;
+        case 'nostart': f.noStart = false; break;
         case 'labels': f.hasLabels = null; break;
         case 'pos': f.hasPosition = null; break;
         case 'bbox': f.bbox = null; break;

@@ -61,3 +61,7 @@ test('setPeriod: period inputs set local days and drop UTC bounds', () => {
     for (const bad of ['2023-02-30', '20.03.2023', '2023-3-1']) assert.equal(setPeriod(f, 'from', bad), false, bad);
     assert.equal(f.localDayFrom, null);
 });
+
+test('filterDays: an exclusive end inside a day keeps that day', () => {
+    assert.deepEqual(filterDays({ fromMs: Date.UTC(2023, 2, 9), toMs: Date.UTC(2023, 2, 9, 18) }), { from: '2023-03-09', to: '2023-03-09' });
+});

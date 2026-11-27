@@ -52,3 +52,16 @@ test('viewChips: a detection filter is a removable chip (score shown only above 
     const named = viewChips({ detection: { class: 'eurbla', minScore: 0 } }, facets, datasets, () => '', (c) => (c === 'eurbla' ? 'Amsel' : ''));
     assert.equal(named[0].label, 'Amsel');
 });
+
+test('unknown start time is a removable chip; removing it keeps the other filters', () => {
+    const chips = viewChips({ noStart: true, hourFrom: 18, hourTo: 6 }, facets, datasets);
+    assert.ok(chips.some((c) => c.kind === 'nostart'));
+    const r = withoutChip({ noStart: true, hourFrom: 18, hourTo: 6 }, null, null, 'nostart');
+    assert.equal(r.filter.noStart, false);
+    assert.equal(r.filter.hourFrom, 18);
+});
+
+test('period chip: an end inside a day names that day', () => {
+    const chips = viewChips({ fromMs: Date.UTC(2023, 2, 9), toMs: Date.UTC(2023, 2, 9, 18) }, facets, datasets);
+    assert.match(chips.find((c) => c.kind === 'period').label, /03-09 – .*03-09|9.*–.*9/);
+});

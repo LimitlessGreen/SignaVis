@@ -18,7 +18,7 @@ export interface HourBar { hour: number; count: number; on: boolean }
 /** The period of a filter as local days (inclusive). UTC-ms bounds from older datasets map to their UTC days. */
 export function filterDays(f: CatalogFilter): { from: string | null; to: string | null } {
     const from = f.localDayFrom ?? (f.fromMs != null ? isoDay(f.fromMs) : null);
-    const to = f.localDayTo ?? (f.toMs != null ? isoDay(f.toMs - DAY) : null);
+    const to = f.localDayTo ?? (f.toMs != null ? isoDay(f.toMs - 1) : null);
     return { from, to };
 }
 
