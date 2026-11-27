@@ -22,7 +22,12 @@ function halfToFloat(h) {
   return s * Math.pow(2, e - 15) * (1 + f / 1024);
 }
 
-self.onmessage = async function (e) {
+// One request at a time: onnxruntime-web does not support overlapping runs on one session
+// (on a Mali GPU three overlapping WebGPU runs never return).
+var queue = Promise.resolve();
+self.onmessage = function (e) { queue = queue.then(function () { return handle(e); }); };
+
+async function handle(e) {
   var m = e.data, id = m.id;
   try {
     if (m.type === 'load') {
@@ -85,7 +90,7 @@ self.onmessage = async function (e) {
   } catch (err) {
     self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
   }
-};
+}
 `;
 
 export interface GeoGridSource {

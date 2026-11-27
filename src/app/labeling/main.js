@@ -911,9 +911,8 @@ async function openSpeciesRangeMap(sci, week = null) {
     minScore: bp.getGeoThreshold(),
     fetchGrid: async (grid, w) => {
       const fast = await geoGridRunner(bp._loadedModelUrl);
-      if (fast) {
-        try { return await fast.grid(sci, grid, w); } catch (err) { console.warn('[range map] trunk failed, full model instead:', err); }
-      }
+      // A trunk error is shown in the map: the full model on the BirdNET worker takes minutes on a phone.
+      if (fast) return fast.grid(sci, grid, w);
       return birdnet.getRangeGrid(sci, grid, w);
     },
   });
