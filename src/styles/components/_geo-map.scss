@@ -249,6 +249,7 @@
 .geo-range-status { color: var(--color-text-muted); font-size: 11px; min-width: 70px; }
 .props-season-map { all: unset; cursor: pointer; color: var(--color-text-muted); font-size: 11px; margin-left: 4px; }
 .props-season-map:hover { color: var(--color-accent); }
+.props-season-map:focus-visible, .props-season-load:focus-visible { outline: 2px solid var(--color-accent); border-radius: 2px; }
 
 /* Season here: geomodel year profile of the label's species at the recording place */
 .props-season { margin: 8px 0 4px; font-size: 11px; color: var(--color-text-secondary); }

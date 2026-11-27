@@ -729,6 +729,7 @@ export class BirdNETInference {
   async getYearProfile(latitude: number, longitude: number, species: string[]): Promise<Record<string, number[]> | null> {
     if (!this.#loaded || !this.hasAreaModel) return null;
     const result = await this.#send('geo-profile', { latitude, longitude, species });
+    if (result.type === 'error') throw new Error(result.message);
     return result.type === 'geo-profile' ? result.profiles : null;
   }
 
@@ -822,6 +823,8 @@ export class BirdNETInference {
       this.#worker.terminate();
       this.#worker = null;
     }
+    // Settle what is still waiting (callers handle type 'error'), so no request hangs forever.
+    for (const resolve of this.#pending.values()) resolve({ type: 'error', message: 'BirdNET backend was closed' });
     this.#pending.clear();
     this.#loaded = false;
     this.#hasAreaModel = false;

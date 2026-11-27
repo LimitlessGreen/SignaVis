@@ -99,6 +99,8 @@ export class BirdNETPanel {
     geoThresholdVal: any;
     getAudioBuffer: any;
     getContext: any;
+    /** Called after a model finished loading (any path: analyse, live, explicit load). */
+    onModelLoaded: (() => void) | null = null;
     latInput: any;
     lonInput: any;
     mapBtn: any;
@@ -296,6 +298,7 @@ export class BirdNETPanel {
         },
       });
       this._loadedModelUrl = modelUrl;
+      this.onModelLoaded?.();
       this._setGeoFilterAvailable(!!result.hasAreaModel);
       if (this.statusEl) this.statusEl.textContent =
         result.hasAreaModel ? 'Area model loaded ✓' : 'Model loaded ✓';
@@ -430,6 +433,7 @@ export class BirdNETPanel {
       onStatus?.('Modell wird geladen …');
       const r = await this.birdnet.load({ modelUrl, onProgress: (msg: any) => onStatus?.(String(msg)) });
       this._loadedModelUrl = modelUrl;
+      this.onModelLoaded?.();
       this._setGeoFilterAvailable(!!r.hasAreaModel);
     }
     const coords = this._getCoords();
@@ -493,6 +497,7 @@ export class BirdNETPanel {
           },
         });
         this._loadedModelUrl = modelUrl;
+        this.onModelLoaded?.();
         this._setGeoFilterAvailable(!!loadResult.hasAreaModel);
         if (loadResult.hasAreaModel) {
           this.statusEl.textContent = 'Area model loaded ✓';

@@ -876,7 +876,14 @@ export class LabelList {
   _buildTagText(lbl: any, flat: boolean) {
     const span = el('span', 'lt-tags');
     if (flat) {
-      const { display } = this._resolveName(lbl);
+      const { display, scientific } = this._resolveName(lbl);
+      const sci = scientific || lbl.scientificName || '';
+      const hint = sci ? this._unusualHint?.(sci) : null;
+      if (hint) {
+        const w = el('span', 'geo-unusual', '⚠');
+        w.title = hint;
+        span.appendChild(w);
+      }
       span.appendChild(el('b', 'lt-tags-name', display));
     }
     const tags = lbl.tags || {};

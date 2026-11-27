@@ -127,6 +127,14 @@ export class GeoGridRunner {
     r.#worker = new Worker(url);
     URL.revokeObjectURL(url);
     r.#worker.onmessage = (e) => { const f = r.#pending.get(e.data.id); if (f) { r.#pending.delete(e.data.id); f(e.data); } };
+    // importScripts failing (e.g. onnxruntime not reachable) never answers a message.
+    r.#worker.onerror = (e) => {
+      e.preventDefault?.();
+      const message = `geomodel worker failed: ${e.message || 'script error'}`;
+      for (const f of r.#pending.values()) f({ type: 'error', message });
+      r.#pending.clear();
+      r.dispose();
+    };
     const res = await r.#send({ type: 'load', base: src.base, labelsUrl: src.labelsUrl, gpu });
     if (res.type === 'error') { r.dispose(); throw new Error(res.message); }
     r.ep = res.ep;
@@ -143,6 +151,7 @@ export class GeoGridRunner {
 
   #send(msg: any): Promise<any> {
     return new Promise((resolve) => {
+      if (!this.#worker) { resolve({ type: 'error', message: 'geomodel worker is closed' }); return; }
       const id = this.#next++;
       this.#pending.set(id, resolve);
       this.#worker!.postMessage({ ...msg, id });

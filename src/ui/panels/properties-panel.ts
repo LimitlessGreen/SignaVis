@@ -556,7 +556,9 @@ export class PropertiesPanel {
     const key = src ? `${sci}\0${src.key}` : '';
     if (key === this._seasonKey) return;
     this._seasonKey = key;
-    if (!src) { el.hidden = true; el.innerHTML = ''; return; }
+    // Another species/place/model: drop the old chart (and its Map button) right away.
+    el.hidden = true; el.innerHTML = ''; el.classList.remove('props-season--unusual');
+    if (!src) return;
     this._loadSeason(el, key, src, false, sci);
   }
 
@@ -600,8 +602,23 @@ export class PropertiesPanel {
         el.querySelector('.props-season-title')!.appendChild(mb);
       }
       el.title = `Geomodel score per week at the recording place (peak ${s.peak.toFixed(2)}, ${weekLabel(s.peakWeek)}). Dashed line: area filter threshold ${res.threshold}.`;
-    }).catch(() => {
-      if (this._seasonKey === key) { el.hidden = true; el.innerHTML = ''; }
+    }).catch((err: any) => {
+      if (this._seasonKey !== key || this._seasonEl !== el) return;
+      // Keep a way to try again (loading BirdNET stays an explicit click).
+      el.hidden = false;
+      el.classList.remove('props-season--unusual');
+      el.innerHTML = '';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'props-season-load';
+      btn.textContent = 'Season here failed – try again';
+      btn.title = String(err?.message || err || '');
+      btn.addEventListener('click', () => {
+        btn.disabled = true;
+        btn.textContent = 'Loading…';
+        this._loadSeason(el, key, src, true, sci);
+      });
+      el.appendChild(btn);
     });
   }
 

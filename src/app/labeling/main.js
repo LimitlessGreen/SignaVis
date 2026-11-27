@@ -960,7 +960,7 @@ const propsPanel = new PropertiesPanel({
     const threshold = bp.getGeoThreshold();
     const place = `${c.lat.toFixed(3)},${c.lon.toFixed(3)}`;
     return {
-      key: `${place}\0${week}\0${threshold}\0${birdnet.loaded ? birdnet.hasAreaModel : 'unloaded'}`,
+      key: `${place}\0${week}\0${threshold}\0${birdnet.loaded ? `${bp._loadedModelUrl || ''}\0${birdnet.hasAreaModel}` : 'unloaded'}`,
       load: async (allowModelLoad) => {
         if (!birdnet.loaded) {
           if (!allowModelLoad) return { needsModel: true };
@@ -3331,6 +3331,7 @@ const birdnetPanel = new BirdNETPanel({
   },
 });
 // Season block in Properties follows the threshold slider and a model loaded elsewhere.
+birdnetPanel.onModelLoaded = () => { propsPanel.refreshSeason(); labelList.render(_shownLabels()); };
 document.getElementById('birdnetGeoThreshold')?.addEventListener('change', () => { propsPanel.refreshSeason(); labelList.render(_shownLabels()); });
 initModelPicker({
   seg: document.getElementById('birdnetModelSeg'),

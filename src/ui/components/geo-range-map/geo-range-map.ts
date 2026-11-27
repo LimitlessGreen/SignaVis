@@ -3,6 +3,7 @@
  * week slider (1–48) with play. Opens as a modal; reuses the location map's layout.
  */
 import { loadLeaflet } from '../geo-map-modal/geo-map-modal.ts';
+import ModalManager from '../modal/modal-manager.ts';
 import { weekLabel, createGeoSourceInfo, GEO_WEEKS } from '../geo-season.ts';
 import { gridForView, gridToRgba, type ViewGrid } from './range-grid.ts';
 
@@ -41,7 +42,7 @@ export async function openRangeMap(opts: RangeMapOptions): Promise<void> {
       <div class="geo-map-header">
         <span class="geo-map-title">${esc(opts.title || opts.scientific)}${opts.title && opts.title !== opts.scientific ? ` <i class="geo-range-sci">${esc(opts.scientific)}</i>` : ''}</span>
         <span class="geo-range-src"></span>
-        <button class="geo-map-close" type="button" aria-label="Close">×</button>
+        <button class="geo-map-close modal-close" type="button" aria-label="Close">×</button>
       </div>
       <div class="geo-map-container geo-range-container"></div>
       <div class="geo-range-bar">
@@ -79,12 +80,26 @@ export async function openRangeMap(opts: RangeMapOptions): Promise<void> {
 
   const COARSE = { cellPx: 22, max: 1500 }, FINE = opts.fine ?? { cellPx: 10, max: 4500 };
 
-  /** Coarse grid first (fast), then a finer one unless playing or superseded. */
-  async function render() {
-    const my = ++token;
+  /**
+   * One render at a time: requests while one runs collapse into a single follow-up for the
+   * latest view and week, so dragging the slider does not queue a grid per step.
+   */
+  let running: Promise<void> | null = null;
+  let again = false;
+  function render(): Promise<void> {
     weekLbl.textContent = `${weekLabel(week)} (week ${week})`;
+    if (running) { again = true; return running; }
+    running = (async () => {
+      do { again = false; await renderOnce(); } while (again && !closed);
+    })().finally(() => { running = null; });
+    return running;
+  }
+
+  /** Coarse grid first (fast), then a finer one unless playing or superseded. */
+  async function renderOnce() {
+    const my = ++token;
     if (playing != null && opts.playFine) { await renderPass(my, FINE); return; }
-    if (!await renderPass(my, COARSE)) return;
+    if (!await renderPass(my, COARSE) || again) return;
     if (playing == null) await renderPass(my, FINE);
   }
 
@@ -136,22 +151,24 @@ export async function openRangeMap(opts: RangeMapOptions): Promise<void> {
     playing = window.setTimeout(step, 0);
   });
 
+  // Focus into the dialog, Tab kept inside, focus back on close; Escape, × and backdrop close it.
+  const modal = new ModalManager({ backdrop, dialog: backdrop.querySelector('.geo-range-modal'), onClose: () => close() } as any);
   function close() {
+    if (closed) return;
     closed = true; stop();
+    modal.close(); modal.dispose();
     map.remove(); backdrop.remove();
     document.removeEventListener('keydown', onKey);
   }
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Escape') close();
-    else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       if (document.activeElement === slider) return; // the slider handles its own keys
       week = (week - 1 + (e.key === 'ArrowRight' ? 1 : GEO_WEEKS - 1)) % GEO_WEEKS + 1;
       slider.value = String(week); render();
     }
   }
   document.addEventListener('keydown', onKey);
-  backdrop.querySelector('.geo-map-close')!.addEventListener('click', close);
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  modal.open();
 
   setTimeout(() => { map.invalidateSize(); render(); }, 50);
 }
