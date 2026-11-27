@@ -276,6 +276,7 @@ $lib-cols: minmax(240px, 3fr) 150px minmax(90px, 1fr) minmax(90px, 1fr) 70px 54p
     span { color: var(--color-text-secondary); font-size: 11px; }
 }
 .lib-stats-page .lib-table:not(.lib-coverage) { max-width: 1000px; }
+.lib-stats-page.is-loading .lib-coverage { opacity: 0.5; pointer-events: none; }
 .lib-coverage {
     width: auto;
     th { font-size: 10px; white-space: nowrap; }

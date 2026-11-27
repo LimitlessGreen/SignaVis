@@ -36,6 +36,7 @@ export class StatsDialog {
         this.el.innerHTML = '<p class="lib-hint">Counting…</p>';
         this.el.addEventListener('click', (e) => {
             const c = (e.target as HTMLElement).closest<HTMLElement>('[data-week]');
+            if (this.#loading) return;   // cells of the previous filter, the new counts are on their way
             if (c && o.onPickWeek) o.onPickWeek(c.dataset.site === '' ? null : Number(c.dataset.site), c.dataset.week!);
         });
         void this.load();
@@ -49,13 +50,19 @@ export class StatsDialog {
 
     #loadGen = 0;
 
+    #loading = false;
+
     async load() {
         const gen = ++this.#loadGen;
+        this.#loading = true;
+        this.el.classList.add('is-loading');
         try {
             const st = await catalogApi.stats(this.#o.projectRoot, this.#o.filter);
             if (gen === this.#loadGen) this.#render(st);
         } catch (e) {
             if (gen === this.#loadGen) this.el.innerHTML = `<p class="lib-warn">Error: ${esc(e)}</p>`;
+        } finally {
+            if (gen === this.#loadGen) { this.#loading = false; this.el.classList.remove('is-loading'); }
         }
     }
 
