@@ -1713,7 +1713,7 @@ export class BirdNETPlayer {
 
     /** Content key of a snapshot: what the user can change, ignoring bookkeeping fields. */
     _undoKey(snap: LinkedLabel[]): string {
-        const rows = snap.map((l: any) => [l.id, l.start, l.end, l.freqMin, l.freqMax, l.label, l.scientificName, l.color, l.tags])
+        const rows = snap.map((l: any) => [l.id, l.start, l.end, l.freqMin, l.freqMax, l.label, l.scientificName, l.color, l.tags, l.polarity ?? null, l.review ?? null])
             .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
         return JSON.stringify(rows);
     }

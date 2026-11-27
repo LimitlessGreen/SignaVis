@@ -41,3 +41,18 @@ test('undo emits labelrestore with before/after', () => {
     assert.deepEqual(ev.detail.before.map((l) => l.id), ['a']);
     assert.deepEqual(ev.detail.after, []);
 });
+
+test('a change of presence or review state alone is its own undo step', () => {
+    const p = bare();
+    p._syncLinkedLabelsToLayers();
+    p._linkedLabels.set('a', { ...A });
+    p._syncLinkedLabelsToLayers();
+    p._linkedLabels.set('a', { ...A, polarity: 'absent' });
+    p._syncLinkedLabelsToLayers();
+    p._linkedLabels.set('a', { ...A, polarity: 'absent', review: 'unsure' });
+    p._syncLinkedLabelsToLayers();
+    assert.equal(p._undoStack.size, 4);
+    p.undo();
+    assert.equal(p._linkedLabels.get('a').review, undefined, 'undo reverts the review change only');
+    assert.equal(p._linkedLabels.get('a').polarity, 'absent');
+});
