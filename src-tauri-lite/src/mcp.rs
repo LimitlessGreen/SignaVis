@@ -83,17 +83,39 @@ fn read_config() -> Option<McpConfig> {
 }
 
 fn write_config(c: &McpConfig) -> Result<(), String> {
-    let path = config_path().ok_or("no config directory")?;
+    write_config_to(&config_path().ok_or("no config directory")?, c)
+}
+
+fn write_config_to(path: &std::path::Path, c: &McpConfig) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    std::fs::write(&path, serde_json::to_vec_pretty(c).unwrap()).map_err(|e| e.to_string())?;
+    // The token must never be readable by others, not even briefly: write a private temp file, then rename.
+    let tmp = path.with_extension("json.tmp");
+    let _ = std::fs::remove_file(&tmp);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
     }
+    let mut f = opts.open(&tmp).map_err(|e| e.to_string())?;
+    std::io::Write::write_all(&mut f, &serde_json::to_vec_pretty(c).unwrap()).map_err(|e| e.to_string())?;
+    drop(f);
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Bind the wanted port; a listener that was just turned off may still hold it for a moment, so retry briefly.
+fn bind_port(port: u16) -> Option<tiny_http::Server> {
+    for _ in 0..20 {
+        if let Ok(s) = tiny_http::Server::http(("127.0.0.1", port)) {
+            return Some(s);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    None
 }
 
 fn new_token() -> Result<String, String> {
@@ -161,7 +183,7 @@ pub fn mcp_set_enabled(app: AppHandle, state: State<'_, McpState>, enabled: bool
         let old = read_config();
         let wanted = old.as_ref().map(|c| c.port).or(*state.last_port.lock().unwrap());
         let server = wanted
-            .and_then(|port| tiny_http::Server::http(("127.0.0.1", port)).ok())
+            .and_then(bind_port)
             .map(Ok)
             .unwrap_or_else(|| tiny_http::Server::http("127.0.0.1:0"))
             .map_err(|e| format!("cannot start the MCP server: {e}"))?;
@@ -244,7 +266,9 @@ fn handle(mut req: tiny_http::Request, app: &AppHandle, shared: &Shared, token: 
     let Ok(msg) = serde_json::from_str::<Value>(&body) else {
         return reply(req, 400, Some(rpc_error(Value::Null, -32700, "parse error")));
     };
-    match dispatch(&msg, |name, args| call_webview(app, shared, name, args), &shared.tools.lock().unwrap().clone()) {
+    // Snapshot first: the mutex must not be held while a tool call waits for the webview.
+    let tools = shared.tools.lock().unwrap().clone();
+    match dispatch(&msg, |name, args| call_webview(app, shared, name, args), &tools) {
         Some(res) => reply(req, 200, Some(res)),
         None => reply(req, 202, None),
     }
@@ -390,6 +414,30 @@ pub fn parse_response(raw: &[u8]) -> Option<(u16, Vec<u8>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn config_file_is_private_from_the_start() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("mcp-cfg-test-{}", std::process::id()));
+        let path = dir.join("sub").join("mcp.json");
+        let c = McpConfig { port: 1, token: "t".into(), url: "u".into() };
+        write_config_to(&path, &c).unwrap();
+        write_config_to(&path, &c).unwrap(); // overwrite works too
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert!(!path.with_extension("json.tmp").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_port_freed_shortly_after_is_bound_again() {
+        let first = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let port = first.server_addr().to_ip().unwrap().port();
+        let t = std::thread::spawn(move || { std::thread::sleep(std::time::Duration::from_millis(300)); drop(first); });
+        let again = bind_port(port).expect("rebinds the same port");
+        assert_eq!(again.server_addr().to_ip().unwrap().port(), port);
+        t.join().unwrap();
+    }
 
     #[test]
     fn initialize_echoes_a_known_version_else_newest() {
