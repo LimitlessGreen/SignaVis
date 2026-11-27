@@ -28,6 +28,10 @@ export interface MapDialogOptions {
     onWithoutPosition: () => void;
     /** Positions changed (track import/delete). */
     onChanged: () => void;
+    /** Placed in a panel (Lite spaces): map only, area and tracks behind small buttons on it. */
+    panel?: boolean;
+    /** Area filter in force, drawn as a dashed rectangle. */
+    area?: [number, number, number, number] | null;
 }
 
 export class MapDialog {
@@ -39,16 +43,23 @@ export class MapDialog {
     #tracks: TrackInfo[] = [];
     #fitted = false;
     #gen = 0;
+    #area: [number, number, number, number] | null;
+    #areaLayer: any = null;
 
     constructor(o: MapDialogOptions) {
         this.#o = o;
+        this.#area = o.area ?? null;
         this.el = document.createElement('div');
-        this.el.className = 'lib-map';
+        this.el.className = o.panel ? 'lib-map lib-map--panel' : 'lib-map';
+        const areaBtn = '<button class="btn btn--sm" data-act="area" title="Then drag a rectangle on the map">Filter by area</button>';
         this.el.innerHTML = `
           <div class="lib-map-canvas"></div>
-          <aside class="lib-map-side">
-            <p class="lib-hint" data-k="summary">Loading…</p>
-            <div class="lib-row"><button class="btn btn--sm" data-act="area" title="Then drag a rectangle on the map">Filter by area</button>
+          ${o.panel ? `<div class="lib-map-bar">${areaBtn}
+            <button class="btn btn--sm" data-act="side" aria-expanded="false" title="Import and manage GPS tracks">GPS tracks…</button></div>
+            <p class="lib-map-legend" data-k="summary">Loading…</p>` : ''}
+          <aside class="lib-map-side"${o.panel ? ' hidden' : ''}>
+            ${o.panel ? '' : '<p class="lib-hint" data-k="summary">Loading…</p>'}
+            <div class="lib-row">${o.panel ? '' : areaBtn}
               <button class="btn btn--sm btn--ghost" data-act="no-pos" hidden>Show those without position</button></div>
             <h4>GPS tracks</h4>
             <p class="lib-hint">A track (GPX, e.g. from a phone app or a GPS logger) gives recordings in its time span the position
@@ -83,11 +94,40 @@ export class MapDialog {
             maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         }).addTo(this.#map);
         this.#layers = { tracks: L.layerGroup().addTo(this.#map), cells: L.layerGroup().addTo(this.#map), sites: L.layerGroup().addTo(this.#map) };
+        this.#drawArea();
         this.#map.on('zoomend', () => void this.#loadPoints());
         // The dialog may get its size after the map was created.
         this.#resize = new ResizeObserver(() => this.#map?.invalidateSize());
         this.#resize.observe(canvas);
         await Promise.all([this.#loadPoints(), this.#loadTracks()]);
+    }
+
+    /** Follow a new library filter (panel): points again, area rectangle redrawn. */
+    setFilter(filter: CatalogFilter, area: [number, number, number, number] | null, devices?: FacetValue[]) {
+        this.#o = { ...this.#o, filter };
+        this.#area = area;
+        if (devices) this.#setDevices(devices);
+        this.#drawArea();
+        void this.#loadPoints();
+    }
+
+    /** Recorder choices for track import from the current facets; the chosen one stays if still there. */
+    #setDevices(devices: FacetValue[]) {
+        this.#o = { ...this.#o, devices };
+        const sel = this.el.querySelector<HTMLSelectElement>('[data-k="device"]');
+        if (!sel) return;
+        const keep = sel.value;
+        sel.innerHTML = `<option value="">all recorders (filtered)</option>${devices.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('')}`;
+        sel.value = devices.some((d) => String(d.id) === keep) ? keep : '';
+    }
+
+    #drawArea() {
+        const L = (window as any).L;
+        this.#areaLayer?.remove();
+        this.#areaLayer = null;
+        if (!L || !this.#map || !this.#area) return;
+        const [s, w, n, e] = this.#area;
+        this.#areaLayer = L.rectangle([[s, w], [n, e]], { color: '#e4572e', weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(this.#map);
     }
 
     async #loadPoints() {
@@ -105,7 +145,7 @@ export class MapDialog {
 
     #drawPoints() {
         const L = (window as any).L, d = this.#data, lay = this.#layers;
-        if (!L || !d || !lay) return;
+        if (!L || !d || !lay || !this.#map) return;
         lay.sites.clearLayers();
         lay.cells.clearLayers();
         const css = getComputedStyle(this.el);
@@ -196,6 +236,12 @@ export class MapDialog {
         try {
             switch (b.dataset.act) {
                 case 'area': this.#startArea(); return;
+                case 'side': {
+                    const side = this.el.querySelector<HTMLElement>('.lib-map-side')!;
+                    side.hidden = !side.hidden;
+                    b.setAttribute('aria-expanded', String(!side.hidden));
+                    return;
+                }
                 case 'site': this.#o.onSite(Number(b.dataset.site)); return;
                 case 'no-pos': this.#o.onWithoutPosition(); return;
                 case 'import-track': {
@@ -203,7 +249,9 @@ export class MapDialog {
                     if (!path) return;
                     const dev = this.el.querySelector<HTMLSelectElement>('[data-k="device"]')!.value;
                     const gap = Number(this.el.querySelector<HTMLInputElement>('[data-k="gap"]')!.value) || 120;
-                    const filter = dev ? { ...this.#o.filter, deviceIds: [Number(dev)] } : this.#o.filter;
+                    // Points are drawn without the area (to show what lies outside); positions are only written inside it.
+                    const inArea = { ...this.#o.filter, bbox: this.#area ?? this.#o.filter.bbox ?? null };
+                    const filter = dev ? { ...inArea, deviceIds: [Number(dev)] } : inArea;
                     out.classList.remove('lib-warn');
                     out.textContent = 'Reading track…';
                     const r = await catalogApi.importTrack(this.#o.projectRoot, path, dev ? Number(dev) : null, { filter }, gap);
@@ -241,6 +289,7 @@ export class MapDialog {
 
     dispose() {
         this.#disposed = true;
+        this.#gen++;   // a point request still running must not draw on the removed map
         this.#resize?.disconnect();
         this.#resize = null;
         this.#map?.remove();

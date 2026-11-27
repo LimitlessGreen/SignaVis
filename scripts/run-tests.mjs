@@ -25,7 +25,12 @@ function collectTestFiles(dir) {
 
 let testTargets = [defaultGlob];
 const testsDir = path.join(process.cwd(), 'tests');
-const found = collectTestFiles(testsDir);
+// Workspace packages (packages/*/tests) run with the app's tests.
+const packagesDir = path.join(process.cwd(), 'packages');
+const packageTestDirs = fs.existsSync(packagesDir)
+  ? fs.readdirSync(packagesDir).map((d) => path.join(packagesDir, d, 'tests'))
+  : [];
+const found = [testsDir, ...packageTestDirs].flatMap(collectTestFiles);
 if (found.length > 0) {
   // Use explicit file paths to avoid directory imports being resolved by loaders
   testTargets = found.map((p) => path.relative(process.cwd(), p));

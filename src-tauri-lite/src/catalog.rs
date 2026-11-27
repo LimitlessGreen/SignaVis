@@ -148,6 +148,13 @@ pub async fn catalog_roots(state: tauri::State<'_, CatalogState>, project_root: 
     blocking(move || aw_catalog::roots(&*cat.lock().map_err(err)?, &machine_name()).map_err(err)).await
 }
 
+/// The project has a catalog file (opening one creates it, so the UI asks first before loading at startup).
+#[tauri::command]
+pub fn catalog_exists(state: tauri::State<'_, CatalogState>, project_root: String) -> bool {
+    state.open.lock().map(|o| o.contains_key(&project_root)).unwrap_or(false)
+        || Path::new(&project_root).join(CATALOG_FILE).is_file()
+}
+
 #[tauri::command]
 pub async fn catalog_facets(state: tauri::State<'_, CatalogState>, project_root: String, filter: Filter) -> Result<Facets, String> {
     let cat = state.get(&project_root)?;
@@ -427,6 +434,15 @@ pub async fn catalog_bulk_edit(state: tauri::State<'_, CatalogState>, project_ro
     blocking(move || ent::bulk_edit(&mut *cat.lock().map_err(err)?, &selection, &edit).map_err(err)).await
 }
 
+/// Review state of recordings (None: back to new). `only_new`: keep recordings that already have one.
+#[tauri::command]
+pub async fn catalog_set_review(
+    state: tauri::State<'_, CatalogState>, project_root: String, ids: Vec<i64>, review: Option<String>, only_new: bool,
+) -> Result<usize, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::review::set_review(&mut *cat.lock().map_err(err)?, &ids, review.as_deref(), only_new).map_err(err)).await
+}
+
 #[tauri::command]
 pub async fn catalog_recording_detail(state: tauri::State<'_, CatalogState>, project_root: String, recording_id: i64) -> Result<ent::RecordingDetail, String> {
     let cat = state.get(&project_root)?;
@@ -564,4 +580,11 @@ pub async fn catalog_recording_datasets(state: tauri::State<'_, CatalogState>, p
 pub async fn catalog_dataset_remove_range(state: tauri::State<'_, CatalogState>, project_root: String, id: i64, recording_id: i64, range: [f64; 2]) -> Result<usize, String> {
     let cat = state.get(&project_root)?;
     blocking(move || ds::remove_range(&*cat.lock().map_err(err)?, id, recording_id, range[0], range[1]).map_err(err)).await
+}
+
+/// Recording ids of absolute file paths (Similar → View); files not in the catalog are left out.
+#[tauri::command]
+pub async fn catalog_ids_for_paths(state: tauri::State<'_, CatalogState>, project_root: String, paths: Vec<String>) -> Result<Vec<i64>, String> {
+    let cat = state.get(&project_root)?;
+    blocking(move || aw_catalog::recordings_by_paths(&*cat.lock().map_err(err)?, &paths, &machine_name()).map_err(err)).await
 }

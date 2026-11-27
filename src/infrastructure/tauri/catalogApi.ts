@@ -22,6 +22,8 @@ export const catalogApi = {
         call<ImportResult>('catalog_import', { projectRoot, source, rootName, profile, importTables }),
     profiles: (projectRoot: string) => call<ProfileSpec[]>('catalog_profiles', { projectRoot }),
     roots: (projectRoot: string) => call<RootInfo[]>('catalog_roots', { projectRoot }),
+    /** The project has a catalog (asking does not create one, unlike the other calls). */
+    exists: (projectRoot: string) => call<boolean>('catalog_exists', { projectRoot }),
     facets: (projectRoot: string, filter: CatalogFilter) => call<Facets>('catalog_facets', { projectRoot, filter }),
     list: (projectRoot: string, filter: CatalogFilter, sort: CatalogSort, after: CatalogCursor | null, limit: number) =>
         call<CatalogPage>('catalog_list', { projectRoot, filter, sort, after, limit }),
@@ -53,6 +55,9 @@ export const catalogApi = {
     tags: (projectRoot: string) => call<TagInfo[]>('catalog_tags', { projectRoot }),
     metaKeys: (projectRoot: string) => call<[string, number][]>('catalog_meta_keys', { projectRoot }),
     bulkEdit: (projectRoot: string, selection: Selection, edit: BulkEdit) => call<BulkReport>('catalog_bulk_edit', { projectRoot, selection, edit }),
+    /** Review state (null: back to new); `onlyNew` keeps recordings that already have one. Returns how many changed. */
+    setReview: (projectRoot: string, ids: number[], review: 'open' | 'done' | null, onlyNew = false) =>
+        call<number>('catalog_set_review', { projectRoot, ids, review, onlyNew }),
     recordingDetail: (projectRoot: string, recordingId: number) => call<RecordingDetail>('catalog_recording_detail', { projectRoot, recordingId }),
     stats: (projectRoot: string, filter: CatalogFilter) => call<CatalogStats>('catalog_stats', { projectRoot, filter }),
     importTrack: (projectRoot: string, path: string, deviceId: number | null, selection: Selection, maxGapS: number) =>
@@ -67,6 +72,7 @@ export const catalogApi = {
     clearThumbs: (projectRoot: string) => call<number>('catalog_thumbs_clear', { projectRoot }),
     recordingPath: (projectRoot: string, recordingId: number) =>
         call<string | null>('catalog_recording_path', { projectRoot, recordingId }),
+    idsForPaths: (projectRoot: string, paths: string[]) => call<number[]>('catalog_ids_for_paths', { projectRoot, paths }),
     datasets: (projectRoot: string) => call<DatasetInfo[]>('catalog_datasets', { projectRoot }),
     createDataset: (projectRoot: string, kind: 'static' | 'filter', dataset: DatasetEdit) =>
         call<number>('catalog_create_dataset', { projectRoot, kind, dataset }),

@@ -47,6 +47,8 @@ pub struct Filter {
     pub dataset_id: Option<i64>,
     /// Start relative to the sun at the recording's position (own, else the site's).
     pub sun: Option<crate::sun::SunWindow>,
+    /// Review state: "new" (never opened), "open", "done", "todo" (not done).
+    pub review: Option<String>,
 }
 
 /// Nesting limit for dynamic datasets that refer to other datasets (also stops cycles).
@@ -60,7 +62,9 @@ const POS_LON: &str = "COALESCE(r.lon, (SELECT lon FROM site WHERE id = r.site_i
 pub(crate) const LOCAL_DAY: &str = "date(((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) - (((r.start_ms + COALESCE(r.local_offset_min, 0) * 60000) % 1000) + 1000) % 1000) / 1000, 'unixepoch')";
 
 #[derive(Clone, Copy, PartialEq)]
-pub(crate) enum Skip { None, Site, Device, Tag, Dataset }
+/// Filter part to leave out: a facet counts under the rest, so its own other values stay visible.
+/// `Time` leaves out both period and time of day (the calendar shows them dimmed instead).
+pub(crate) enum Skip { None, Site, Device, Tag, Dataset, Period, Hour, Time }
 
 pub(crate) fn where_clause(cat: &Catalog, f: &Filter, skip: Skip) -> Result<(String, Vec<Box<dyn ToSql>>)> {
     where_depth(cat, f, skip, 0)
@@ -108,18 +112,23 @@ fn where_depth(cat: &Catalog, f: &Filter, skip: Skip, depth: usize) -> Result<(S
     }
     if f.unassigned { push("(r.site_id IS NULL OR r.device_id IS NULL)".into(), vec![], &mut p); }
     if f.no_site { push("r.site_id IS NULL".into(), vec![], &mut p); }
-    if let Some(d) = &f.local_day_from { push(format!("{LOCAL_DAY} >= ?"), vec![Box::new(d.clone())], &mut p); }
-    if let Some(d) = &f.local_day_to { push(format!("{LOCAL_DAY} <= ?"), vec![Box::new(d.clone())], &mut p); }
-    if let Some(v) = f.from_ms { push("r.start_ms >= ?".into(), vec![Box::new(v)], &mut p); }
-    if let Some(v) = f.to_ms { push("r.start_ms < ?".into(), vec![Box::new(v)], &mut p); }
-    if let (Some(a), Some(b)) = (f.hour_from, f.hour_to) {
+    if skip != Skip::Period && skip != Skip::Time {
+        if let Some(d) = &f.local_day_from { push(format!("{LOCAL_DAY} >= ?"), vec![Box::new(d.clone())], &mut p); }
+        if let Some(d) = &f.local_day_to { push(format!("{LOCAL_DAY} <= ?"), vec![Box::new(d.clone())], &mut p); }
+        if let Some(v) = f.from_ms { push("r.start_ms >= ?".into(), vec![Box::new(v)], &mut p); }
+        if let Some(v) = f.to_ms { push("r.start_ms < ?".into(), vec![Box::new(v)], &mut p); }
+    }
+    if let (Some(a), Some(b), true) = (f.hour_from, f.hour_to, skip != Skip::Hour && skip != Skip::Time) {
         let (a, b) = (a as i64, b as i64);
         let op = if a <= b { "AND" } else { "OR" };
         push(format!("({LOCAL_HOUR} >= ? {op} {LOCAL_HOUR} < ?)"), vec![Box::new(a), Box::new(b)], &mut p);
     }
     if let Some(s) = &f.path_contains {
-        push("a.rel_path LIKE ? ESCAPE '\\'".into(),
-            vec![Box::new(format!("%{}%", s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")))], &mut p);
+        // Every word must occur somewhere in the path ("sk17 01_01"), in any order.
+        for w in s.split_whitespace() {
+            push("a.rel_path LIKE ? ESCAPE '\\'".into(),
+                vec![Box::new(format!("%{}%", w.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")))], &mut p);
+        }
     }
     match f.has_labels {
         Some(true) => push("EXISTS (SELECT 1 FROM label l WHERE l.recording_id = r.id)".into(), vec![], &mut p),
@@ -135,6 +144,13 @@ fn where_depth(cat: &Catalog, f: &Filter, skip: Skip, depth: usize) -> Result<(S
     }
     if f.no_start { push("r.start_ms IS NULL".into(), vec![], &mut p); }
     if let Some(st) = &f.status { push("a.status = ?".into(), vec![Box::new(st.clone())], &mut p); }
+    match f.review.as_deref() {
+        Some("new") => push("r.review IS NULL".into(), vec![], &mut p),
+        Some("todo") => push("r.review IS NOT 'done'".into(), vec![], &mut p),
+        Some(st @ ("open" | "done")) => push("r.review = ?".into(), vec![Box::new(st.to_string())], &mut p),
+        Some(other) => return Err(format!("unknown review state {other}").into()),
+        None => {}
+    }
     if let Some(sw) = &f.sun {
         let (a, b) = (sw.from.event.as_str(), sw.to.event.as_str());
         push(format!("sun_in(r.start_ms, {POS_LAT}, {POS_LON}, ?, ?, ?, ?) = 1"),
@@ -182,6 +198,8 @@ pub struct Row {
     pub device: Option<String>,
     pub labels: i64,
     pub status: Option<String>,
+    /// Review state: None (new), "open", "done".
+    pub review: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -214,13 +232,13 @@ pub fn list(cat: &Catalog, f: &Filter, sort: Sort, after: Option<&Cursor>, limit
     let sql = format!(
         "SELECT r.id, a.root_id, a.rel_path, a.size, r.start_ms, r.local_offset_min, r.duration_s,
                 (SELECT name FROM site WHERE id = r.site_id), (SELECT name FROM device WHERE id = r.device_id),
-                (SELECT COUNT(*) FROM label l WHERE l.recording_id = r.id), a.status
+                (SELECT COUNT(*) FROM label l WHERE l.recording_id = r.id), a.status, r.review
          {FROM} WHERE {w} ORDER BY {order} LIMIT {}", limit + 1);
     let mut st = cat.conn.prepare(&sql)?;
     let mut rows: Vec<Row> = st.query_map(params_from_iter(p.iter()), |r| Ok(Row {
         id: r.get(0)?, root_id: r.get(1)?, path: r.get(2)?, size: r.get(3)?, start_ms: r.get(4)?,
         local_offset_min: r.get(5)?, duration_s: r.get(6)?, site: r.get(7)?, device: r.get(8)?, labels: r.get(9)?,
-        status: r.get(10)?,
+        status: r.get(10)?, review: r.get(11)?,
     }))?.collect::<std::result::Result<_, _>>()?;
     let next = if rows.len() > limit {
         rows.truncate(limit);
@@ -248,10 +266,28 @@ pub struct Facets {
     pub first_ms: Option<i64>,
     pub last_ms: Option<i64>,
     pub no_start: i64,
+    /// Reviewed recordings under the filter: opened (not done) and done.
+    pub review_open: i64,
+    pub review_done: i64,
     /// Counts under the filter without its own site selection (so other sites stay pickable).
     pub sites: Vec<FacetValue>,
     pub devices: Vec<FacetValue>,
     pub tags: Vec<FacetValue>,
+    /// Recordings per local day, under the filter without its own period (for the date histogram).
+    pub days: Vec<DayCount>,
+    /// Recordings per local hour 0–23, under the filter without its own time of day.
+    pub hours: Vec<i64>,
+    /// Mean position [lat, lon] of the recordings with a position (own, else the site's); for sun times.
+    pub center: Option<[f64; 2]>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayCount {
+    pub day: String,
+    pub count: i64,
+    /// UTC offset of the recordings' local time that day (minutes; the largest when they differ).
+    pub offset_min: Option<i64>,
 }
 
 fn facet(cat: &Catalog, f: &Filter, skip: Skip, table: &str, col: &str) -> Result<Vec<FacetValue>> {
@@ -266,9 +302,10 @@ fn facet(cat: &Catalog, f: &Filter, skip: Skip, table: &str, col: &str) -> Resul
 pub fn facets(cat: &Catalog, f: &Filter) -> Result<Facets> {
     let (w, p) = where_clause(cat, f, Skip::None)?;
     let sql = format!("SELECT COUNT(*), COALESCE(SUM(a.size), 0), SUM(r.duration_s), MIN(r.start_ms), MAX(r.start_ms),
-        SUM(r.start_ms IS NULL) {FROM} WHERE {w}");
-    let (total, bytes, seconds, first_ms, last_ms, no_start) = cat.conn.query_row(&sql, params_from_iter(p.iter()), |r| Ok((
-        r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get::<_, Option<i64>>(5)?.unwrap_or(0))))?;
+        SUM(r.start_ms IS NULL), SUM(r.review = 'open'), SUM(r.review = 'done') {FROM} WHERE {w}");
+    let (total, bytes, seconds, first_ms, last_ms, no_start, review_open, review_done) = cat.conn.query_row(&sql, params_from_iter(p.iter()), |r| Ok((
+        r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get::<_, Option<i64>>(5)?.unwrap_or(0),
+        r.get::<_, Option<i64>>(6)?.unwrap_or(0), r.get::<_, Option<i64>>(7)?.unwrap_or(0))))?;
     let mut sites = facet(cat, f, Skip::Site, "site", "site_id")?;
     let mut devices = facet(cat, f, Skip::Device, "device", "device_id")?;
     let mut tags = {
@@ -283,7 +320,29 @@ pub fn facets(cat: &Catalog, f: &Filter) -> Result<Facets> {
     sites.sort_by(nat);
     devices.sort_by(nat);
     tags.sort_by(nat);
-    Ok(Facets { total, bytes, seconds, first_ms, last_ms, no_start, sites, devices, tags })
+    let days = {
+        let (w, p) = where_clause(cat, f, Skip::Period)?;
+        let sql = format!("SELECT {LOCAL_DAY}, COUNT(*), MAX(r.local_offset_min) {FROM} WHERE {w} AND r.start_ms IS NOT NULL GROUP BY 1 ORDER BY 1");
+        let mut st = cat.conn.prepare(&sql)?;
+        st.query_map(params_from_iter(p.iter()), |r| Ok(DayCount { day: r.get(0)?, count: r.get(1)?, offset_min: r.get(2)? }))?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    let mut hours = vec![0i64; 24];
+    {
+        let (w, p) = where_clause(cat, f, Skip::Hour)?;
+        let sql = format!("SELECT {LOCAL_HOUR}, COUNT(*) {FROM} WHERE {w} AND r.start_ms IS NOT NULL GROUP BY 1");
+        let mut st = cat.conn.prepare(&sql)?;
+        for row in st.query_map(params_from_iter(p.iter()), |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
+            let (h, n) = row?;
+            if (0..24).contains(&h) { hours[h as usize] = n; }
+        }
+    }
+    let center = {
+        let sql = format!("SELECT AVG({POS_LAT}), AVG({POS_LON}) {FROM} WHERE {w} AND {POS_LAT} IS NOT NULL");
+        let (lat, lon): (Option<f64>, Option<f64>) = cat.conn.query_row(&sql, params_from_iter(p.iter()), |r| Ok((r.get(0)?, r.get(1)?)))?;
+        lat.zip(lon).map(|(a, b)| [a, b])
+    };
+    Ok(Facets { total, bytes, seconds, first_ms, last_ms, no_start, review_open, review_done, sites, devices, tags, days, hours, center })
 }
 
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
@@ -326,8 +385,10 @@ pub fn ids(cat: &Catalog, f: &Filter) -> Result<Vec<i64>> {
 pub struct HeatCell { pub day: String, pub hour: i64, pub count: i64 }
 
 /// Recordings per local day × hour (calendar heatmap).
+/// Recordings per local day and hour under the filter without its period and time of day
+/// (the calendar dims cells outside them, so the rest stays in view and clickable).
 pub fn heatmap(cat: &Catalog, f: &Filter) -> Result<Vec<HeatCell>> {
-    let (w, p) = where_clause(cat, f, Skip::None)?;
+    let (w, p) = where_clause(cat, f, Skip::Time)?;
     let sql = format!("SELECT {LOCAL_DAY}, {LOCAL_HOUR}, COUNT(*) {FROM} WHERE {w} AND r.start_ms IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2");
     let mut st = cat.conn.prepare(&sql)?;
     let v = st.query_map(params_from_iter(p.iter()), |r| Ok(HeatCell { day: r.get(0)?, hour: r.get(1)?, count: r.get(2)? }))?
@@ -423,6 +484,27 @@ mod tests {
     }
 
     #[test]
+    fn day_and_hour_histograms_ignore_their_own_filter() {
+        let cat = fixture();
+        let all = facets(&cat, &Filter::default()).unwrap();
+        let with_start = all.total - all.no_start;
+        assert_eq!(all.days.iter().map(|d| d.count).sum::<i64>(), with_start);
+        assert_eq!(all.hours.len(), 24);
+        assert_eq!(all.hours.iter().sum::<i64>(), with_start);
+        let d0 = all.days[0].day.clone();
+        let busy = all.hours.iter().position(|&n| n > 0).unwrap() as u8;
+        let f = Filter { local_day_from: Some(d0.clone()), local_day_to: Some(d0.clone()),
+            hour_from: Some(busy), hour_to: Some(busy + 1), ..Default::default() };
+        let one = facets(&cat, &f).unwrap();
+        // Days still show every day (the period is their own filter), but only the chosen hour.
+        assert_eq!(one.days.len(), all.days.len());
+        assert!(one.days.iter().map(|d| d.count).sum::<i64>() <= all.hours[busy as usize]);
+        // Hours still show every hour, but only of the chosen day.
+        assert_eq!(one.hours.iter().sum::<i64>(), all.days[0].count);
+        assert_eq!(one.total, one.hours[busy as usize]);
+    }
+
+    #[test]
     fn keyset_paging_visits_every_row_once() {
         let cat = fixture();
         for sort in [Sort::Start, Sort::Path] {
@@ -447,11 +529,39 @@ mod tests {
     }
 
     #[test]
+    fn path_filter_words_all_match_in_any_order() {
+        let cat = fixture();
+        let n = |q: &str| facets(&cat, &Filter { path_contains: Some(q.into()), ..Default::default() }).unwrap().total;
+        let one_site = n("S2/");
+        assert_eq!(one_site, 24);
+        assert_eq!(n("S2/ _050000"), 1, "both words");
+        assert_eq!(n("_050000 S2/"), 1, "any order");
+        assert_eq!(n("  "), 49, "blank = no filter");
+        assert_eq!(n("S2/ loose"), 0);
+    }
+
+    #[test]
     fn heatmap_is_local_day_hour() {
         let cat = fixture();
         let h = heatmap(&cat, &Filter::default()).unwrap();
         assert_eq!(h.iter().map(|c| c.count).sum::<i64>(), 48);
         assert_eq!(h[0].day, "2023-03-13");
         assert_eq!(h[0].hour, 0);
+        // Period and time of day do not narrow the calendar (it dims instead); other filters do.
+        let f = Filter { local_day_from: Some("2023-03-14".into()), hour_from: Some(3), hour_to: Some(4), ..Default::default() };
+        assert_eq!(heatmap(&cat, &f).unwrap().iter().map(|c| c.count).sum::<i64>(), 48);
+        let f = Filter { path_contains: Some("loose".into()), ..Default::default() };
+        assert!(heatmap(&cat, &f).unwrap().iter().map(|c| c.count).sum::<i64>() < 48);
+    }
+
+    #[test]
+    fn facets_center_and_day_offsets() {
+        let cat = fixture();
+        assert!(facets(&cat, &Filter::default()).unwrap().center.is_none(), "fixture has no positions");
+        cat.conn.execute("UPDATE recording SET lat = 52.0, lon = 8.0 WHERE id = 1", []).unwrap();
+        cat.conn.execute("UPDATE recording SET lat = 54.0, lon = 10.0, local_offset_min = 120 WHERE id = 2", []).unwrap();
+        let f = facets(&cat, &Filter::default()).unwrap();
+        assert_eq!(f.center, Some([53.0, 9.0]));
+        assert!(f.days.iter().any(|d| d.offset_min == Some(120)));
     }
 }

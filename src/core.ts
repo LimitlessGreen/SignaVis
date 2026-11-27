@@ -11,6 +11,7 @@ import './styles/player.scss';   // → dist/core.css (and part of birdnet-playe
 
 export * from './app/BirdNETPlayer.ts';
 export type { PlayerFeature, OptionFeatureFactory } from './app/playerFeature.ts';
+export type { HostSpectrogramSettings } from './domain/dsp/hostSpectrogramSettings.ts';
 export { readRecordingStart, isoClockTime, ravenClock, utcLabel, formatRecordingStart, type RecordingStart } from './domain/recordingTime.ts';
 
 // Events

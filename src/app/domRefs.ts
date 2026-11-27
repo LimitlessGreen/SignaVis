@@ -133,6 +133,12 @@ export interface DomRefs {
     colorSchemeSelect:       HTMLSelectElement | null;
     loupeModeSelect:         HTMLSelectElement | null;
     labelDenseSelect:        HTMLSelectElement | null;
+    waveformScaleSelect:     HTMLSelectElement | null;
+    waveformRefSelect:       HTMLSelectElement | null;
+    waveformDbRangeRow:      HTMLElement       | null;
+    waveformDbRangeSelect:   HTMLSelectElement | null;
+    waveformRmsCheck:        HTMLInputElement  | null;
+    waveformBandSelect:      HTMLSelectElement | null;
     loupeDetailCheck:        HTMLInputElement  | null;
     freqLabels:              HTMLElement       | null;
     freqZoomResetBtn:        HTMLButtonElement | null;

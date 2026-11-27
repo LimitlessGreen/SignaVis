@@ -102,6 +102,8 @@ export function selectUploadLabels(entries: any[], sel: UploadSelection, sets?: 
         const picked = ((e?.annotations || []) as any[]).filter((l) => {
             const src = uploadSourceOf(l, sets);
             if (src !== 'own') return false;
+            // absent = the species is not in this box: no annotation for Xeno-canto
+            if (l?.polarity === 'absent') return false;
             if (sel.excludedSpecies.includes(speciesKey(l))) return false;
             if (sel.excludedLayers.includes(l.layer || DEFAULT_LAYER_ID)) return false;
             return true;

@@ -48,7 +48,7 @@ import { openLabelNameEditor } from '../../domain/annotations.ts';
 import { SimilarReview } from '../../ui/components/similar-review/similar-review.ts';
 import { keyScope } from '../../shared/keymap.ts';
 import { installOverlayPeekKey } from '../../ui/components/similar-review/overlay-peek.ts';
-import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, withoutAdopted, applyPlayerRestore, migrateSessionState } from '../../app/annotation-sets.ts';
+import { isOwnSet, normalizeSet, setStatusFromValidation, adoptLabels, labelsToAdopt, adoptedSourceIds, withoutAdopted, applyPlayerRestore, migrateSessionState, setDisplayName, removeSetLabels, soloHidden, isSoloSet } from '../../app/annotation-sets.ts';
 import { OWN_SOURCE_ID, DEFAULT_LAYER_ID, migrateToOwnSource, activeLayerId, asOwnLabel, ownLayers, addLayer, renameLayer, setActiveLayer, removeLayer, setLayerAnnotator } from '../../app/label-sources.ts';
 import { XenoCantoPanel, defaultSetInfo, SET_LICENSES } from '../../ui/panels/xc-panel.ts';
 import { AnnotatorProfile, onboardingPending } from '../../app/annotator-profile.ts';
@@ -759,6 +759,12 @@ keyScope('app').addEventListener('keydown', (e) => {
 keyScope('app').addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
+  // Annotate space with a recording of the catalog view open: N / P walk the view, D marks it done.
+  if ((k === 'n' || k === 'p' || k === 'd') && viewList?.active && spaces?.active === 'annotate') {
+    e.preventDefault();
+    void (k === 'n' ? viewList.next() : k === 'p' ? viewList.prev() : viewList.toggleDone());
+    return;
+  }
   if (k === 'n' || k === 'p') {
     const all = recordingManager.getAll();
     const i = all.findIndex((r) => r.id === recordingManager.getActive()?.id);
@@ -886,6 +892,8 @@ specPanel.relocate();
   specPanel.el.insertBefore(auto, sec);
 })();
 
+/** Opens "Sites & recorders" (set by installTopMenus). */
+let openSitesEditor = null;
 const propsPanel = new PropertiesPanel({
   getSetInfo: (setId) => (setId === OWN_SOURCE_ID ? null : state.labelSets?.get(setId) || null),
 });
@@ -1170,6 +1178,7 @@ const labelViews = new RenderScheduler([
   }],
   ['badge', () => sidebar.setBadge('labels', state.labels.length || '')],
   ['explore', () => explorePanel.notifyLabelsChanged()],
+  ['suggestions', () => { void refreshSuggestions(); }],
   ['props', () => {
     // Keep properties panel in sync with fresh label reference
     if (!propsPanel._pinnedLabel) return;
@@ -1204,9 +1213,9 @@ const labelStore = new LabelStore({ freeze: !!import.meta.env.DEV });
 // Every label change: save it to its recording now, redraw the views in the next microtask.
 // A change can name the views it needs (meta.views), e.g. leave out the player when the
 // player made the change itself. load/clear show stored labels: nothing to save back.
-const ALL_LABEL_VIEWS = ['player', 'list', 'badge', 'explore', 'props'];
+const ALL_LABEL_VIEWS = ['player', 'list', 'badge', 'explore', 'props', 'suggestions'];
 /** Views after an edit on the spectrogram / waveform (the explore panel catches up on the next full sync) */
-const EDIT_VIEWS = ['player', 'list', 'badge', 'props'];
+const EDIT_VIEWS = ['player', 'list', 'badge', 'props', 'suggestions'];
 labelStore.subscribe((change) => {
   if (change.kind !== 'load' && change.kind !== 'clear') saveCurrentAnnotationsIfNeeded();
   labelViews.invalidate(...(change.views ?? ALL_LABEL_VIEWS));
@@ -1337,6 +1346,13 @@ function saveSessionSets(st) {
   else saveSessionSetsLegacy(st);   // no OPFS: old prefs sets
 }
 
+/** Copy Xeno-canto downloads into the project folder (on: also the ones already loaded). */
+function setXcToFolder(on) {
+  lsSet(XC_TO_FOLDER_KEY, on ? '1' : '0');
+  renderProjectLocation();
+  if (on) copyAllXcToFolder();
+}
+
 function renderProjectLocation() {
   projectLocationPanel?.render({
     kind: projectKind,
@@ -1415,11 +1431,7 @@ async function openProject() {
       lsSet(PROJECT_LOCATION_KEY, 'browser');
       window.location.reload();
     },
-    onToggleXcToFolder: (on) => {
-      lsSet(XC_TO_FOLDER_KEY, on ? '1' : '0');
-      renderProjectLocation();
-      if (on) copyAllXcToFolder();
-    },
+    onToggleXcToFolder: (on) => setXcToFolder(on),
     onAddFiles: (paths) => addFolderFiles(paths),
     onRescan: () => scanProjectFolder(),
   });
@@ -1859,20 +1871,83 @@ function renameLabelSet(id, newName) {
   // Route name changes through the central updateSet path so all
   // dependent UI (label list, XC panel, recording explorer, props)
   // is notified and persistence happens via the debounced updateSet.
-  updateSet(id, { name: newName });
+  // Imported sets keep `name` (XC re-import matches by it) and get a display name.
+  const s = state.labelSets.get(id);
+  if (s && id !== OWN_SOURCE_ID && (s.origin || 'manual') !== 'manual') updateSet(id, { displayName: newName });
+  else updateSet(id, { name: newName });
 }
 
-function deleteLabelSet(id) {
-  // BirdBox keeps its raw rows to re-fuse on slider changes: drop them with the set
-  if (state.labelSets.get(id)?.origin === BIRDBOX_ORIGIN) forgetBirdboxResults();
-  // Remove the set's labels along with the set itself — orphaned
-  // labels would otherwise float in the unassigned bucket.
-  labelStore.replaceAll(state.labels.filter((lbl) => lbl.setId !== id));
-  state.labelSets.delete(id);
-  state.hiddenSetIds?.delete(id);
-  if (state.activeSetId === id) state.activeSetId = null;
+/**
+ * Remove a set's labels from the recording on screen or from all recordings, with Undo.
+ * Other sets disappear from the registry once no recording uses them; the own set stays
+ * (it is the upload set) and only loses its labels.
+ */
+function removeLabelSet(id, where = 'all') {
+  const s = state.labelSets.get(id);
+  const own = id === OWN_SOURCE_ID;
+  const name = setDisplayName(s, own ? 'My labels' : 'set');
+  const undo = snapshotLabels();   // saves the recording on screen first
+  const activeId = recordingManager.activeId || null;
+  // While a recording loads its stored labels are not live yet: treat it like any other entry
+  const live = !activeId || labelStore.entryId === activeId;
+  const r = removeSetLabels(id, where, live ? state.labels : [], recordingManager.getAll(), live ? activeId : null, OWN_SOURCE_ID);
+  for (const [entryId, anns] of r.entries) recordingManager.update(entryId, { annotations: anns });
+  if (live) labelStore.replaceAll(r.live);
+  if (!own && !r.usedElsewhere) {
+    // BirdBox keeps its raw rows to re-fuse on slider changes: drop them with the set
+    if (s?.origin === BIRDBOX_ORIGIN) forgetBirdboxResults();
+    state.labelSets.delete(id);
+    state.hiddenSetIds?.delete(id);
+    if (state.activeSetId === id) state.activeSetId = null;
+  } else if (s?.origin === BIRDBOX_ORIGIN && activeId) forgetBirdboxResults(activeId);
+  if (own) touchOwnSet(OWN_SOURCE_ID);
+  saveSessionSets(state);
   syncToPlayer();
+  recordingExplorer.render();
   xcPanel._rebuildSetSection?.();
+  const scope = where === 'recording' ? ' from this recording' : '';
+  const what = own ? `Cleared ${r.removed} of my labels${scope}` : `Removed "${name}"${scope} (${r.removed} label${r.removed === 1 ? '' : 's'})`;
+  showUndoToast(what, undo);
+}
+
+/** Show/hide one set on the spectrogram (both tabs). */
+function setSetHidden(id, hide) {
+  if (hide) state.hiddenSetIds.add(id);
+  else state.hiddenSetIds.delete(id);
+  labelList.setHiddenSets(state.hiddenSetIds);
+  syncToPlayer();
+  recordingExplorer.render();
+}
+
+/** "Show only this set" — again: show all. */
+function toggleSoloSet(id) {
+  state.hiddenSetIds = soloHidden(state.hiddenSetIds, [...state.labelSets.keys()], id);
+  labelList.setHiddenSets(state.hiddenSetIds);
+  syncToPlayer();
+  recordingExplorer.render();
+}
+function toggleLockSet(id, lock) {
+  const s = state.labelSets.get(id);
+  if (!s) return;
+  s.locked = lock ?? !s.locked;
+  _pushLockedIds(_computeLockedIds());
+  saveSessionSets(state);
+  labelViews.invalidate('list');
+  recordingExplorer.render();
+}
+const isSetSolo = (id) => isSoloSet(state.hiddenSetIds, [...state.labelSets.keys()], id);
+
+/** Recordings with labels of a set (the one on screen counted from the live labels). */
+function setRecordingCount(id) {
+  const activeId = recordingManager.activeId;
+  const inSet = (l) => (l?.setId || OWN_SOURCE_ID) === id;
+  let n = 0;
+  for (const e of recordingManager.getAll()) {
+    const anns = e.id === activeId ? state.labels : (e.annotations || []);
+    if (anns.some(inSet)) n++;
+  }
+  if (!activeId && state.labels.some(inSet)) n++;
+  return n;
 }
 
 function assignLabelToSet(labelId, setId) {
@@ -1938,17 +2013,18 @@ function adoptSources(labels, all, mode) {
  * A BirdNET detection becomes its best BirdBox call box not copied yet (`mode: 'all'`: every
  * box in its window); a BirdBox box gets the species of the BirdNET detection around it.
  */
-function adoptOneLabel(labelId, { mode = 'best' } = {}) {
+/** `batch`: part of a larger adoption — no own undo step, toast or prompt; returns the number of copies. */
+function adoptOneLabel(labelId, { mode = 'best', batch = false } = {}) {
   const lbl = state.labels.find((l) => l.id === labelId);
-  if (!lbl || !OWN_SOURCE_ID || lbl.setId === OWN_SOURCE_ID) return;
+  if (!lbl || !OWN_SOURCE_ID || lbl.setId === OWN_SOURCE_ID) return 0;
   const plan = adoptionPlan(lbl, state.labels, { mode, template: adoptTemplate() });
   // Boxes not copied yet, best first: every further ✓ takes the next one
   const open = adoptSources([lbl], state.labels, 'all');
   const todo = mode === 'all' ? open : open.slice(0, 1);
-  if (!todo.length) { selectionMeta.textContent = 'This label is already in my labels'; return; }
+  if (!todo.length) { if (!batch) selectionMeta.textContent = 'This label is already in my labels'; return 0; }
   const more = mode === 'best' && open.length > 1
     ? { label: `Also the other ${open.length - 1}`, run: () => adoptOneLabel(labelId, { mode: 'all' }) } : null;
-  const undo = snapshotLabels();
+  const undo = batch ? null : snapshotLabels();
   const copies = adoptLabels(todo, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
   labelStore.add(copies);
   // A copied similar-call suggestion is done: drop it from the suggestions and the review
@@ -1963,6 +2039,7 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
   }
   touchOwnSet(OWN_SOURCE_ID);
   const n = copies.length;
+  if (batch) return n;
   selectionMeta.textContent = `Converted into ${n === 1 ? 'my label' : `${n} of my labels`}`;
   // The detection is gone from view (converted); undo brings it back
   showUndoToast(mode === 'all' || n > 1 ? `Converted into ${n} call box${n === 1 ? '' : 'es'} as ${lbl.label}`
@@ -1973,6 +2050,7 @@ function adoptOneLabel(labelId, { mode = 'best' } = {}) {
       : undefined);
   // A call box nobody could name: ask right away
   if (plan.needsName) { labelViews.flush(); player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(copies[0].id); }
+  return n;
 }
 
 /** A label of my own without frequency bounds (e.g. a converted BirdNET window). */
@@ -2282,6 +2360,7 @@ async function activateRecordingEntry(entry) {
       player.hideLoadingOverlay();
     }
   }
+  return !_audioFailed;   // false: the audio could not be loaded (the entry is active, but empty)
 }
 
 /**
@@ -2415,19 +2494,18 @@ const recordingExplorer = new RecordingExplorer({
   getSetName: () => state.labelSets.get(OWN_SOURCE_ID)?.name || 'My Annotations',
   getSetStatus: () => state.labelSets.get(OWN_SOURCE_ID)?.status || 'draft',
   getOwnSetId: () => OWN_SOURCE_ID,
-  onRenameSet: (name) => renameLabelSet(OWN_SOURCE_ID, name),
+  onRenameSet: (id, name) => renameLabelSet(id, name),
+  onRemoveSet: (id) => removeLabelSet(id, 'all'),
+  onSoloSet: (id) => toggleSoloSet(id),
+  isSetSolo: (id) => isSetSolo(id),
+  onToggleLockSet: (id) => toggleLockSet(id),
   onActivate: (entry) => activateRecordingEntry(entry),
   getEntryLabels: (entry) => (entry.id === recordingManager.activeId ? state.labels : entry.annotations) || [],
   getSetInfo: (setId) => state.labelSets.get(setId),
   isSetHidden: (setId) => state.hiddenSetIds.has(setId),
   // Same rule as "Copy to mine": detections count by the call boxes still to copy
   countAdoptable: (labels, all) => adoptSources(labels, all, 'all').length,
-  onToggleSetHidden: (setId) => {
-    if (state.hiddenSetIds.has(setId)) state.hiddenSetIds.delete(setId);
-    else state.hiddenSetIds.add(setId);
-    syncToPlayer();
-    recordingExplorer.render();
-  },
+  onToggleSetHidden: (setId) => setSetHidden(setId, !state.hiddenSetIds.has(setId)),
   onAdoptSet: (setId) => {
     const undo = snapshotLabels();
     const n = adoptSetLabels(setId);
@@ -2583,6 +2661,7 @@ function selectLabel(labelId, opts = {}) {
     }
   }
 
+  refTargetFromLabel(lbl);
   // Highlight list/table rows
   try { labelList.highlightRow(labelId); } catch (e) {}
   if (typeof labelTable !== 'undefined' && labelTable && typeof labelTable.highlightRow === 'function') {
@@ -2611,14 +2690,17 @@ const labelList = new LabelList({
   tagStore,
   accordion: true,
   onSync:  (opts) => opts?.structural ? syncToPlayer() : syncToPlayerSoft(),
+  enterEdits: isLite(),
   onEdit:  (id) => {
     selectLabel(id, {});
-    sidebar.setActive('properties');
-    sidebar.flashTab('properties');
+    if (isLite()) { void openLabelModal(id); return; }   // label window (Annotate v2 M2)
+    rightBar.setActive('properties');   // Properties is a tab of the right bar
+    rightBar.flashTab('properties');
     // Delay so the panel is visible before scrolling + highlighting
     setTimeout(() => propsPanel.highlightLabelSection(), 60);
   },
-  onBulkEdit: (ids) => player.spectrogramLabels?._renameBulkPrompt?.(ids),
+  // Lite: several labels in the label window (M3); elsewhere the rename prompt
+  onBulkEdit: (ids) => (isLite() && ids?.length > 1 ? void openLabelModal(ids[0], ids) : player.spectrogramLabels?._renameBulkPrompt?.(ids)),
   onMultiSelectionChange: (ids) => { syncMultiSelected(ids); },
   onFocus: (id, src) => {
     player._emit?.('labelfocus', { id, source: src || 'list', interaction: 'click' });
@@ -2631,8 +2713,11 @@ const labelList = new LabelList({
   getSets: () => state.labelSets,
   onCreateSet: (partial) => createLabelSet(partial),
   onRenameSet: (id, name) => renameLabelSet(id, name),
-  onDeleteSet: (id) => deleteLabelSet(id),
-  canDeleteSet: (id) => id !== OWN_SOURCE_ID,
+  onRemoveSet: (id, where) => removeLabelSet(id, where),
+  onSoloSet: (id) => toggleSoloSet(id),
+  isSetSolo: (id) => isSetSolo(id),
+  setRecordingCount: (id) => setRecordingCount(id),
+  countPending: (id) => adoptSources(state.labels.filter((l) => l.setId === id), state.labels, 'all').length,
   onAssignSet: (labelId, setId) => assignLabelToSet(labelId, setId),
   onAssignSpecies: (labelId, representative) => {
     const lbl = state.labels.find(l => l.id === labelId);
@@ -2646,7 +2731,17 @@ const labelList = new LabelList({
     syncToPlayer();
   },
   // onConvertSetToManual: (setId) => convertSetToManual(setId),  // hidden for now
-  onAdoptSet: (setId) => adoptSetLabels(setId),
+  // Labels tab: only the recording on screen (the count shown is for it)
+  onAdoptSet: (setId) => {
+    const undo = snapshotLabels();
+    const src = adoptSources(state.labels.filter((l) => l.setId === setId), state.labels, 'all');
+    if (!src.length) return;
+    labelStore.add(adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets)));
+    touchOwnSet(OWN_SOURCE_ID);
+    syncToPlayer();
+    const n = src.length;
+    showUndoToast(`Copied ${n} label${n === 1 ? '' : 's'} into my labels`, undo);
+  },
   onAdoptLabel: (labelId) => adoptOneLabel(labelId),
   // converted detections are hidden; the set menu can show them again
   adoptedToggle: {
@@ -2660,20 +2755,8 @@ const labelList = new LabelList({
   },
   onPlaySegment: (lbl) => toggleSegmentPlay(lbl),
   onOpenRefCalls: (lbl) => openRefCalls(lbl),
-  onToggleLockSet: (setId, lock) => {
-    const s = state.labelSets.get(setId);
-    if (s) {
-      s.locked = lock;
-      _pushLockedIds(_computeLockedIds());
-      labelViews.invalidate('list');
-    }
-  },
-  onToggleSetVisibility: (setId, hide) => {
-    if (hide) state.hiddenSetIds.add(setId);
-    else state.hiddenSetIds.delete(setId);
-    labelList.setHiddenSets(state.hiddenSetIds);
-    syncToPlayer();
-  },
+  onToggleLockSet: (setId, lock) => toggleLockSet(setId, lock),
+  onToggleSetVisibility: (setId, hide) => setSetHidden(setId, hide),
   onToggleSpeciesVisibility: (speciesKey, hide) => {
     if (hide) state.hiddenSpeciesKeys.add(speciesKey);
     else state.hiddenSpeciesKeys.delete(speciesKey);
@@ -2915,6 +2998,63 @@ document.documentElement.classList.remove('sv-booting');
   recordingManager.addEventListener('activechange', () => mobileApp.refresh());
 }
 
+/** Copy several detections / imported labels into my labels in one step (one undo). */
+function adoptLabelIds(ids) {
+  const picked = ids.map((id) => state.labels.find((l) => l.id === id)).filter((l) => l && l.setId !== OWN_SOURCE_ID);
+  if (picked.length === 1) { adoptOneLabel(picked[0].id); return; }
+  if (picked.some((l) => l.origin === SIMILAR_ORIGIN)) {
+    // Similar suggestions need their review bookkeeping per label; still one undo step for the whole selection.
+    const undo = snapshotLabels();
+    let n = 0;
+    for (const l of picked) n += adoptOneLabel(l.id, { batch: true });
+    if (!n) { selectionMeta.textContent = 'These labels are already in my labels'; return; }
+    const msg = `Converted ${picked.length} labels into ${n} of my labels`;
+    selectionMeta.textContent = msg;
+    showUndoToast(msg, undo);
+    return;
+  }
+  const src = adoptSources(picked, state.labels, 'best');
+  if (!src.length) { selectionMeta.textContent = 'These labels are already in my labels'; return; }
+  const undo = snapshotLabels();
+  const copies = adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+  labelStore.add(copies);
+  touchOwnSet(OWN_SOURCE_ID);
+  const msg = `Converted ${picked.length} labels into ${copies.length} of my labels`;
+  selectionMeta.textContent = msg;
+  showUndoToast(msg, undo);
+}
+
+/** App actions in the label table's row menu (the grid adds edit / fill / clear / delete). */
+function labelTableRowMenu(ids, lbl) {
+  const items = [];
+  const labels = ids.map((id) => state.labels.find((l) => l.id === id)).filter(Boolean);
+  if (ids.length === 1) {
+    items.push({ label: 'Play segment', action: () => toggleSegmentPlay(lbl) });
+    items.push({ label: 'Reference Calls', icon: ICON_REFS, action: () => openRefCalls(lbl) });
+    if (refPanel && lbl.scientificName) items.push({ label: 'Compare with Xeno-canto', hint: 'R', icon: ICON_REFS, action: () => void revealReference(labelRefTarget(lbl)) });
+    items.push({ label: 'Use as template', icon: ICON_TEMPLATE, action: () => useLabelAsTemplate(lbl) });
+    if (canFindSimilar(lbl)) items.push({ label: 'Find similar calls', hint: 'F', icon: ICON_REFS, action: () => findSimilarCalls(lbl) });
+  }
+  const foreign = labels.filter((l) => l.setId !== OWN_SOURCE_ID);
+  if (OWN_SOURCE_ID && foreign.length) {
+    items.push({ label: foreign.length > 1 ? `Copy ${foreign.length} into my labels` : 'Copy into my labels', action: () => adoptLabelIds(foreign.map((l) => l.id)) });
+  }
+  const own = labels.filter((l) => l.setId === OWN_SOURCE_ID);
+  const layers = ownLayers(state.labelSets);
+  if (own.length && layers.length > 1) {
+    const cur = new Set(own.map((l) => l.layer || DEFAULT_LAYER_ID));
+    items.push({ label: own.length > 1 ? `Move ${own.length} to layer` : 'Move to layer', submenu: layers.map((ly) => ({
+        label: ly.name, hint: cur.size === 1 && cur.has(ly.id) ? '✓' : undefined,
+        action: () => {
+          const undo = snapshotLabels();
+          labelList._layers?.onMove(own.map((l) => l.id), ly.id);
+          showUndoToast(`${own.length} label${own.length > 1 ? 's' : ''} → layer “${ly.name}”`, undo);
+        },
+      })) });
+  }
+  return items;
+}
+
 // ── Label table ("Table" tab below the overview) — label table view plan ──
 const labelTableHost = player.enableLabelTable?.();
 const labelTable = labelTableHost ? new LabelGrid({
@@ -2950,6 +3090,14 @@ const labelTable = labelTableHost ? new LabelGrid({
     selectionMeta.textContent = `Deleted ${ids.length} label${ids.length > 1 ? 's' : ''}`;
   },
   onNotice: (msg) => { selectionMeta.textContent = msg; },
+  onBatch: (summary, run) => {
+    const undo = snapshotLabels();
+    // Summary first: a notice from run() about refused values must stay visible
+    selectionMeta.textContent = summary;
+    run();
+    showUndoToast(summary, undo);
+  },
+  rowMenu: (ids, lbl) => labelTableRowMenu(ids, lbl),
   onTogglePlay: () => { if (player.isPlaying) player.pause(); else player.play(); },
   onExport: (format, labels, columns) => {
     const entry = recordingManager.getActive();
@@ -3656,7 +3804,7 @@ const speciesGeo = createSpeciesGeoCache({
     const all = await birdnet.getAllSpecies();
     return new Map(all.filter((sp) => sp.geoscore != null).map((sp) => [sp.scientific, sp.geoscore]));
   },
-  onUpdate: () => speciesSearchWidgets.forEach((w) => w.refresh?.()),
+  onUpdate: () => { speciesSearchWidgets.forEach((w) => w.refresh?.()); labelViews.invalidate('suggestions'); },
   onError: (err) => console.warn('[species search] geo ranking unavailable:', err?.message || err),
 });
 const speciesGeoScore = (sci) => speciesGeo.score(sci);
@@ -3675,11 +3823,35 @@ function createGeoAwareSpeciesSearch(opts) {
 document.getElementById('panelBirdnet').appendChild(explorePanel.el);
 /** Lite spaces (src/app/lite/spaces.ts); null in the web app and until built. */
 let spaces = null;
-const libraryHost = document.createElement('div');
-libraryHost.className = 'space-fill';
+/** Spaces: the library's parts, one panel each (Browse). */
+const LIB_PARTS = ['recordings', 'fields', 'map', 'stats', 'selection', 'calendar'];
+const libraryHosts = Object.fromEntries(LIB_PARTS.map((k) => {
+  const el = document.createElement('div');
+  el.className = 'space-fill';
+  return [k, el];
+}));
 const embedMapHost = document.createElement('div');
 embedMapHost.className = 'space-fill';
 let mountLibraryPanel = () => {};
+/** Spaces: a library part's panel (map, stats) became visible. */
+let libraryPartShown = (_part) => {};
+/** Spaces: the new-dataset dialog of the library (view bar "Save as dataset"). */
+let librarySaveAsDataset = () => {};
+/** Open a catalog row in Annotate (Ctrl K recordings); set where the library lives. */
+let libraryOpenRow = async (_row) => {};
+/** Spaces: the one catalog view (filter, dataset, selection) all panels and the view bar share; null without a catalog. */
+let catalogView = null;
+/** Spaces: the Annotate panel "View" (list of the catalog view with review state); null until built. */
+let viewList = null;
+/** Catalog recording confirmed open: { entryId (recording manager), rowId (catalog) }; set only after it loaded. */
+let catalogOpen = null;
+/** Catalog id of the recording in the editor, null when the editor shows another one (Files, link). */
+function openCatalogRowId() {
+  return catalogOpen && recordingManager.getActive()?.id === catalogOpen.entryId ? catalogOpen.rowId : null;
+}
+const viewListHost = document.createElement('div');
+viewListHost.className = 'space-fill';
+let mountViewList = () => {};
 let _embedMapOpened = false;
 /** Store size the hosted map was last loaded for (null: not read yet). */
 let _embedStoreKey = null;
@@ -3718,6 +3890,9 @@ if (isLite()) {
         reveal: () => { _embedMapOpened = true; void spaces?.reveal('embeddings'); },
       } : undefined;
     },
+    markHits: (hits, polarity) => markSimilarHits(hits, polarity),
+    markOf: (hit) => similarMarkOf(hit),
+    hitsToView: (paths) => similarHitsToView(paths),
     onInfo: (info) => {
       if (info?.windows) spaces?.setAvailable('embeddings');
       // New or removed windows: the hosted map reloads the next time it is shown.
@@ -3726,10 +3901,84 @@ if (isLite()) {
       _embedStoreKey = key;
     },
   });
+  labelStore.subscribe(() => similarPanel?.refreshMarks());
   sidebar.addPanel('similar', {
     icon: AudioLines, label: 'Similar', element: similarPanel.el,
     onActivate: () => similarPanel.refresh(),
   });
+}
+/** Similar → ✓ present / ✕ absent: time-only labels of the New labels species in the hits' recordings. */
+async function markSimilarHits(hits, polarity) {
+  const tpl = adoptTemplate();
+  if (!tpl?.name) return 'Pick a species under “New labels” first – the hits get that name.';
+  const { hitLabels } = await import('../../app/similar-marks.ts');
+  const { newLabelId } = await import('../../app/annotation-sets.ts');
+  saveCurrentAnnotationsIfNeeded();
+  const entryOf = (path) => recordingManager.getAll().find((e) => e.path === path) || null;
+  const active = recordingManager.activeId;
+  const byPath = hitLabels(hits, tpl, polarity, {
+    setId: OWN_SOURCE_ID, layer: activeLayerId(state.labelSets), id: newLabelId,
+    existing: (path) => { const e = entryOf(path); return !e ? [] : e.id === active ? state.labels : (e.annotations || []); },
+  });
+  const made = [];   // [entryId, ids]
+  let n = 0;
+  for (const [path, labels] of byPath) {
+    let entry = entryOf(path);
+    if (!entry) { entry = recordingManager.add(folderFileEntry(path, { pinned: false })); }
+    if (entry.id === active) labelStore.add(labels);
+    else recordingManager.update(entry.id, { annotations: [...(entry.annotations || []), ...labels] });
+    made.push([entry.id, new Set(labels.map((l) => l.id))]);
+    n += labels.length;
+  }
+  if (!n) return `Already marked ${polarity} as ${tpl.name}.`;
+  renderProjectLocation();
+  touchOwnSet(OWN_SOURCE_ID);
+  syncToPlayer();
+  scheduleProjectAutosave();
+  const recs = byPath.size;
+  const msg = `${n} window${n === 1 ? '' : 's'} labelled ${polarity === 'absent' ? 'absent: ' : ''}${tpl.name} in ${recs} recording${recs === 1 ? '' : 's'}`;
+  showUndoToast(msg, () => {
+    for (const [id, ids] of made) {
+      if (id === recordingManager.activeId) labelStore.remove((l) => ids.has(l.id));
+      else {
+        const e = recordingManager.getAll().find((x) => x.id === id);
+        if (e) recordingManager.update(id, { annotations: (e.annotations || []).filter((l) => !ids.has(l.id)) });
+      }
+    }
+    syncToPlayer();
+    scheduleProjectAutosave();
+  });
+  return msg + '.';
+}
+
+/** Own label on a hit window (most of the window covered), for the tile badge. */
+function similarMarkOf(hit) {
+  const e = recordingManager.getAll().find((x) => x.path === hit.path);
+  if (!e) return null;
+  const all = e.id === recordingManager.activeId ? state.labels : (e.annotations || []);
+  const own = all.find((l) => l.setId === OWN_SOURCE_ID
+    && Math.min(l.end, hit.end) - Math.max(l.start, hit.start) >= 0.5 * (hit.end - hit.start));
+  return own ? { name: own.label || own.scientificName || '?', absent: own.polarity === 'absent' } : null;
+}
+
+/** Similar → View: the hits' recordings become a static dataset, opened as the view. */
+async function similarHitsToView(paths) {
+  const root = projectKind === 'folder' && projectStore?.rootPath;
+  if (!root || !catalogView) return 'Hits become a view in projects with a catalog (Browse).';
+  const abs = paths.map((p) => `${root.replace(/[\\/]+$/, '')}/${p}`);
+  const ids = await catalogApi.idsForPaths(root, abs);
+  if (!ids.length) return 'None of these recordings is in the catalog – import the folder in Browse first.';
+  const t = new Date();
+  const name = `Similar ${t.toLocaleDateString()} ${t.toLocaleTimeString()}`;
+  const id = await catalogApi.createDataset(root, 'static', { name, description: `${ids.length} recordings with similar windows`, color: null, filter: null });
+  try { await catalogApi.datasetAdd(root, id, { ids }); } catch (e) {
+    // No empty dataset left behind (the next "→ View" would make another one); the add error is the one shown.
+    await catalogApi.deleteDataset(root, id).catch((d) => console.warn('[similar] could not remove the empty dataset', d));
+    throw e;
+  }
+  catalogView.datasetsChanged();
+  await catalogView.setFilter({ datasetId: id }, { activeDs: id });
+  return `View: ${ids.length} recording${ids.length === 1 ? '' : 's'} (dataset “${name}”)${ids.length < paths.length ? ` · ${paths.length - ids.length} not in the catalog` : ''}.`;
 }
 // ── Library (project catalog, Lite + folder project only) ─────────
 if (isLite()) {
@@ -3738,21 +3987,89 @@ if (isLite()) {
   libPanel.className = 'scroll-panel library-panel';
   let libView = null;
   const closeLibrary = () => { libView?.dispose(); libView?.el.remove(); libView = null; void refreshLibraryPanel(); };
+  libraryPartShown = (part) => libView?.partShown(part);
+  librarySaveAsDataset = () => libView?.saveAsDataset();
+  libraryOpenRow = async (row) => {
+    const root = libRoot();
+    if (!root || !row?.id) return;
+    const entry = await openCatalogRecording(catalogRowPath(root, row.id), () => spaces?.reveal('editor'));
+    if (entry) noteOpened(row, entry);
+  };
+  /** The file of a catalog row, or null (load error shown) when its folder is not on this computer. */
+  async function catalogRowPath(root, id) {
+    const path = await catalogApi.recordingPath(root, id);
+    if (!path) {
+      const msg = 'This recording\'s source folder is not located on this computer.';
+      showLoadError(msg, 'Cannot open');
+      // The file label is not shown outside Annotate (e.g. Ctrl K from Browse): say it in a dialog there.
+      if (spaces && spaces.active !== 'annotate') void appAlert(msg, { title: 'Cannot open' });
+    }
+    return path || null;
+  }
   /** Spaces: the library lives in Browse (built once, stays while a recording is open in Annotate). */
   mountLibraryPanel = () => {
     const root = libRoot();
     if (libView) return;
     if (!root) {
-      libraryHost.innerHTML = '<p class="lib-hint space-hint">The library manages large collections of recordings (sites, recorders, time ranges). Open a project folder first (Project tab in Annotate).</p>';
+      libraryHosts.recordings.innerHTML = '<p class="lib-hint space-hint">The library manages large collections of recordings (sites, recorders, time ranges). Open a project folder first (Project tab in Annotate).</p>';
       return;
     }
-    libraryHost.replaceChildren();
     libView = new LibraryView({
       projectRoot: root,
       embedded: true,
-      openRecording: (path) => openCatalogRecording(path, () => spaces?.reveal('editor')),
+      split: true,
+      view: catalogView ?? undefined,
+      revealPart: (k) => void spaces?.reveal(`lib-${k}`),
+      openRecording: async (path, row) => {
+        const entry = await openCatalogRecording(path, () => spaces?.reveal('editor'));
+        if (entry) noteOpened(row, entry);
+      },
     });
-    libraryHost.appendChild(libView.el);
+    for (const k of LIB_PARTS) libraryHosts[k].replaceChildren(libView.parts[k]);
+    // No catalog at startup (first import now): the library's view becomes the shared one, with its bar.
+    if (!catalogView) {
+      catalogView = libView.view;
+      watchEditorView(catalogView);
+      void makeViewBar(catalogView).then((el) => spaces?.setBar(el));
+      mountViewList();
+    }
+  };
+  /** Opening a catalog recording marks it "open" in the review (never undoes "done"). */
+  function noteOpened(row, entry) {
+    const root = libRoot();
+    if (row?.id && entry) catalogOpen = { entryId: entry.id, rowId: row.id };
+    refreshEditorPlace();
+    if (!root || !row?.id || row.review) return;
+    catalogApi.setReview(root, [row.id], 'open', true)
+      .then(() => catalogView?.noteReview([row.id], 'open', true))
+      .catch((e) => console.warn('[review] could not store', e));
+  }
+  /** Spaces: panel "View" in Annotate — the catalog view as a list to label through (N / P / D). */
+  mountViewList = async () => {
+    if (viewList) return;
+    if (!catalogView) {
+      viewListHost.innerHTML = '<p class="lib-hint space-hint">Import recordings into the library (Browse) to go through them here one by one, with done / open state.</p>';
+      return;
+    }
+    const { ViewList } = await import('../../ui/panels/library/view-list.ts');
+    if (viewList || !catalogView) return;
+    const view = catalogView;
+    viewList = new ViewList(view, {
+      open: async (i) => {
+        const row = view.rows[i];
+        if (!row) return;
+        view.select(i, { keepPicks: true });
+        const entry = await openCatalogRecording(catalogRowPath(view.projectRoot, row.id));
+        if (entry) noteOpened(row, entry);
+      },
+      openId: openCatalogRowId,
+      setDone: async (ids, done) => {
+        const review = done ? 'done' : 'open';
+        await catalogApi.setReview(view.projectRoot, ids, review);
+        view.noteReview(ids, review);
+      },
+    });
+    viewListHost.replaceChildren(viewList.el);
   };
   let _catalogOpenSeq = 0;
   /**
@@ -3760,9 +4077,13 @@ if (isLite()) {
    * In the project folder: the same project-relative entry as the Project tab and
    * Similar use (reused if present). Outside: matched only by its absolute path.
    * A newer open wins; read errors are shown and the library stays open.
+   * Returns the entry once the recording is loaded and active (path: a string or a promise of one).
    */
-  async function openCatalogRecording(path, beforeActivate) {
+  async function openCatalogRecording(pathOrPromise, beforeActivate) {
+    // The order is that of the requests: a path still being looked up belongs to its request.
     const seq = ++_catalogOpenSeq;
+    const path = await pathOrPromise;
+    if (seq !== _catalogOpenSeq || !path) return;
     const root = libRoot();
     const rel = root ? projectRelativePath(root, path) : null;
     let entry = recordingManager.getAll().find((e) => (rel ? e.path === rel : !e.path && e.filePath === path));
@@ -3787,13 +4108,14 @@ if (isLite()) {
     }
     await beforeActivate?.();
     if (seq !== _catalogOpenSeq) return;
-    await activateRecordingEntry(entry);
+    if (!await activateRecordingEntry(entry)) return;   // load error shown already; not "opened"
+    return entry;
   }
   const openLibrary = (startImport = false) => {
     const root = libRoot();
     if (!root) return;
     if (spaces) {
-      void spaces.reveal('library').then(() => {
+      void spaces.reveal('lib-recordings').then(() => {
         libView?.focus();
         if (startImport) libView?.el.querySelector('[data-act="open-import"]')?.click();
       });
@@ -4423,6 +4745,7 @@ async function loadBirdnetTaxonomy() {
       createGeoAwareSpeciesSearch({ getSuggestions, onSelect });
     labelList.setSpeciesSearchFactory(speciesSearchFactory);
     propsPanel.setSpeciesSearchFactory(speciesSearchFactory);
+    _modalSearchFactory = speciesSearchFactory;
     labelTable?.setSpeciesSearchFactory(speciesSearchFactory);
     speciesListSearchFactory = (anchor, onSelect) =>
       createGeoAwareSpeciesSearch({ getSuggestions, onSelect, placeholder: 'Add a species…' });
@@ -4702,10 +5025,14 @@ async function copyLabelsJson() {
 // One export menu, each entry named by format and showing its scope
 exportMenuBtn.addEventListener('click', () => {
   const r = exportMenuBtn.getBoundingClientRect();
+  showExportMenu(r.left, r.bottom + 2);
+});
+/** Export formats with their scope (Labels tab "Export ▾", Lite Project menu). */
+function showExportMenu(x, y) {
   const setLabels = OWN_SOURCE_ID ? collectSetLabels().length : 0;
   const n = state.labels.length;
   showContextMenu({
-    x: r.left, y: r.bottom + 2,
+    x, y,
     items: [
       { label: `Annota-JSON (XC) — upload selection, ${setLabels} labels…`, action: () => sidebar.setActive('upload') },
       { label: `Labels JSON — this recording, ${n} labels`, action: downloadLabelsJson },
@@ -4717,7 +5044,7 @@ exportMenuBtn.addEventListener('click', () => {
       { label: 'Copy labels JSON to clipboard', action: copyLabelsJson },
     ],
   });
-});
+}
 
 // ── Import an Annota-JSON set file (XC "Download set" or own export) ──
 installAnnotaImport(appCtx, {
@@ -4865,7 +5192,7 @@ player.on('spectrogramlabelremove', (e) => {
   const removed = state.labels.find((l) => l.id === id);
   touchOwnSet(removed?.setId);
   // the player removed it already; a deleted copy brings its detection back, so redraw the player then
-  labelStore.remove(id, { views: removed?.adoptedFrom?.id != null ? ['player', 'list', 'badge'] : ['list', 'badge'] });
+  labelStore.remove(id, { views: removed?.adoptedFrom?.id != null ? ['player', 'list', 'badge', 'suggestions'] : ['list', 'badge'] });
 });
 
 // Undo/redo inside the player: mirror the restored state into state.labels
@@ -4933,6 +5260,8 @@ function showLabelContextMenu(e, id) {
         action: () => player.spectrogramLabels?._renameSpectrogramLabelPrompt?.(id) },
       { label: 'Reference Calls', icon: ICON_REFS,
         action: () => openRefCalls(lbl) },
+      ...(refPanel && lbl.scientificName ? [{ label: 'Compare with Xeno-canto (R)', icon: ICON_REFS,
+        action: () => void revealReference(labelRefTarget(lbl)) }] : []),
       { label: 'Use as template', icon: ICON_TEMPLATE,
         action: () => useLabelAsTemplate(lbl) },
       ...(canFindSimilar(lbl) ? [{ label: 'Find similar calls (F)', icon: ICON_REFS,
@@ -5044,6 +5373,9 @@ window.addEventListener('beforeunload', () => {
 // ── Suggestion provider ───────────────────────────────────────────
 player.setLabelTaxonomy([]);
 player.setLabelEditorSuggestionMode('custom-only');
+// Lite: a new box gets the quick species pick beside it (mockup M1); web and phone keep the dialog
+player.setLabelPickerStyle(isLite() ? 'quick' : 'dialog');
+player.getSpeciesListName = () => speciesLists.active?.name || '';
 
 // Listen for custom tag additions from the label editor modal (annotations.js)
 player.on('tagcustomadd', (e) => {
@@ -5388,36 +5720,928 @@ async function installLiteSpaces() {
   const { SPACES_FILE } = await import('../lite/spaces-state.ts');
   const workspace = document.getElementById('workspace');
   const folder = projectKind === 'folder' && projectStore?.readText ? projectStore : null;
-  return SpacesShell.create({
-    tabsBefore: fileLabel,   // fixed place right of the logo; the file name may be long
-    replace: workspace,
-    defaultActive: 'annotate',
-    eager: ['annotate'],
-    spaces: [
-      { id: 'browse', title: 'Browse', icon: LayoutGrid, panels: ['library'] },
-      { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor'] },
-      { id: 'embeddings', title: 'Embeddings', icon: ChartScatter, panels: ['embeddings'], optional: true },
-    ],
-    panels: [
-      { id: 'editor', title: 'Editor', mount: (host) => { host.appendChild(workspace); } },
-      { id: 'library', title: 'Library', mount: (host) => { host.appendChild(libraryHost); mountLibraryPanel(); },
-        onShow: () => focusLibrarySoon() },
-      { id: 'embeddings', title: 'Embedding map', mount: (host) => { host.appendChild(embedMapHost); },
-        onShow: () => {
-          if (_embedMapOpened) return;
-          _embedMapOpened = true;
-          if (similarPanel?.openMap) similarPanel.openMap();
-        } },
-    ],
-    storage: folder
-      ? { load: () => folder.readText(SPACES_FILE), save: (text) => folder.writeText(SPACES_FILE, text) }
-      : { load: async () => prefs.get(SPACES_PREF), save: async (text) => { prefs.set(SPACES_PREF, text); } },
-    onSpaceShown: (id) => { if (id === 'annotate') requestAnimationFrame(() => player?.resize?.()); },
+  // The current view above all spaces, once the project has a catalog (asking does not create one).
+  let bar = null;
+  const root = projectKind === 'folder' ? projectStore?.rootPath : null;
+  if (root && await catalogApi.exists(root).catch(() => false)) {
+    const { CatalogView } = await import('../../domain/catalog/catalog-view.ts');
+    catalogView = new CatalogView(root, catalogApi);
+    bar = await makeViewBar(catalogView);
+    void catalogView.reload();
+  }
+  await installEditorChrome();
+  await installSuggestions();
+  await installReference();
+  // The sidebar tabs become panels of Annotate (mockup Annotate v2, B6); the sidebars themselves go.
+  const sidePanels = [...sidebar.dock(dockHost()), ...rightBar.dock(dockHost())]
+    .filter((p) => p.id !== 'library')   // the library is the Browse space
+    .sort((a, b) => dockRank(a.id) - dockRank(b.id));
+  const sideIds = sidePanels.map((p) => DOCK_ID[p.id] || p.id);
+  const hasCatalog = !!catalogView;
+  let shell;
+  try {
+    shell = await SpacesShell.create({
+      bar,
+      tabsBefore: fileLabel,   // fixed place right of the logo; the file name may be long
+      replace: workspace,
+      defaultActive: 'annotate',
+      eager: ['annotate'],
+      spaces: [
+        { id: 'browse', title: 'Browse', icon: LayoutGrid,
+          // As in the mockup: fields left, recordings in the middle, map | statistics | selection right, calendar below them.
+          panels: ['lib-recordings', 'lib-fields', 'lib-map', 'lib-stats', 'lib-selection', 'lib-calendar'],
+          arrange: {
+            'lib-fields': { ref: 'lib-recordings', dir: 'left', size: 250 },
+            'lib-map': { ref: 'lib-recordings', dir: 'right', size: 520 },
+            'lib-stats': { ref: 'lib-map', dir: 'within' },
+            'lib-selection': { ref: 'lib-map', dir: 'within' },
+            'lib-calendar': { ref: 'lib-map', dir: 'below', size: 330 },
+          },
+          front: ['lib-map'] },
+        { id: 'annotate', title: 'Annotate', icon: PenLine, panels: ['editor', 'view-list', 'suggestions', ...withReference(sideIds)],
+          // Left: View | Files; right: Labels | Properties | Display | Audio, below them Analyse | Similar | Species | Upload.
+          arrange: {
+            'view-list': { ref: 'editor', dir: 'left', size: 290 },
+            files: { ref: 'view-list', dir: 'within' },
+            suggestions: { ref: 'editor', dir: 'right', size: 400 },
+            labels: { ref: 'suggestions', dir: 'within' },
+            reference: { ref: 'labels', dir: 'within' },
+            properties: { ref: 'labels', dir: 'within' },
+            display: { ref: 'labels', dir: 'within' },
+            audio: { ref: 'labels', dir: 'within' },
+            analyse: { ref: 'labels', dir: 'below', size: 300 },
+            similar: { ref: 'analyse', dir: 'within' },
+            species: { ref: 'analyse', dir: 'within' },
+            upload: { ref: 'analyse', dir: 'within' },
+          },
+          // A catalog project lists its recordings in View; Upload (Xeno-canto) only when asked for.
+          front: [hasCatalog ? 'view-list' : 'files', 'suggestions', 'analyse'],
+          onDemand: hasCatalog ? ['upload'] : [],
+        // The lower right group folds to its tabs (B6); a click on a tab opens it.
+        collapsible: ['analyse'], startCollapsed: ['analyse'] },
+        { id: 'embeddings', title: 'Embeddings', icon: ChartScatter, panels: ['embeddings'], optional: true },
+      ],
+      panels: [
+        { id: 'editor', title: 'Editor', mount: (host) => { host.appendChild(workspace); } },
+        { id: 'suggestions', title: 'Suggestions', mount: (host) => { host.appendChild(suggPanel.el); labelViews.invalidate('suggestions'); } },
+        { id: 'reference', title: 'Reference', mount: (host) => { host.appendChild(refPanel.el); }, onShow: () => refPanel.onShow() },
+        { id: 'view-list', title: 'View', mount: (host) => { host.appendChild(viewListHost); void mountViewList(); } },
+        ...sidePanels.map((p) => ({
+          id: DOCK_ID[p.id] || p.id, title: DOCK_TITLE[p.id] || p.label,
+          // Inside .sidebar-body: the panels keep their sidebar look (sizes, controls).
+          mount: (host) => {
+            const body = document.createElement('div');
+            body.className = 'sidebar-body space-side';
+            if (p.hint) body.title = p.hint;
+            body.appendChild(p.element);
+            host.appendChild(body);
+          },
+          onShow: () => { try { p.onActivate?.(); } catch (e) { console.warn('[spaces] panel', p.id, e); } },
+        })),
+        ...[['recordings', 'Recordings'], ['fields', 'Fields'], ['map', 'Map'], ['stats', 'Statistics'], ['selection', 'Selection'], ['calendar', 'Calendar']].map(([k, title]) => ({
+          id: `lib-${k}`, title,
+          // Any part builds the library (all parts at once); the others are then only placed.
+          mount: (host) => { host.appendChild(libraryHosts[k]); mountLibraryPanel(); },
+          ...(k === 'recordings' ? { onShow: () => focusLibrarySoon() }
+            : k === 'map' || k === 'stats' ? { onShow: () => libraryPartShown(k) } : {}),
+        })),
+        { id: 'embeddings', title: 'Embedding map', mount: (host) => { host.appendChild(embedMapHost); },
+          onShow: () => {
+            if (_embedMapOpened) return;
+            _embedMapOpened = true;
+            if (similarPanel?.openMap) similarPanel.openMap();
+          } },
+      ],
+      storage: folder
+        ? { load: () => folder.readText(SPACES_FILE), save: (text) => folder.writeText(SPACES_FILE, text) }
+        : { load: async () => prefs.get(SPACES_PREF), save: async (text) => { prefs.set(SPACES_PREF, text); } },
+      onSpaceShown: (id) => { if (id === 'annotate') requestAnimationFrame(() => player?.resize?.()); },
+    });
+  } catch (e) {
+    // The page is as before (SpacesShell.create undoes itself); the sidebars come back too.
+    sidebar.undock();
+    rightBar.undock();
+    pendingBadges.clear();
+    throw e;
+  }
+  for (const [id, text] of pendingBadges) shell.setBadge(id, text);
+  pendingBadges.clear();
+  installTopMenus(shell).catch((e) => console.warn('[spaces] top-bar menus', e));
+  return shell;
+}
+
+// ── Lite: "Project ▾" and "⚙" in the top bar (Annotate v2, mockup B3) ──
+async function installTopMenus(shell) {
+  const { projectMenu, settingsMenu } = await import('../lite/top-menus.ts');
+  const tabs = document.querySelector('.spaces-tabs');
+  if (!tabs) return;
+  const projectBtn = document.createElement('button');
+  projectBtn.type = 'button';
+  projectBtn.className = 'tb-btn top-project-btn';
+  projectBtn.setAttribute('aria-haspopup', 'menu');
+  projectBtn.title = 'Project: add recordings, folder, labels';
+  const renderProjectBtn = () => {
+    projectBtn.innerHTML = '<span class="top-project-caption">Project</span><strong></strong><span aria-hidden="true">▾</span>';
+    projectBtn.querySelector('strong').textContent = projectKind === 'folder' ? (projectStore?.label || 'Folder') : 'Default project';
+  };
+  renderProjectBtn();
+  tabs.before(projectBtn);
+  const settingsBtn = document.createElement('button');
+  settingsBtn.type = 'button';
+  settingsBtn.className = 'tb-btn top-settings-btn';
+  settingsBtn.setAttribute('aria-haspopup', 'menu');
+  settingsBtn.title = 'Settings';
+  settingsBtn.setAttribute('aria-label', 'Settings');
+  settingsBtn.innerHTML = document.querySelector('.topbar-settings-btn svg')?.outerHTML || '⚙';
+  document.getElementById('helpMenuBtn')?.before(settingsBtn);
+  document.body.classList.add('lite-top-menus');   // hides language, key and theme inline in the top bar
+
+  const below = (btn) => { const r = btn.getBoundingClientRect(); return { x: r.left, y: r.bottom + 2 }; };
+  // A further menu ("Open recent ▸", "Export labels ▸") opens where its row was clicked.
+  let lastPointer = null;
+  document.addEventListener('pointerdown', (e) => { lastPointer = { x: e.clientX + 12, y: e.clientY - 8 }; }, true);
+  const show = (at, entries, act) => {
+    lastPointer = null;
+    showContextMenu({ ...at,
+      items: entries.map((e) => (e.id ? { ...e, action: () => act(e.id, e.more && lastPointer ? lastPointer : at) } : e)) });
+  };
+  /** Click a panel's button that lives in a library panel (built when the panel is first shown). */
+  // The panel may be built on first reveal: wait up to ~1 s for the button.
+  const libraryAction = (act) => void shell.reveal('lib-recordings').then(() => {
+    let tries = 60;
+    const tick = () => {
+      const b = libraryHosts.recordings.querySelector(`[data-act="${act}"]`);
+      if (b && b.isConnected && b.offsetParent) b.click();
+      else if (--tries > 0) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   });
+  openSitesEditor = () => libraryAction('open-entities');
+
+  const projectActions = {
+    'add-file': () => openFile(),
+    record: () => document.getElementById('recordBtn')?.click(),
+    'add-xc': () => void shell.reveal('files').then(() => document.getElementById('xcIdInput')?.focus()),
+    'catalog-import': () => libraryAction('open-import'),
+    'open-folder': () => chooseProjectFolder(),
+    'open-recent': (at) => show(at, loadRecent(_lsLite).map((it, i) => ({ id: String(i), label: it.name || it.path || 'Recording', hint: it.kind })),
+      (i) => void openLiteRecent(Number(i))),
+    sites: () => libraryAction('open-entities'),
+    'xc-to-folder': () => setXcToFolder(!xcToFolder()),
+    rescan: () => scanProjectFolder(),
+    'import-labels': () => document.getElementById('importSetBtn')?.click(),
+    'export-labels': (at) => showExportMenu(at.x, at.y),
+    upload: () => sidebar.setActive('upload'),
+    'new-session': () => document.getElementById('newSessionBtn')?.click(),
+  };
+  projectBtn.addEventListener('click', () => {
+    const recordBtn = document.getElementById('recordBtn');
+    show(below(projectBtn), projectMenu({
+      kind: projectKind, hasCatalog: !!catalogView, canRecord: !!recordBtn && !recordBtn.hidden,
+      xcToFolder: xcToFolder(), recentCount: loadRecent(_lsLite).length,
+    }), (id, at) => projectActions[id]?.(at));
+  });
+
+  const settingsActions = {
+    language: (at) => show(at, [...taxonomyLangSelect.options].map((o) => ({ id: o.value, label: o.textContent || o.value, hint: o.value === taxonomyLangSelect.value ? '✓' : '' })),
+      (lang) => { taxonomyLangSelect.value = lang; taxonomyLangSelect.dispatchEvent(new Event('change')); }),
+    'xc-key': () => xcKeyIndicator.click(),
+    theme: () => themeToggleBtn.click(),
+    'reset-layout': async () => {
+      if (!await appConfirm('Put every panel of this project back where it started? Labels and saved datasets stay; a filter that is not saved as a dataset is cleared.',
+        { title: 'Reset panel layout', okLabel: 'Reset layout' })) return;
+      await shell.resetLayouts();
+      window.location.reload();
+    },
+  };
+  const settingsContext = () => ({
+    language: taxonomyLangSelect.value || state.taxonomyLang || '',
+    hasXcKey: xcKeyIndicator.classList.contains('has-key'),
+    dark: (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark',
+  });
+  const projectContext = () => {
+    const recordBtn = document.getElementById('recordBtn');
+    return { kind: projectKind, hasCatalog: !!catalogView, canRecord: !!recordBtn && !recordBtn.hidden,
+      xcToFolder: xcToFolder(), recentCount: loadRecent(_lsLite).length };
+  };
+  settingsBtn.addEventListener('click', () => {
+    show(below(settingsBtn), settingsMenu(settingsContext()), (id, at) => settingsActions[id]?.(at));
+  });
+  installCommandPalette(shell, settingsBtn, { projectMenu: () => projectMenu(projectContext()), settingsMenu: () => settingsMenu(settingsContext()),
+    projectActions, settingsActions, menuAt: () => below(settingsBtn) });
+}
+
+// ── Lite: Ctrl K search for species, recordings, actions and panels (Annotate v2, mockup B3) ──
+async function installCommandPalette(shell, beforeEl, menus) {
+  const [{ CommandPalette }, cs] = await Promise.all([
+    import('../../ui/components/command-palette/command-palette.ts'),
+    import('../lite/command-search.ts'),
+  ]);
+  const { Search } = await import('lucide-static');
+  // Detection classes of the catalog (for "Filter view: detected …"), read once per palette opening.
+  let classes = [];
+  const loadClasses = () => {
+    const root = catalogView?.projectRoot;
+    if (!root) { classes = []; return; }
+    catalogApi.stats(root, {})
+      .then((st) => { classes = [...new Set(st.runs.flatMap((r) => r.classes.map((c) => c.class)))]; })
+      .catch(() => { classes = []; });
+  };
+  const ebirdCode = (sci) => (sci && taxonomy.data ? taxonomy.resolve(sci)?.ebird : '') || '';
+  const classOf = (sci, name) => cs.detectionClassFor(classes, sci, name, ebirdCode(sci));
+  const speciesFound = (q) => {
+    // "xc waldkauz": Xeno-canto references first
+    const xcq = /^xc\s+/i.test(q);
+    const term = xcq ? q.replace(/^xc\s+/i, '') : q;
+    return cs.speciesItems((player.getLabelEditorSuggestions?.(term, 8) || []).map((sp) => ({ ...sp, color: sp.color || colorForName(sp.name) })),
+      (sci, name) => !!catalogView && !!classOf(sci, name), { xc: !!refPanel, xcFirst: xcq });
+  };
+  const recordingsFound = async (q) => {
+    const own = recordingManager.getAll()
+      .map((r) => ({ r, s: cs.matchScore(q, r.filename || '') }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 4)
+      .map(({ r }) => ({ id: `rec:${r.id}`, group: 'recordings', label: r.filename || 'Recording',
+        sub: r.id === recordingManager.getActive()?.id ? 'open now' : (r.xcId || 'in project'), icon: 'wave' }));
+    const root = catalogView?.projectRoot;
+    // The catalog wants every word somewhere in the path; ranked here by where they match the name.
+    if (!root || q.trim().length < 2) return own;
+    const page = await catalogApi.list(root, { pathContains: q.trim() }, 'path', null, 40).catch(() => null);
+    const list = (page?.rows || [])
+      .map((row) => ({ row, s: cs.matchScore(q, String(row.path || '')) }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 5)
+      .map((x) => x.row);
+    for (const row of list) {
+      catalogRows.set(row.id, row);
+      own.push({ id: `cat:${row.id}`, group: 'recordings', label: String(row.path || '').split(/[\\/]/).pop() || `#${row.id}`,
+        sub: [row.site, row.device].filter(Boolean).join(' · ') || 'catalog', icon: 'wave' });
+    }
+    return own;
+  };
+  const catalogRows = new Map();
+  const runs = {
+    'run-birdnet': () => { void shell.reveal('analyse').then(() => birdnetPanel.analyze()); },
+    'mark-done': () => void viewList?.toggleDone(),
+    'next-recording': () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true })),
+    'prev-recording': () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true })),
+    shortcuts: () => showShortcuts(),
+  };
+  const palette = new CommandPalette({
+    species: speciesFound,
+    recordings: recordingsFound,
+    actions: () => {
+      const { spaces: sp, panels } = shell.contents();
+      return cs.paletteActions({
+        spaces: sp, activeSpace: shell.active,
+        // Panels of the shown space first.
+        panels: panels.filter((p) => p.id !== 'editor')
+          .sort((a, b) => Number(b.space === sp.find((x) => x.id === shell.active)?.title) - Number(a.space === sp.find((x) => x.id === shell.active)?.title)),
+        inView: !!viewList?.active, hasRecording: !!recordingManager.getActive(), canAnalyze: !!birdnetPanel?.canAnalyze,
+        projectMenu: menus.projectMenu(), settingsMenu: menus.settingsMenu(),
+      });
+    },
+    run: (id, item) => {
+      const [kind, ...rest] = id.split(':');
+      const arg = rest.join(':');
+      if (kind === 'species') {
+        const found = (player.getLabelEditorSuggestions?.(item.label, 8) || []).find((s) => (s.scientificName || s.name) === arg);
+        player.setSpeciesBar(item.label, { color: item.color || found?.color, scientificName: found?.scientificName || (arg !== item.label ? arg : '') });
+        selectionMeta.textContent = `Label template: ${item.label}`;
+        return;
+      }
+      if (kind === 'xc-species') {
+        const found = (player.getLabelEditorSuggestions?.(arg, 8) || []).find((s) => (s.scientificName || s.name) === arg);
+        const name = item.label.replace(/^Xeno-canto: /, '');
+        void revealReference({ sci: found?.scientificName || arg, name, color: item.color || found?.color });
+        return;
+      }
+      if (kind === 'filter-species') {
+        const found = (player.getLabelEditorSuggestions?.(arg, 8) || []).find((s) => (s.scientificName || s.name) === arg);
+        const cls = classOf(found?.scientificName || arg, found?.name || item.label.replace(/^Filter view: detected /, ''));
+        if (cls && catalogView) void catalogView.updateFilter((f) => { f.detection = { class: cls, minScore: 0, runId: null }; });
+        return;
+      }
+      if (kind === 'rec') {
+        const entry = recordingManager.getAll().find((r) => String(r.id) === arg);
+        if (entry) void shell.reveal('editor').then(() => activateRecordingEntry(entry));
+        return;
+      }
+      if (kind === 'cat') { void libraryOpenRow(catalogRows.get(Number(arg))); return; }
+      if (kind === 'space') { void shell.show(arg); return; }
+      if (kind === 'panel') { void shell.reveal(arg); return; }
+      if (kind === 'project') { menus.projectActions[arg]?.(menus.menuAt()); return; }
+      if (kind === 'settings') { menus.settingsActions[arg]?.(menus.menuAt()); return; }
+      runs[id]?.();
+    },
+  });
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'top-search-btn';
+  btn.title = 'Search species, recordings and actions (Ctrl K)';
+  btn.innerHTML = `${Search}<span>Search</span><span class="cp-key">Ctrl K</span>`;
+  beforeEl.before(btn);
+  const openPalette = () => { if (!palette.isOpen) loadClasses(); palette.toggle(); };
+  btn.addEventListener('click', openPalette);
+  // Ctrl K everywhere, also while typing in a field (capture: before the field and the shortcuts).
+  document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() !== 'k' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openPalette();
+  }, true);
+}
+// ── Lite: editor head (recording, state, place in the view) and label bar (template, tools, Mark done) ──
+let editorHead = null;
+let editorLabelBar = null;
+let _editorViewUnsub = null;
+async function installEditorChrome() {
+  const { EditorHead, EditorLabelBar, DisplayPresetButton } = await import('../../ui/panels/editor-chrome.ts');
+  const main = document.querySelector('#workspace > .main-area');
+  if (!main) return;
+  editorHead = new EditorHead({ prev: () => void viewList?.prev(), next: () => void viewList?.next() });
+  player.setDrawTimeOnly(prefs.flag('aw.draw.timeOnly', false));
+  editorLabelBar = new EditorLabelBar({
+    toggleDone: () => void viewList?.toggleDone(),
+    timeOnly: { get: () => player.getDrawTimeOnly(), set: (on) => { player.setDrawTimeOnly(on); prefs.setFlag('aw.draw.timeOnly', on); } },
+  });
+  // "Display: <preset> ▾" in the editor head (mockup B1, legend 7; the player toolbar has no room)
+  const presetSel = () => player._state?.d?.presetSelect ?? null;
+  const presetBtn = new DisplayPresetButton(presetSel, (at, items) => showContextMenu({ ...at, items }));
+  editorHead.el.querySelector('.eh-spacer')?.after(presetBtn.el);
+  // Any change in the Display panel can turn the preset into "Custom"
+  for (const ev of ['change', 'input']) document.addEventListener(ev, () => presetBtn.refresh(), true);
+  setTimeout(() => presetBtn.refresh(), 0);
+  main.prepend(editorHead.el);
+  main.append(editorLabelBar.el);
+  // The label template moves out of the top bar (placeholder, or the widget once the taxonomy built it).
+  const template = document.querySelector('#speciesSearchMount, .topbar .species-search');
+  if (template) editorLabelBar.templateSlot.appendChild(template);
+  for (const b of player.labelToolButtons()) editorLabelBar.toolsSlot.appendChild(b);
+  document.body.classList.add('lite-editor-chrome');   // hides the file name in the top bar (now in the head)
+  new MutationObserver(refreshEditorPlace).observe(fileLabel, { childList: true, characterData: true, subtree: true });
+  watchEditorView(catalogView);
+}
+/** Follow the shared view (set at start, or by the first import into a new catalog). */
+function watchEditorView(view) {
+  _editorViewUnsub?.();
+  _editorViewUnsub = view ? view.subscribe(() => refreshEditorPlace()) : null;
+  refreshEditorPlace();
+}
+async function refreshEditorPlace() {
+  if (!editorHead) return;
+  const { rowOfOpen } = await import('../../ui/panels/editor-chrome.ts');
+  const text = fileLabel.textContent?.trim() || '';
+  const name = text === 'No file loaded' ? '' : text;
+  const v = catalogView;
+  // By identity: two files with the same name in different folders are different recordings.
+  const { row, index } = v ? rowOfOpen(v.rows, openCatalogRowId()) : { row: null, index: -1 };
+  const place = { row, index, total: v?.total ?? 0 };
+  viewList?.render();   // Mark done follows the recording in the editor
+  editorHead.setName(name);
+  editorHead.setPlace(place, !!v);
+  editorLabelBar.setPlace(place);
+  propsPanel.setCatalogRow(row, () => openSitesEditor?.());
+  _refRow = row;
+}
+// ── Lite: BirdNET suggestions to review (Annotate v2, mockup B4/B6) ──
+let suggPanel = null, reviewStrip = null, _suggCurrent = null, _suggGroups = [], _suggEntry = null;
+const SUGG_ORIGIN = 'BirdNET';
+async function installSuggestions() {
+  const { SuggestionsPanel, ReviewStrip } = await import('../../ui/panels/suggestions-panel.ts');
+  suggPanel = new SuggestionsPanel({
+    pick: (s) => showSuggestion(s, { play: false }),
+    decide: (list, d) => decideSuggestions(list, d),
+    changed: () => labelViews.invalidate('suggestions'),
+    reference: isLite() ? (g) => {
+      const s = g.suggestions.find((x) => x.state === 'open') || g.suggestions[0];
+      if (s) showSuggestion(s);
+      void revealReference(s ? suggTarget(s) : { sci: g.scientificName || g.species, name: g.species });
+    } : undefined,
+    patch: (s) => {
+      const half = Math.min(6, (s.end - s.start) / 2);
+      try { return player.computeSnapPatch?.((s.start + s.end) / 2, half) ?? null; } catch { return null; }
+    },
+  });
+  reviewStrip = new ReviewStrip({
+    decide: (d) => { if (_suggCurrent) decideSuggestions([_suggCurrent], d, { advance: true }); },
+    step: (dir) => stepSuggestion(dir),
+    play: () => { if (_suggCurrent) player.playSegment(_suggCurrent.start, _suggCurrent.end); },
+    reference: () => revealReference(),
+  });
+  editorHead?.el.after(reviewStrip.el);
+  // A / X / U while a suggestion is under review (before the player's X = delete and the app's U = upload)
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || !_suggCurrent || reviewStrip.el.hidden || refCompare?.isOpen) return;
+    if (spaces && spaces.active !== 'annotate') return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    const d = { a: 'accepted', x: 'rejected', u: 'unsure' }[e.key.toLowerCase()];
+    if (!d) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    decideSuggestions([_suggCurrent], d, { advance: true });
+  }, true);
+  labelViews.invalidate('suggestions');
+}
+
+// ── Reference panel: Xeno-canto recordings of the species under review (Lite, mockup R1) ──
+let refPanel = null, _refAudio = null, _refRow = null;
+/** Each reference play request; a stop or a newer request makes an older one (still downloading) void. */
+let _refPlayReq = 0;
+const XC_SEARCH_API = 'https://xeno-canto.org/api/3/recordings';
+function refCoords() {
+  const c = birdnetPanel?.getCoords?.();
+  return c && Number.isFinite(c.lat) && Number.isFinite(c.lon) ? c : null;
+}
+/** Month of the open recording (catalog start), for "same season". */
+function refMonth() {
+  const ms = _refRow?.startMs;
+  return ms != null ? new Date(ms + (_refRow.localOffsetMin ?? 0) * 60_000).getUTCMonth() + 1 : null;
+}
+function stopRefAudio() {
+  _refPlayReq++;
+  if (!_refAudio) return;
+  _refAudio.pause();
+  URL.revokeObjectURL(_refAudio.src);
+  _refAudio = null;
+}
+/** A selected label with a species (not the BirdNET window of the suggestion shown) becomes the reference target. */
+function labelRefTarget(lbl) {
+  return { id: lbl.id, sci: lbl.scientificName, name: lbl.label || lbl.scientificName, color: lbl.color,
+    start: Number(lbl.start), end: Number(lbl.end), source: 'label' };
+}
+function refTargetFromLabel(lbl) {
+  if (!refPanel || !lbl?.scientificName || lbl.origin === SUGG_ORIGIN) return;
+  refPanel.setTarget(labelRefTarget(lbl));
+}
+/** The suggestion under review as a reference target. */
+function suggTarget(s) {
+  if (!s) return null;
+  const best = [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+  const live = best ? state.labels.find((l) => l.id === best.id) : null;
+  return { id: s.key, sci: s.scientificName || s.species, name: s.species, color: live?.color,
+    start: s.start, end: s.end, source: `suggestion ${s.confidence.toFixed(2)}` };
+}
+let refCompare = null, _refDecodeCtx = null;
+/** Compare window (mockup R2): own clip above, the Xeno-canto recording below. */
+async function openRefCompare(t, ref, list) {
+  if (!refCompare) {
+    const [{ ReferenceCompare }, { computeSnapPatch }, { loadWasmMain }, { invoke }, { heatLut, thumbPixels }] = await Promise.all([
+      import('../../ui/components/reference-compare/reference-compare.ts'), import('../../app/snapPatch.ts'),
+      import('../../infrastructure/wasm-dsp/WasmSpectrogramService.ts'), import('@tauri-apps/api/core'),
+      import('../../domain/catalog/thumb-grid.ts')]);
+    const xcBuffers = new Map();
+    refCompare = new ReferenceCompare({
+      ownPatch: async (from, to) => {
+        await loadWasmMain().catch(() => {});
+        const p = player.computeSnapPatch?.((from + to) / 2, (to - from) / 2);
+        if (p) return p;
+        const root = (projectKind === 'folder' && projectStore?.rootPath) || null;
+        const path = recordingManager.getActive()?.path;
+        if (!root || !path) return null;
+        const [tile] = await invoke('similar_tiles', { root, windows: [{ path, start: from, end: to }], spec: { w: 900, h: 260, maxHz: 12_000 } });
+        return tile && !tile.error && tile.w ? new ImageData(thumbPixels(tile, heatLut()), tile.w, tile.h) : null;
+      },
+      playOwn: (from, to) => { stopRefAudio(); refPanel?.stopped(); player.playSegment(from, to); },
+      stopOwn: () => { if (player.isPlaying) player.pause(); },
+      ownTime: () => (player.isPlaying ? player.currentTime ?? null : null),
+      ownDuration: () => player.duration || player._state?.audioBuffer?.duration || 0,
+      xcAudio: async (r) => {
+        if (xcBuffers.has(r.id)) return xcBuffers.get(r.id);
+        const audio = await xcPanel.fetchAudio(r.id);
+        _refDecodeCtx ??= new AudioContext();
+        const buf = await _refDecodeCtx.decodeAudioData(audio.buffer.slice(0));
+        xcBuffers.set(r.id, buf);
+        while (xcBuffers.size > 12) xcBuffers.delete(xcBuffers.keys().next().value);
+        return buf;
+      },
+      patchOf: async (buf) => {
+        await loadWasmMain();
+        const dur = Math.min(buf.duration, 90);
+        return computeSnapPatch(buf, dur / 2, dur / 2);
+      },
+      search: (sci) => refPanel.searchFor(sci),
+      decide: async (target, d) => {
+        if (d === 'verified') {
+          const l = state.labels.find((x) => x.id === target.id);
+          if (l && !_computeLockedIds().includes(l.id)) upsertLabel({ ...l, tags: { ...(l.tags || {}), verified: 'yes' } }, ALL_LABEL_VIEWS);
+          return null;
+        }
+        const cur = _suggGroups.flatMap((g) => g.suggestions).find((s) => s.key === target.id);
+        if (!cur) return null;
+        await decideSuggestions([cur], d);
+        const { nextOpen } = await import('../../app/suggestions.ts');
+        const next = nextOpen(_suggGroups, cur.key);
+        if (!next) return null;
+        showSuggestion(next);
+        return suggTarget(next);
+      },
+      step: (target, dir) => {
+        if (!target.source?.startsWith('suggestion')) return null;
+        stepSuggestion(dir);
+        return suggTarget(_suggCurrent);
+      },
+      addToProject: (r) => { refCompare.close(); void loadXenoCanto(String(r.id)); },
+      openExternal: (r) => window.open(`https://xeno-canto.org/${encodeURIComponent(r.id)}`, '_blank', 'noopener'),
+      // other species BirdNET heard in the same span: the usual mix-ups
+      others: (target) => {
+        const seen = new Map();
+        for (const l of state.labels) {
+          if (l.origin !== SUGG_ORIGIN || !l.scientificName || l.scientificName === target.sci) continue;
+          if (target.start == null || l.end <= target.start || l.start >= target.end) continue;
+          const c = l.confidence ?? 0;
+          if (!seen.has(l.scientificName) || seen.get(l.scientificName).c < c) seen.set(l.scientificName, { sci: l.scientificName, name: l.label || l.scientificName, c });
+        }
+        return [...seen.values()].sort((a, b) => b.c - a.c).slice(0, 4);
+      },
+    });
+  }
+  stopRefAudio();
+  refPanel?.stopped();
+  if (player.isPlaying) player.pause();
+  refCompare.open(t, ref, list);
+}
+/** Show the Reference panel: for `target`, else the suggestion under review (else what it shows already). */
+async function revealReference(target = null) {
+  if (!refPanel || !spaces) return;
+  if (target) refPanel.setTarget(target, { force: true });
+  else if (_suggCurrent) refPanel.setTarget(suggTarget(_suggCurrent), { force: true });
+  await spaces.reveal('reference');
+  refPanel.el.focus();
+}
+async function installReference() {
+  if (!isLite()) return;
+  const { ReferencePanel } = await import('../../ui/panels/reference-panel.ts');
+  const { searchXcRefs, refineRefs } = await import('../../app/xc-reference.ts');
+  const { xcSearchNames } = await import('../../domain/speciesLinks.ts');
+  const pages = new Map();
+  const fetchPage = async (q, page) => {
+    const key = xcPanel.apiKey;
+    if (!key) throw new Error('Xeno-canto API key needed – add it under ⚙ › Xeno-canto API key.');
+    const k = `${q}&page=${page}`;
+    if (!pages.has(k)) {
+      const res = await fetch(`${XC_SEARCH_API}?query=${q}&page=${page}&key=${encodeURIComponent(key)}`);
+      if (!res.ok) throw new Error(`Xeno-canto: HTTP ${res.status}`);
+      const d = await res.json();
+      pages.set(k, { recordings: Array.isArray(d.recordings) ? d.recordings : [],
+        numRecordings: parseInt(d.numRecordings || '0', 10) || 0, numPages: parseInt(d.numPages || '0', 10) || 0 });
+      while (pages.size > 60) pages.delete(pages.keys().next().value);
+    }
+    return pages.get(k);
+  };
+  refPanel = new ReferencePanel({
+    hasLocation: () => !!refCoords(),
+    duration: () => player.duration || 0,
+    search: async (sci, f, sort, page) => {
+      const names = xcSearchNames(taxonomy.data ? taxonomy.resolve(sci) : null, sci);
+      const res = await searchXcRefs(names, f, refCoords(), fetchPage, page);
+      return { total: res.total, pages: res.pages, refs: refineRefs(res.refs, f, { month: refMonth(), sort }) };
+    },
+    play: async (ref) => {
+      stopRefAudio();
+      const req = _refPlayReq;
+      if (player.isPlaying) player.pause();
+      try {
+        const audio = await xcPanel.fetchAudio(ref.id);
+        if (req !== _refPlayReq) return;   // stopped, another reference, or the editor played meanwhile
+        const a = new Audio(URL.createObjectURL(new Blob([audio.buffer], { type: 'audio/mpeg' })));
+        _refAudio = a;
+        a.onended = () => { if (_refAudio === a) { stopRefAudio(); refPanel.stopped(); } };
+        await a.play();
+      } catch (err) {
+        if (req !== _refPlayReq) return;   // a failure of an old request must not stop a newer one
+        stopRefAudio();
+        refPanel.stopped();
+        selectionMeta.textContent = `Xeno-canto: ${err?.message || err}`;
+      }
+    },
+    stop: () => stopRefAudio(),
+    playClip: (t) => { stopRefAudio(); refPanel.stopped(); player.playSegment(t.start, t.end); },
+    patch: (t) => {
+      const half = Math.min(6, (t.end - t.start) / 2);
+      try { return player.computeSnapPatch?.((t.start + t.end) / 2, half) ?? null; } catch { return null; }
+    },
+    // "similar to clip": embed the first candidates with Perch (cached in the project), rank against the clip
+    rank: async (t, refs, progress, isCurrent) => {
+      const root = (projectKind === 'folder' && projectStore?.rootPath) || null;
+      const path = recordingManager.getActive()?.path;
+      if (!root || !path) throw new Error('Similarity needs a project folder with this recording in it.');
+      const { invoke } = await import('@tauri-apps/api/core');
+      const model = await invoke('embed_model_status');
+      if (!model?.present) throw new Error('Similarity needs the Perch model – download it in the Embeddings space first.');
+      const ids = refs.map((r) => String(r.id));
+      const cached = new Set(await invoke('xc_cached', { root, ids }));
+      let done = 0;
+      for (const id of ids) {
+        if (!isCurrent()) return new Map();
+        if (!cached.has(id)) {
+          try {
+            const audio = await xcPanel.fetchAudio(id);
+            await invoke('xc_embed', new Uint8Array(audio.buffer), { headers: { 'x-root': encodeURIComponent(root), 'x-id': id, 'x-ext': 'mp3' } });
+          } catch (err) { console.warn('[reference] XC', id, 'not embedded:', err); }
+        }
+        progress(++done, ids.length);
+      }
+      const hits = await invoke('xc_rank', { root, path, start: t.start, end: t.end, ids });
+      return new Map(hits.map((h) => [h.id, { score: h.score, start: h.start }]));
+    },
+    tile: async (t) => {
+      const root = (projectKind === 'folder' && projectStore?.rootPath) || null;
+      const path = recordingManager.getActive()?.path;
+      if (!root || !path) return null;
+      const [{ invoke }, { heatLut, thumbPixels }] = await Promise.all([import('@tauri-apps/api/core'), import('../../domain/catalog/thumb-grid.ts')]);
+      const [tile] = await invoke('similar_tiles', { root, windows: [{ path, start: t.start, end: t.end }], spec: { w: 240, h: 64, maxHz: 12_000 } });
+      return tile && !tile.error && tile.w ? new ImageData(thumbPixels(tile, heatLut()), tile.w, tile.h) : null;
+    },
+    addToProject: (ref) => { stopRefAudio(); refPanel.stopped(); void loadXenoCanto(String(ref.id)); },
+    openExternal: (ref) => window.open(`https://xeno-canto.org/${encodeURIComponent(ref.id)}`, '_blank', 'noopener'),
+    compare: (t, ref, list) => void openRefCompare(t, ref, list),
+  });
+  // R: Xeno-canto references for the suggestion / label under review
+  window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() !== 'r' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    if (!spaces || spaces.active !== 'annotate') return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (!_suggCurrent && !refPanel.species) return;
+    e.preventDefault();
+    void revealReference();
+  });
+  // the editor plays: XC audio stops
+  player.on?.('play', () => { stopRefAudio(); if (refPanel.busy) refPanel.stopped(); });   // also a reference still downloading
+}
+
+async function refreshSuggestions() {
+  if (!suggPanel) return;
+  const { buildSuggestions, reviewProgress } = await import('../../app/suggestions.ts');
+  const dets = state.labels.filter((l) => l.origin === SUGG_ORIGIN);
+  // another recording: drop its tiles and the suggestion under review
+  if (_suggEntry !== state._labelsEntryId) { _suggEntry = state._labelsEntryId; _suggCurrent = null; suggPanel.clearThumbs(); refPanel?.clearClip(); }
+  // adopted detections stay in state.labels (only hidden in the views); their copies name them
+  const adopted = OWN_SOURCE_ID ? adoptedSourceIds(state.labels, OWN_SOURCE_ID) : new Set();
+  // geo scores are keyed by the exact scientific name; the groups use it in lower case
+  const sciByKey = new Map(dets.filter((l) => l.scientificName).map((l) => [String(l.scientificName).toLowerCase(), l.scientificName]));
+  if (sciByKey.size) refreshSpeciesGeoScores();
+  _suggGroups = buildSuggestions(dets, {
+    join: suggPanel.join, minConfidence: suggPanel.minConfidence, adoptedIds: adopted,
+    geoScore: (k) => (sciByKey.has(k) ? speciesGeoScore(sciByKey.get(k)) : null),
+  });
+  const order = _suggGroups.flatMap((g) => g.suggestions);
+  // keep the current one across rebuilds (same key), else drop it
+  _suggCurrent = _suggCurrent ? order.find((s) => s.key === _suggCurrent.key) || null : null;
+  const progress = reviewProgress(_suggGroups);
+  suggPanel.render(state._labelsEntryId || dets.length ? { groups: _suggGroups, progress, current: _suggCurrent?.key ?? null } : null);
+  const open = progress.total - progress.reviewed;
+  spaces?.setBadge?.('suggestions', open ? String(open) : '');
+  updateReviewStrip(order);
+}
+
+function updateReviewStrip(order = _suggGroups.flatMap((g) => g.suggestions)) {
+  if (!reviewStrip) return;
+  const s = _suggCurrent;
+  if (!s) { reviewStrip.show(null, 0, 0); return; }
+  const others = state.labels
+    .filter((l) => l.origin === SUGG_ORIGIN && l.start < s.end && l.end > s.start
+      && String(l.scientificName || l.label) !== String(s.scientificName || s.species))
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+    .map((l) => ({ species: l.label, confidence: l.confidence ?? 0 }));
+  const seen = new Set();
+  reviewStrip.show(s, order.findIndex((x) => x.key === s.key), order.length,
+    others.filter((o) => (seen.has(o.species) ? false : seen.add(o.species))));
+}
+
+function showSuggestion(s, { play = false } = {}) {
+  _suggCurrent = s;
+  if (!s) { labelViews.invalidate('suggestions'); return; }
+  const best = [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+  if (best && state.labels.some((l) => l.id === best.id)) selectLabel(best.id);
+  refPanel?.setTarget(suggTarget(s));
+  // zoom to the suggestion with some context on both sides (option in the panel's ⋯)
+  if (suggPanel?.fit) {
+    const pad = Math.max(1, (s.end - s.start) * 0.5);
+    player.zoomToTimeRange?.(Math.max(0, s.start - pad), s.end + pad);
+  }
+  if (play) player.playSegment(s.start, s.end);
+  labelViews.invalidate('suggestions');
+}
+
+function stepSuggestion(dir) {
+  const order = _suggGroups.flatMap((g) => g.suggestions);
+  if (!order.length) return;
+  const i = _suggCurrent ? order.findIndex((s) => s.key === _suggCurrent.key) : -1;
+  showSuggestion(order[(i + dir + order.length) % order.length]);
+}
+
+/**
+ * Accept: copy into my labels (adoptSources: call box from BirdBox when there is one).
+ * Reject / unsure / open: `review` on the detections. One undo step for the whole decision.
+ */
+async function decideSuggestions(list, d, { advance = false } = {}) {
+  if (!list?.length) return;
+  const { setReview, nextOpen } = await import('../../app/suggestions.ts');
+  const undo = snapshotLabels();
+  let n = 0;
+  if (d === 'accepted') {
+    if (!OWN_SOURCE_ID) { selectionMeta.textContent = 'No own label set to copy into'; return; }
+    // the most confident window of each suggestion stands for it (a run is one call series)
+    const picks = list.map((s) => [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0]);
+    const live = picks.map((w) => state.labels.find((l) => l.id === w.id)).filter(Boolean);
+    // accepting after a rejection replaces its absent label
+    const winIds = new Set(list.flatMap((s) => s.windows.map((w) => String(w.id))));
+    for (const c of state.labels.filter((l) => l.setId === OWN_SOURCE_ID && l.polarity === 'absent' && winIds.has(String(l.adoptedFrom?.id)))) labelStore.remove(c.id);
+    const src = adoptSources(live.map(({ review, ...l }) => l), state.labels, 'best');
+    if (src.length) {
+      labelStore.add(adoptLabels(src, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets)));
+      touchOwnSet(OWN_SOURCE_ID);
+    }
+    n = src.length;
+  } else {
+    // a decision other than accept also takes back an earlier copy of these windows
+    const ids = new Set(list.flatMap((s) => s.windows.map((w) => String(w.id))));
+    const copies = state.labels.filter((l) => l.setId === OWN_SOURCE_ID && ids.has(String(l.adoptedFrom?.id)));
+    for (const c of copies) labelStore.remove(c.id);
+    for (const s of list) for (const w of setReview(s, d)) { labelStore.patch(w.id, { review: w.review }); n += 1; }
+    // rejected: an absent label in my labels says "checked, not there" (exports; hidden in the views)
+    if (d === 'rejected' && OWN_SOURCE_ID) {
+      const picks = list.map((s) => [...s.windows].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0]);
+      const live = picks.map((w) => state.labels.find((l) => l.id === w.id)).filter(Boolean).map(({ review, ...l }) => l);
+      if (live.length) {
+        labelStore.add(adoptLabels(live, OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets)).map((c) => ({ ...c, polarity: 'absent' })));
+        touchOwnSet(OWN_SOURCE_ID);
+      }
+    }
+  }
+  const verb = { accepted: 'Accepted', rejected: 'Rejected', unsure: 'Marked unsure', open: 'Reopened' }[d];
+  showUndoToast(`${verb} ${list.length === 1 ? list[0].species : `${list.length} suggestions`}`, undo);
+  await refreshSuggestions();
+  if (advance) {
+    const next = nextOpen(_suggGroups, list[list.length - 1].key);
+    if (next) showSuggestion(next, { play: suggPanel?.autoPlay !== false });
+    else { _suggCurrent = null; updateReviewStrip(); selectionMeta.textContent = 'All suggestions reviewed – Mark done (D)'; }
+  }
+  return n;
+}
+
+/** Options of the label field list (label window M2 and Properties panel in Lite); getters stay live. */
+function labelFieldsOptions() {
+  return {
+    get speciesSearch() { return _modalSearchFactory ? (onSelect) => _modalSearchFactory(null, onSelect) : null; },
+    get tagPresets() { return player.getTagPresets?.() || []; },
+    get channels() { return player._state?.audioBuffer?.numberOfChannels || 1; },
+    get clock() {
+      const start = player.recordingStart;
+      return start && ravenClockFn ? (sec) => ravenClockFn?.(start, sec, sec)[1].slice(0, 11) : null;
+    },
+    source: (l) => {
+      const set = l.setId && l.setId !== OWN_SOURCE_ID ? state.labelSets?.get(l.setId) : null;
+      const from = l.adoptedFrom
+        ? `${l.adoptedFrom.origin || 'detection'}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''} · accepted ${l.createdAt ? new Date(l.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}`
+        : set ? `${set.name || l.origin}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''}`
+        : l.origin && l.origin !== 'manual' ? `${l.origin}${l.confidence != null ? ` · ${Number(l.confidence).toFixed(2)}` : ''}` : 'drawn by hand';
+      const edited = l.updatedAt ? ` · edited ${new Date(l.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+      return { from, author: `${l.author || 'you'}${edited}` };
+    },
+  };
+}
+let ravenClockFn = null;
+if (isLite()) {
+  void import('../../domain/recordingTime.ts').then((m) => { ravenClockFn = m.ravenClock; });
+  propsPanel.useFieldsForm(labelFieldsOptions());
+}
+
+// ── Lite: label window (Annotate v2 mockup M2) ──
+let labelModal = null;
+let _modalSearchFactory = null;
+async function openLabelModal(id, selection = []) {
+  if (!state.labels.some((l) => l.id === id)) return false;
+  const { LabelModal } = await import('../../ui/components/label-modal/label-modal.ts');
+  const { selectedSamples } = await import('../../shared/channels.ts');
+  const { ravenClock } = await import('../../domain/recordingTime.ts');
+  labelModal?.close();
+  const start = player.recordingStart;
+  const ab = () => player._state?.audioBuffer;
+  let mono = null;
+  const entry = recordingManager.getActive?.();
+  labelModal = new LabelModal({
+    labels: () => _visibleLabels().filter((l) => l.end > l.start).sort((a, b) => a.start - b.start || a.end - b.end),
+    change: (lid, updates) => propsPanel.onChange(lid, updates),
+    snapshot: () => snapshotLabels(),
+    commitVisit: (l, restore) => showUndoToast(`Edited ${l.label || 'label'}`, restore),
+    remove: (lid) => {
+      const l = state.labels.find((x) => x.id === lid);
+      if (!l) return;
+      const undo = snapshotLabels();
+      touchOwnSet(l.setId);
+      labelStore.remove(lid);
+      showUndoToast(`Deleted ${l.label || 'label'}`, undo);
+    },
+    removeMany: (ids) => {
+      const set = new Set(ids);
+      const ls = state.labels.filter((x) => set.has(x.id) && !x.readonly);
+      if (!ls.length) return;
+      const undo = snapshotLabels();
+      for (const l of ls) { touchOwnSet(l.setId); labelStore.remove(l.id); }
+      showUndoToast(`Deleted ${ls.length} labels`, undo);
+    },
+    sourceSummary: (ls) => {
+      const by = new Map();
+      for (const l of ls) {
+        const set = l.setId && l.setId !== OWN_SOURCE_ID ? state.labelSets?.get(l.setId) : null;
+        const k = l.adoptedFrom ? `accepted from ${l.adoptedFrom.origin || 'detection'}` : set ? `from ${set.name || l.origin}` : l.origin && l.origin !== 'manual' ? `from ${l.origin}` : 'drawn';
+        by.set(k, (by.get(k) || 0) + 1);
+      }
+      return [...by].map(([k, n]) => `${n} ${k}`).join(', ');
+    },
+    duplicate: (lid) => {
+      const l = state.labels.find((x) => x.id === lid);
+      if (!l || !OWN_SOURCE_ID) return null;
+      const undo = snapshotLabels();
+      const [copy] = adoptLabels([{ ...l, readonly: false }], OWN_SOURCE_ID, new Date(), activeLayerId(state.labelSets));
+      delete copy.adoptedFrom;
+      labelStore.add([copy]);
+      touchOwnSet(OWN_SOURCE_ID);
+      showUndoToast(`Duplicated ${l.label || 'label'}`, undo);
+      return copy.id;
+    },
+    canFit: (l) => isFullBandOwn(l),
+    fitToCall: (lid) => { fitLabelToCall(lid, { undo: () => {}, toast: false }); },
+    similar: (lid) => { const l = state.labels.find((x) => x.id === lid); if (l && canFindSimilar(l)) findSimilarCalls(l); },
+    openInEditor: (lid) => {
+      const l = state.labels.find((x) => x.id === lid);
+      if (!l) return;
+      const pad = Math.max(1, (l.end - l.start) * 0.5);
+      player.zoomToTimeRange?.(Math.max(0, l.start - pad), l.end + pad);
+      selectLabel(lid);
+    },
+    keepAsTemplate: (l) => { if (l) useLabelAsTemplate(l); },
+    patch: (a, b) => { try { return player.computeSnapPatch?.((a + b) / 2, (b - a) / 2) ?? null; } catch { return null; } },
+    samples: () => {
+      const buf = ab();
+      if (!buf) return null;
+      mono ??= selectedSamples(buf);
+      return { data: mono, rate: buf.sampleRate };
+    },
+    play: (a, b, { loop, slow }) => {
+      const sel = player._state?.d?.slowdownSelect;
+      if (sel) { const want = slow ? '0.5' : '1'; if (sel.value !== want && [...sel.options].some((o) => o.value === want)) { sel.value = want; sel.dispatchEvent(new Event('change', { bubbles: true })); } }
+      player.playSegment(a, b, { loop });
+    },
+    stop: () => player.pause(),
+    currentTime: () => player.currentTime,
+    isPlaying: () => player.isPlaying,
+    colorScheme: () => player._state?.d?.colorSchemeSelect?.value || 'inferno',
+    maxFreq: () => (ab()?.sampleRate || 48000) / 2,
+    duration: () => player.duration || ab()?.duration || 0,
+    fileName: () => entry?.filename || entry?.name || '',
+    clock: start ? (sec) => ravenClock(start, sec, sec)[1].slice(0, 11) : null,
+    fields: labelFieldsOptions(),
+  }, id, selection);
+  labelModal.open();
+  labelModal.el.addEventListener('remove', () => {}, { once: true });
+  return true;
+}
+// label changes from elsewhere (undo, other panels) redraw an open label window
+labelStore.subscribe?.(() => { if (labelModal?.el.isConnected) labelModal.refresh(); });
+if (isLite()) player.onLabelOpen = (id) => { void openLabelModal(id); return true; };
+
+/** Sidebar id → dock panel id / title, where they differ. */
+const DOCK_ID = { project: 'files', spectrogram: 'display' };
+const DOCK_TITLE = { project: 'Files' };
+/** Tab order in Annotate (mockup B6); unknown panels last. */
+const DOCK_ORDER = ['project', 'labels', 'properties', 'spectrogram', 'audio', 'analyse', 'similar', 'species', 'upload'];
+const dockRank = (id) => { const i = DOCK_ORDER.indexOf(id); return i < 0 ? DOCK_ORDER.length : i; };
+/** The Reference panel comes right after Labels (mockup R1); placed by its arrange entry once Labels is. */
+const withReference = (ids) => { const i = ids.indexOf('labels'); return i < 0 ? [...ids, 'reference'] : [...ids.slice(0, i + 1), 'reference', ...ids.slice(i + 1)]; };
+/** Badges set while the spaces are being built (spaces not assigned yet). */
+const pendingBadges = new Map();
+/** What a docked sidebar forwards to: its tabs are panels of the spaces now. */
+function dockHost() {
+  const panelId = (id) => (id === 'library' ? 'lib-recordings' : DOCK_ID[id] || id);
+  return {
+    reveal: (id) => void spaces?.reveal(panelId(id)),
+    setBadge: (id, text) => { if (spaces) spaces.setBadge(panelId(id), text); else pendingBadges.set(panelId(id), text); },
+  };
+}
+/** The bar showing the current view above the spaces. */
+async function makeViewBar(view) {
+  const { ViewBar } = await import('../../ui/panels/library/view-bar.ts');
+  return new ViewBar(view, {
+    onAddFilter: () => void spaces?.reveal('lib-fields'),
+    onSaveDataset: () => void spaces?.reveal('lib-recordings').then(() => librarySaveAsDataset()),
+    // Detection classes may be eBird codes or "Scientific_Common": show the label-language name.
+    className: (cls) => {
+      if (!taxonomy.data) return '';
+      const rec = taxonomy.byEbird(cls) || taxonomy.resolve(String(cls).split('_')[0]);
+      return rec ? taxonomy.resolveCommonName(rec, taxonomyLangSafe()) : '';
+    },
+  }).el;
 }
 /** Keys (arrows, Enter) go to the library once Browse is shown. */
 function focusLibrarySoon() {
-  requestAnimationFrame(() => libraryHost.querySelector('.lib-overlay')?.focus());
+  requestAnimationFrame(() => libraryHosts.recordings.querySelector('.lib-overlay')?.focus());
 }
 
 // ── Lite: window title and close guard ──────────────────────────────

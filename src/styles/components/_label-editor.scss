@@ -1,2 +1,153 @@
 /* Modal and overlay rules moved to _overlays.scss */
 /* See src/styles/components/_overlays.scss for label-editor and popover styles. */
+
+/* ── Quick species pick beside a new box (Lite, mockup M1: annotate-v2/label-modal.html .qp) ── */
+.quick-picker {
+  position: fixed;
+  z-index: 9000;
+  width: 400px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);   // the list scrolls, the footer (Save) stays on screen
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  color: var(--color-text-primary);
+}
+.qp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--color-border);
+  input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 13px;
+    outline: none;
+  }
+}
+.qp-icon { display: flex; color: var(--color-text-secondary); }
+.qp-key {
+  padding: 1px 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.qp-list { max-height: 300px; min-height: 0; flex: 0 1 auto; overflow-y: auto; padding-bottom: 4px; }
+.qp-group {
+  display: flex;
+  gap: 6px;
+  margin: 8px 12px 3px;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  .qp-group-r { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+}
+.qp-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  &.active { background: color-mix(in srgb, var(--color-accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--color-accent); }
+  mark { background: none; color: inherit; font-weight: 700; }
+}
+.qp-num { width: 12px; flex: none; font: 700 10px var(--font-mono, monospace); color: var(--color-accent); }
+.qp-sw { width: 10px; height: 10px; flex: none; border-radius: 3px; background: var(--color-text-secondary); opacity: 0.9; }
+.qp-name { white-space: nowrap; }
+.qp-sci { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); font-style: italic; font-size: 11px; }
+.qp-hint { margin-left: auto; flex: none; color: var(--color-text-secondary); font: 10.5px var(--font-mono, monospace); }
+.qp-none { padding: 10px 12px; color: var(--color-text-secondary); }
+.qp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border);
+}
+.qp-chips-label { margin-right: 2px; color: var(--color-text-secondary); font-size: 11px; }
+.qp-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  &[aria-pressed='true'] {
+    border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+    color: var(--color-accent);
+  }
+  &.qp-chip--more { border-style: dashed; }
+}
+.qp-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-secondary, var(--color-bg-surface));
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  .qp-keep { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+}
+.qp-save {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  .qp-key { border-color: rgba(0, 0, 0, 0.3); color: inherit; }
+}
+.quick-picker-ghost {
+  position: absolute;
+  z-index: 15;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px #000, inset 0 0 0 1px #000;
+  pointer-events: none;
+  .qpg-tag {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: -2px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #fff;
+    color: #111;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  i { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #fff; border: 1.5px solid #111; }
+  .nw { left: -5px; top: -5px; } .ne { right: -5px; top: -5px; }
+  .sw { left: -5px; bottom: -5px; } .se { right: -5px; bottom: -5px; }
+}

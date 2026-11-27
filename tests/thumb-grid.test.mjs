@@ -55,3 +55,13 @@ test('gridWindow: a scroll position past a smaller result keeps first â‰¤ last â
     const w = gridWindow(400, 5, 10_000, 300, 100, 100);
     assert.ok(w.first <= w.last && w.last <= 5, JSON.stringify(w));
 });
+
+test('heatGeometry: the "00" label at the first row stays inside the canvas', async () => {
+    const { heatGeometry, HEAT_FONT } = await import('../src/domain/catalog/thumb-grid.ts');
+    for (const H of [110, 150, 400]) {
+        const { top, rowH } = heatGeometry(H);
+        const labelTop = top + rowH / 2 - HEAT_FONT / 2;   // text centred on the first row
+        assert.ok(labelTop >= 0, `H=${H}: label starts at ${labelTop}`);
+        assert.ok(top + 24 * rowH <= H - 14 + 1e-9, `H=${H}: rows overlap the date labels`);
+    }
+});

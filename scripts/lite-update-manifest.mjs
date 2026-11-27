@@ -31,6 +31,10 @@ const TARGETS = [
   ['windows-x86_64-msi', /_x64_[^/]*\.msi$/],
   ['darwin-aarch64', /\.app\.tar\.gz$/],
   ['linux-x86_64', /_amd64\.AppImage$/],
+  ['linux-x86_64-appimage', /_amd64\.AppImage$/],
+  // A .deb install asks for this key first; without it, it falls back to the
+  // AppImage above and fails with "invalid updater binary format".
+  ['linux-x86_64-deb', /_amd64\.deb$/],
 ];
 const files = walk(dir);
 const platforms = {};

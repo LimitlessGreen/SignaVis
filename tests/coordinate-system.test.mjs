@@ -489,3 +489,16 @@ test('pixelYToFrequency is not clamped to a zoomed frequency view', () => {
     assert.ok(cs.pixelYToFrequency(-100000) <= 16000);
     assert.ok(cs.pixelYToFrequency(100000) >= 0);
 });
+
+// ─── Log frequency (cqt) below its lowest band ──────────────────────
+
+test('cqt view from 0 Hz starts at the lowest band, not below it', () => {
+    const cs = new CoordinateSystem({
+        sampleRate: 48000, canvasHeight: 549, maxFreq: 24000, spectrogramMels: 228, scale: 'cqt',
+        freqViewMin: 0, freqViewMax: 10000,
+    });
+    // The lowest band (32.7 Hz) sits on the bottom edge: nothing drawn below the data.
+    assert.equal(cs.frequencyToPixelY(cs.melFreqs[0]), 549);
+    assert.equal(cs.frequencyToPixelY(0), 549);
+    assert.equal(cs.frequencyToPixelY(10000), 0);
+});

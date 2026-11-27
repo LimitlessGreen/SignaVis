@@ -20,6 +20,7 @@ mod launch;
 mod menu;
 mod project_fs;
 mod updater;
+mod xc_rank;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -97,8 +98,12 @@ pub fn run() {
             embeddings::embed_start,
             embeddings::embed_cancel,
             embeddings::embed_similar,
+            xc_rank::xc_embed,
+            xc_rank::xc_rank,
+            xc_rank::xc_cached,
             embed_map::embed_map,
             embed_map::embed_clusters,
+            embed_map::similar_tiles,
             agile::agile_scores,
             agile::agile_suspects,
             agile::agile_label_set_many,
@@ -107,6 +112,7 @@ pub fn run() {
             catalog::catalog_import,
             catalog::catalog_profiles,
             catalog::catalog_roots,
+            catalog::catalog_exists,
             catalog::catalog_facets,
             catalog::catalog_list,
             catalog::catalog_heatmap,
@@ -131,6 +137,7 @@ pub fn run() {
             catalog::catalog_tags,
             catalog::catalog_meta_keys,
             catalog::catalog_bulk_edit,
+            catalog::catalog_set_review,
             catalog::catalog_recording_detail,
             catalog::catalog_stats,
             catalog::catalog_import_track,
@@ -140,6 +147,7 @@ pub fn run() {
             catalog::catalog_delete_track,
             catalog::catalog_map,
             catalog::catalog_thumbs,
+            catalog::catalog_ids_for_paths,
             catalog::catalog_thumbs_clear,
             catalog::catalog_datasets,
             catalog::catalog_create_dataset,

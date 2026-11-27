@@ -41,6 +41,11 @@ test('selectUploadLabels: filters by recording, species, layer, source', () => {
     assert.deepEqual(r.items.map((x) => x.label.id), ['b']);
     assert.equal(r.skipped.length, 0);
     assert.deepEqual(normalizeUploadSelection({ sources: ['birdnet'] }).sources, ['own']);
+    // absent labels (label window: the species is not in this box) are not uploaded as annotations
+    const withAbsent = entries();
+    withAbsent[0].annotations = withAbsent[0].annotations.map((l) => (l.id === 'a' ? { ...l, polarity: 'absent' } : l));
+    r = selectUploadLabels(withAbsent, sel, sets);
+    assert.ok(!r.items.some((x) => x.label.id === 'a'), 'absent labels stay local');
 });
 
 test('snapshots detect edits and deletions', () => {

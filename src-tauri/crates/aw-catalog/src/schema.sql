@@ -98,7 +98,9 @@ CREATE TABLE IF NOT EXISTS recording (
     -- Own position (mobile recorder, GPS in the header, phone app); wins over the site's coordinates.
     lat REAL, lon REAL, alt REAL, pos_accuracy_m REAL,
     pos_origin TEXT,                               -- manual / header / track
-    track_id INTEGER                               -- track the position came from
+    track_id INTEGER,                              -- track the position came from
+    review TEXT,                                   -- NULL (new), 'open' (opened), 'done' (Annotate: Mark done)
+    review_ms INTEGER                              -- when the review state was set (UTC ms)
 );
 CREATE INDEX IF NOT EXISTS recording_asset ON recording(asset_id);
 CREATE INDEX IF NOT EXISTS recording_site_time ON recording(site_id, start_ms);

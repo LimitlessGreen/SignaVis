@@ -143,6 +143,51 @@ pub fn render(path: &Path, spec: ThumbSpec) -> std::io::Result<(Vec<u8>, f64)> {
         }
     }
 
+    image(&cols, sr, spec)
+}
+
+/// Spectrogram of the window `start_s..end_s` of a file (e.g. a similarity hit): every column keeps the
+/// loudest value per bin of its time span; same scaling as the recording thumbnails. Not cached.
+pub fn render_window(path: &Path, start_s: f64, end_s: f64, spec: ThumbSpec) -> std::io::Result<(Vec<u8>, f64)> {
+    let spec = spec.clamp();
+    let mut src = Source::open(path)?;
+    let sr = src.sample_rate as f64;
+    let from = (start_s.max(0.0) * sr) as u64;
+    let want = (((end_s - start_s).max(0.05)) * sr) as usize;
+    let mut at = src.seek_accurate(from)?;
+    let window: Vec<f32> = (0..NFFT).map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / NFFT as f32).cos()).collect();
+    let mut fft = Fft::new(NFFT);
+    let mut buf: Vec<f32> = Vec::with_capacity(want);
+    while buf.len() < want {
+        let Some(chunk) = src.next_samples()? else { break };
+        // Accurate seeks may land a little early: drop what lies before the window.
+        let skip = (from.saturating_sub(at) as usize).min(chunk.len());
+        at += chunk.len() as u64;
+        buf.extend_from_slice(&chunk[skip..]);
+    }
+    buf.truncate(want);
+    // Half-overlapping frames: a 5 s window at 48 kHz gives ~940 spectra.
+    let hop = NFFT / 2;
+    let mut frames = Vec::new();
+    let mut i = 0;
+    while i + NFFT <= buf.len() { frames.push(fft.power(&buf[i..i + NFFT], &window)); i += hop; }
+    if frames.is_empty() {
+        if buf.is_empty() { return Err(std::io::Error::other("no audio in window")); }
+        buf.resize(NFFT, 0.0);
+        frames.push(fft.power(&buf, &window));
+    }
+    let (w, n) = (spec.w as usize, frames.len());
+    let cols: Vec<Vec<f32>> = (0..w).map(|c| {
+        let a = (c * n / w).min(n - 1);
+        let b = ((c + 1) * n / w).max(a + 1).min(n);
+        max_of(&frames[a..b])
+    }).collect();
+    image(&cols, sr, spec)
+}
+
+/// Columns of spectra → scaled image rows (row 0 = top) up to `spec.max_hz`.
+fn image(cols: &[Vec<f32>], sr: f64, spec: ThumbSpec) -> std::io::Result<(Vec<u8>, f64)> {
+    let w = spec.w as usize;
     let max_hz = spec.max_hz.min(sr / 2.0);
     let bins = NFFT / 2 + 1;
     let top_bin = ((max_hz / (sr / 2.0)) * (bins - 1) as f64).round().max(1.0) as usize;
@@ -241,6 +286,16 @@ impl Source {
             .map_err(|x| std::io::Error::other(x.to_string()))?;
         self.decoder.reset();
         Ok(())
+    }
+
+    /// Seek to `frame` (or a little before); returns where decoding now starts.
+    fn seek_accurate(&mut self, frame: u64) -> std::io::Result<u64> {
+        use symphonia::core::formats::{SeekMode, SeekTo};
+        if frame == 0 { return Ok(0); }
+        let to = self.format.seek(SeekMode::Accurate, SeekTo::TimeStamp { ts: frame, track_id: self.track_id })
+            .map_err(|x| std::io::Error::other(x.to_string()))?;
+        self.decoder.reset();
+        Ok(to.actual_ts)
     }
 
     /// Next decoded packet mixed to mono; `None` at the end of the stream.
@@ -354,6 +409,29 @@ mod tests {
     /// Row with the highest value in column c.
     fn peak_row(d: &[u8], w: usize, h: usize, c: usize) -> (usize, u8) {
         (0..h).map(|r| (r, d[r * w + c])).max_by_key(|x| x.1).unwrap()
+    }
+
+    #[test]
+    fn window_shows_only_its_time_span() {
+        let dir = TempDir::new("window");
+        let p = dir.0.join("w.wav");
+        // 30 s: 3 kHz tone 12–14 s, 8 kHz tone 20–22 s.
+        wav(&p, 24_000, 30.0, |t| if (12.0..14.0).contains(&t) { Some(3000.0) } else if (20.0..22.0).contains(&t) { Some(8000.0) } else { None });
+        let spec = ThumbSpec { w: 40, h: 24, max_hz: 12_000.0 };
+        // Window 11–15 s: tone in the middle half (columns 10..30), at 3 kHz (row 18 of 24 from the top).
+        let (d, max_hz) = render_window(&p, 11.0, 15.0, spec).unwrap();
+        assert_eq!(max_hz, 12_000.0);
+        assert_eq!(d.len(), 40 * 24);
+        let (r, v) = peak_row(&d, 40, 24, 20);
+        assert!(v > 150, "tone bright: {v}");
+        assert!((17..=18).contains(&r), "3 kHz row: {r}");
+        assert!(peak_row(&d, 40, 24, 3).1 < 60, "before the tone dark");
+        // The 8 kHz tone is outside the window.
+        assert!((0..40).all(|c| d[8 * 40 + c] < 60), "no 8 kHz in this window");
+        // Window around the 8 kHz tone (a tone filling the whole window would count as background).
+        let (d, _) = render_window(&p, 19.0, 23.0, spec).unwrap();
+        let (r, v) = peak_row(&d, 40, 24, 20);
+        assert!(v > 150 && (7..=8).contains(&r), "8 kHz row: {r} {v}");
     }
 
     #[test]

@@ -51,6 +51,7 @@ export class TaxonomyResolver {
     _byScientific: Map<any, any> = new Map();
     _byScientificNorm: Map<any, any> = new Map();
     _byGenus: Map<any, any> = new Map();
+    _byEbird: Map<string, any> | null = null;
     _cache: Map<any, any> = new Map();
     constructor() {
         this._data = null;
@@ -71,6 +72,7 @@ export class TaxonomyResolver {
             throw new Error('Invalid taxonomy format.');
         }
         this._data = data;
+        this._byEbird = null;
         this._byScientific = new Map((data.records as any[]).map((r: any) => [r.s, r]));
         this._byScientificNorm = new Map();
         this._byGenus = new Map();
@@ -95,10 +97,22 @@ export class TaxonomyResolver {
 
     clear() {
         this._data = null;
+        this._byEbird = null;
         this._byScientific = new Map();
         this._byScientificNorm = new Map();
         this._byGenus = new Map();
         this._cache = new Map();
+    }
+
+    /** Record for an eBird species code ("eurbla"), as BirdNET tables may name classes; null if unknown. */
+    byEbird(code: unknown) {
+        const k = String(code || '').trim().toLowerCase();
+        if (!k || !this._data) return null;
+        if (!this._byEbird) {
+            this._byEbird = new Map();
+            for (const rec of this._data.records) if (rec?.ebird) this._byEbird.set(String(rec.ebird).toLowerCase(), rec);
+        }
+        return this._byEbird.get(k) || null;
     }
 
     resolveCommonName(record: any, lang: string) {

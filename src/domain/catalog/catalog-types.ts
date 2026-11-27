@@ -79,20 +79,30 @@ export interface CatalogFilter {
     datasetId?: number | null;
     /** Start relative to the sun at the recording's (or its site's) position. */
     sun?: SunWindow | null;
+    /** Review state in Annotate: new (never opened), open, done, todo (not done). */
+    review?: ReviewFilter | null;
 }
+export type ReviewFilter = 'new' | 'open' | 'done' | 'todo';
 export type CatalogSort = 'start' | 'path';
 export interface CatalogCursor { key: number | string | null; id: number }
 export interface CatalogRow {
     id: number; rootId: number | null; path: string | null; size: number | null; startMs: number | null;
     localOffsetMin: number | null; durationS: number | null; site: string | null; device: string | null; labels: number;
     status: 'ok' | 'missing' | 'changed' | null;
+    /** Review state in Annotate: null = new (never opened). */
+    review?: 'open' | 'done' | null;
 }
 export interface CatalogPage { rows: CatalogRow[]; next: CatalogCursor | null }
 export interface FacetValue { id: number; name: string; count: number }
 export interface Facets {
     total: number; bytes: number; seconds: number | null; firstMs: number | null; lastMs: number | null;
-    noStart: number; sites: FacetValue[]; devices: FacetValue[]; tags?: FacetValue[];
+    noStart: number; reviewOpen?: number; reviewDone?: number; sites: FacetValue[]; devices: FacetValue[]; tags?: FacetValue[];
+    /** Recordings per local day / per local hour (0–23), each without its own part of the filter. */
+    days?: DayCount[]; hours?: number[];
+    /** Mean position [lat, lon] of the recordings with one (for sun times). */
+    center?: [number, number] | null;
 }
+export interface DayCount { day: string; count: number; offsetMin?: number | null }
 export interface HeatCell { day: string; hour: number; count: number }
 export interface DuplicateGroup { hash: string; size: number; paths: string[]; verified: boolean }
 export interface Integrity {
@@ -217,7 +227,8 @@ export interface DeploymentInfo {
 }
 export interface DeriveReport { deployments: number; recordings: number; keptNotes: number }
 export interface TagInfo { id: number; name: string; recordings: number }
-export interface Selection { ids?: number[] | null; filter?: CatalogFilter | null }
+/** Explicit ids, or everything the filter matches minus `exclude`. */
+export interface Selection { ids?: number[] | null; filter?: CatalogFilter | null; exclude?: number[] | null }
 export interface BulkEdit {
     /** Absent = keep, null = clear. */
     siteId?: number | null; deviceId?: number | null;

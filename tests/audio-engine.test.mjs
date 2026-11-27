@@ -270,3 +270,21 @@ test('AudioEngine: pausing a segment emits no extra timeupdate', () => {
     engine._stopCustomSegmentPlayback('paused', 3);
     assert.equal(seen.length, 0);
 });
+
+test('AudioEngine: playPause resumes with a seek to the paused position', () => {
+    const engine = new AudioEngine(MOCK_WS_CTOR);
+    engine.audioBuffer = fakeAudioBuffer(10);
+    const calls = [];
+    let playing = false;
+    engine.wavesurfer = {
+        isPlaying: () => playing,
+        getCurrentTime: () => 2.5,
+        setTime: (t) => calls.push(['setTime', t]),
+        playPause: () => { calls.push(['playPause']); playing = !playing; },
+    };
+    engine.playPause();
+    assert.deepEqual(calls, [['setTime', 2.5], ['playPause']]);
+    calls.length = 0;
+    engine.playPause();
+    assert.deepEqual(calls, [['playPause']]);
+});

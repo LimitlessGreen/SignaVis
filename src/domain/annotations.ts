@@ -12,6 +12,7 @@ import { getSpectrogramColor } from './spectrogram.ts';
 import { snapToCall, bandMedians, SNAP_DEFAULT_SENSITIVITY, SNAP_BOX_DEFAULT_CONF, type SnapBox, type SnapBoxSource, type SnapPatch, type SnapResult } from './snapToCall.ts';
 import { prefs } from '../infrastructure/storage/prefs.ts';
 import { labelChannel } from '../shared/channels.ts';
+import { labelColorForName } from './labelColors.ts';
 import { labelProps } from './labelFields.ts';
 
 /** Height of one strip in the 'lanes' label display, and the gap above it. */
@@ -26,6 +27,21 @@ const _colorCtx = (() => {
         return null;
     }
 })();
+
+/**
+ * Lane label at time t (the column below its strip): of the labels covering t, the most
+ * confident; on a tie the one starting first. null when none covers t.
+ */
+export function pickLaneLabelAt<T extends { start: number; end: number; confidence?: number | null }>(labels: T[], t: number): T | null {
+    let best: T | null = null;
+    for (const l of labels) {
+        if (!(t >= l.start && t < l.end)) continue;
+        const c = Number.isFinite(l.confidence) ? Number(l.confidence) : -1;
+        const bc = best && Number.isFinite(best.confidence) ? Number(best.confidence) : -1;
+        if (!best || c > bc || (c === bc && l.start < best.start)) best = l;
+    }
+    return best;
+}
 
 export function parseColorToRgb(color: unknown): { r: number; g: number; b: number } | null {
     const raw = String(color || '').trim();
@@ -79,20 +95,15 @@ export function getOverlayColorStyle(color: unknown): { fill: string; edge: stri
 }
 
 /**
- * Deterministic color for a label name — same name always produces the same
- * color.  Uses a simple string hash mapped onto a golden-angle hue wheel.
+ * Colour for a label name: the same name keeps its colour, and new names get
+ * palette colours that differ clearly from those in use (domain/labelColors.ts).
  * @param {string} name
  * @returns {string} hex color
  */
 export function colorForName(name: unknown): string {
-    const key = String(name || '').trim().toLowerCase();
+    const key = String(name || '').trim();
     if (!key) return _hslToHex(0, 0, 55); // grey fallback
-    let h = 0;
-    for (let i = 0; i < key.length; i++) {
-        h = ((h << 5) - h + key.charCodeAt(i)) | 0;
-    }
-    const hue = ((h % 360) + 360) % 360;
-    return _hslToHex(hue, 65, 58);
+    return labelColorForName(key);
 }
 
 /**
@@ -869,6 +880,9 @@ export class AnnotationLayer extends AnnotationLayerBase {
         // Machine detections (BirdNET / BirdBox): locked, but no dashed read-only frame.
         if (region.origin && region.origin !== 'manual' && region.origin !== 'xeno-canto') el.classList.add('suggestion');
         if (region.origin === 'Similar') el.classList.add('annotation-region--similar');
+        // A BirdNET suggestion already judged (app/suggestions.ts)
+        if (region.review === 'rejected' || region.review === 'unsure') el.classList.add(`annotation-region--${region.review}`);
+        if ((region as any).polarity === 'absent') el.classList.add('annotation-region--absent');
         if (this._liveLinkedId && region.id === this._liveLinkedId) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
@@ -887,7 +901,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.dataset.id = region.id;
         el.dataset.start = String(region.start);
         el.dataset.end = String(region.end);
-        const readonlyNote = isBlocked ? ' [gesperrt]' : '';
+        const readonlyNote = isBlocked ? ' [read-only]' : '';
         el.title = `${region.species || 'Annotation'} (${region.start.toFixed(2)}s–${region.end.toFixed(2)}s)${readonlyNote}`;
         el.setAttribute('aria-label', el.title);
         const confidenceStr = region.confidence != null ? `${Math.round(region.confidence * 100)}%` : '';
@@ -923,8 +937,10 @@ export class AnnotationLayer extends AnnotationLayerBase {
         el.addEventListener('dblclick', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (isBlocked) return;
             this._suppressClickUntil = performance.now() + 250;
+            // Lite: the label window (mockup M2), also for read-only labels
+            if (this.player?.getLabelPickerStyle?.() === 'quick' && this.player?.onLabelOpen?.(region.id)) return;
+            if (isBlocked) return;
             this._renameRegionPrompt(region.id);
         });
         el.addEventListener('pointerdown', (event) => {
@@ -1146,6 +1162,7 @@ export class AnnotationLayer extends AnnotationLayerBase {
             readonly: annotation?.readonly === true,
             origin: annotation?.origin || '',
             aiSuggested: annotation?.aiSuggested ?? null,
+            ...(annotation?.review === 'rejected' || annotation?.review === 'unsure' ? { review: annotation.review } : {}),
             recordingId: annotation?.recordingId ?? null,
             // Time-only detection (BirdNET): keeps its species colour (label design)
             fullBand: annotation?.fullBand === true,
@@ -1585,6 +1602,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (label.origin === 'Similar') el.classList.add('spectrogram-label-region--similar');
         // The one under review (similar-review.ts): stands out, and resizable for fine corrections
         if (label.origin === 'Similar' && (label as any).reviewing) el.classList.add('spectrogram-label-region--reviewing');
+        // A BirdNET suggestion already judged (app/suggestions.ts): rejected hatched, unsure dotted
+        const review = (label as any).review;
+        if (review === 'rejected' || review === 'unsure') el.classList.add(`spectrogram-label-region--${review}`);
+        // Marked absent (label window): the species is not in this box
+        if ((label as any).polarity === 'absent') el.classList.add('spectrogram-label-region--absent');
         const isLive = !!this._liveLinkedId && label.id === this._liveLinkedId;
         if (isLive) el.classList.add('linked-live');
         el.setAttribute('role', 'button');
@@ -1768,23 +1790,15 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 this.dispatchEvent(new CustomEvent('labelfocus', { detail: { id: label.id, source: 'spectrogram', interaction: 'ctrl-click' } }));
                 return;
             }
-            // Emit labelfocus but explicitly request no automatic seek
-            // (seek is handled by the segment playback; we only want
-            // to highlight/pin without changing viewport).
-            this.dispatchEvent(new CustomEvent('labelfocus', { detail: { id: label.id, source: 'spectrogram', interaction: 'click', seekMode: 'none' } }));
-            this.player?._state?._blockSeekClicks?.(260);
-            // Bandpassed to the label's frequency range unless the user turned that off (Audio tab)
-            if (this.player?.playLabelSegment) {
-                this.player.playLabelSegment(label, { labelId: label.id });
-            } else {
-                this.player?.playBandpassedSegment?.(label.start, label.end, label.freqMin ?? 0, label.freqMax ?? 0, { labelId: label.id });
-            }
+            this._clickLabel(label);
         });
         el.addEventListener('dblclick', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (isBlocked) return;
             this._suppressClickUntil = performance.now() + 250;
+            // Lite: the label window (mockup M2), also for read-only labels
+            if (this.player?.getLabelPickerStyle?.() === 'quick' && this.player?.onLabelOpen?.(label.id)) return;
+            if (isBlocked) return;
             this._renameSpectrogramLabelPrompt(label.id);
         });
         el.addEventListener('pointerdown', (event) => {
@@ -1854,6 +1868,78 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         el.classList.toggle('label-tiny', !lane && (geometry.width < 40 || geometry.height < 30));
     }
 
+
+    /** Select and play a label, as a click on it does. */
+    _clickLabel(label: any) {
+        // Emit labelfocus but explicitly request no automatic seek
+        // (seek is handled by the segment playback; we only want
+        // to highlight/pin without changing viewport).
+        this.dispatchEvent(new CustomEvent('labelfocus', { detail: { id: label.id, source: 'spectrogram', interaction: 'click', seekMode: 'none' } }));
+        this.player?._state?._blockSeekClicks?.(260);
+        // Bandpassed to the label's frequency range unless the user turned that off (Audio tab)
+        if (this.player?.playLabelSegment) {
+            this.player.playLabelSegment(label, { labelId: label.id });
+        } else {
+            this.player?.playBandpassedSegment?.(label.start, label.end, label.freqMin ?? 0, label.freqMax ?? 0, { labelId: label.id });
+        }
+    }
+
+    /** Lane label whose column (time span below the strip) the pointer is in, or null. */
+    _laneLabelAt(clientX: number) {
+        if (!this._lanes.size) return null;
+        return pickLaneLabelAt(this._items.filter((l: any) => this._lanes.has(l.id)), this._clientXToTime(clientX));
+    }
+
+    /** Id of the lane label hovered through its column (not the strip itself). */
+    _columnHoverId: string | null = null;
+
+    _setColumnHover(id: string | null) {
+        if (id === this._columnHoverId) return;
+        this._columnHoverId = id;
+        this.dispatchEvent(new CustomEvent('labelfocus', { detail: { id, source: 'spectrogram', interaction: 'hover' } }));
+    }
+
+    /**
+     * Read-only 'lanes' display (BirdNET-Analyzer): the spectrogram below a strip belongs to it.
+     * Hovering there highlights the label, a click (no drag) plays it. With several labels at
+     * that time, the most confident one. Editable players keep click-to-seek and drawing.
+     */
+    _bindLaneColumns(wrapper: HTMLElement) {
+        const active = () => !!(this.player as any)?._readOnly && this._lanes.size > 0;
+        let down: { x: number; y: number } | null = null;
+        const onMove = (e: PointerEvent) => {
+            if (!active() || e.buttons !== 0) return;
+            if (classifyHit(e.target, () => false) !== 'canvas') {
+                // On a strip (its own hover) or the player chrome: the column hover ends quietly
+                if (this._columnHoverId) this._columnHoverId = null;
+                return;
+            }
+            this._setColumnHover(this._laneLabelAt(e.clientX)?.id ?? null);
+        };
+        const onLeave = () => { if (this._columnHoverId) this._setColumnHover(null); };
+        const onDown = (e: PointerEvent) => { down = e.button === 0 ? { x: e.clientX, y: e.clientY } : null; };
+        const onClick = (e: MouseEvent) => {
+            const start = down;
+            down = null;
+            if (!active() || !start || e.ctrlKey || e.metaKey || e.shiftKey) return;
+            if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return;   // a drag (scrub)
+            if (classifyHit(e.target, () => false) !== 'canvas') return;
+            const label = this._laneLabelAt(e.clientX);
+            if (!label) return;
+            this._columnHoverId = label.id;
+            this._clickLabel(label);
+        };
+        wrapper.addEventListener('pointermove', onMove);
+        wrapper.addEventListener('pointerleave', onLeave);
+        wrapper.addEventListener('pointerdown', onDown, true);
+        wrapper.addEventListener('click', onClick);
+        this._domCleanups.push(() => {
+            wrapper.removeEventListener('pointermove', onMove);
+            wrapper.removeEventListener('pointerleave', onLeave);
+            wrapper.removeEventListener('pointerdown', onDown, true);
+            wrapper.removeEventListener('click', onClick);
+        });
+    }
 
     /** Lane of each full-band label in 'lanes' display (empty in other modes). */
     _lanes = new Map<string, number>();
@@ -2234,8 +2320,10 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 const d = this._drawing;
                 this._updateEditLoupe(e.clientX, e.clientY, {
                     el: this._draftEl, mode: 'draw', fine: false,
-                    readout: this._fmtRange(Math.min(d.startTime, d.endTime), Math.max(d.startTime, d.endTime),
-                        Math.min(d.startFreq, d.endFreq), Math.max(d.startFreq, d.endFreq)),
+                    readout: this.drawTimeOnly
+                        ? `${Math.min(d.startTime, d.endTime).toFixed(3)}–${Math.max(d.startTime, d.endTime).toFixed(3)} s · time only`
+                        : this._fmtRange(Math.min(d.startTime, d.endTime), Math.max(d.startTime, d.endTime),
+                            Math.min(d.startFreq, d.endFreq), Math.max(d.startFreq, d.endFreq)),
                 });
                 e.preventDefault();
                 e.stopPropagation();
@@ -2369,6 +2457,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         document.addEventListener('pointerlockchange', onLockChange);
         this._domCleanups.push(() => document.removeEventListener('pointerlockchange', onLockChange));
         wrapper.addEventListener('pointerdown', onPointerDown, true);
+        this._bindLaneColumns(wrapper);
         document.addEventListener('pointermove', onPointerMove, true);
         document.addEventListener('pointerup', onPointerUp, true);
         document.addEventListener('pointercancel', onPointerUp, true);
@@ -2411,14 +2500,11 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         if (!this._drawing || !this._draftEl || !this.overlay) return;
         const width = parseFloat(this.overlay.style.width) || 1;
         const height = parseFloat(this.overlay.style.height) || 1;
-        const preview = this._normalize({
-            start: this._drawing.startTime,
-            end: this._drawing.endTime,
-            freqMin: Math.min(this._drawing.startFreq, this._drawing.endFreq),
-            freqMax: Math.max(this._drawing.startFreq, this._drawing.endFreq),
-            label: 'New label',
-        });
-        const g = this._toGeometry(preview, width, height);
+        const preview = this._normalize(this._draftBounds('New label'));
+        const g = preview.fullBand
+            ? { ...this._toGeometry({ ...preview, fullBand: false }, width, height), top: 0, height }
+            : this._toGeometry(preview, width, height);
+        this._draftEl.classList.toggle('is-time-only', !!preview.fullBand);
         this._draftEl.style.left = `${g.left}px`;
         this._draftEl.style.top = `${g.top}px`;
         this._draftEl.style.width = `${g.width}px`;
@@ -2426,18 +2512,29 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         this._draftEl.dataset.dims = formatLabelDims(preview);
     }
 
+    /** Lite label bar „Time only“: drawn labels span the whole band (fullBand), only the drag's time counts. */
+    drawTimeOnly = false;
+
+    /** The draft's bounds; time only: the whole band. */
+    _draftBounds(label: string) {
+        const d = this._drawing!;
+        const timeOnly = this.drawTimeOnly;
+        return {
+            start: d.startTime,
+            end: d.endTime,
+            freqMin: timeOnly ? 0 : Math.min(d.startFreq, d.endFreq),
+            freqMax: timeOnly ? this._getMaxFreq() : Math.max(d.startFreq, d.endFreq),
+            ...(timeOnly ? { fullBand: true } : {}),
+            label,
+        };
+    }
+
     _finalizeDraft() {
         if (!this._drawing) return null;
-        const region = this._normalize({
-            start: this._drawing.startTime,
-            end: this._drawing.endTime,
-            freqMin: Math.min(this._drawing.startFreq, this._drawing.endFreq),
-            freqMax: Math.max(this._drawing.startFreq, this._drawing.endFreq),
-            label: `Label ${this._counter++}`,
-        });
+        const region = this._normalize(this._draftBounds(`Label ${this._counter++}`));
         const duration = Math.abs(region.end - region.start);
         const freqSpan = Math.abs(region.freqMax - region.freqMin);
-        if (duration < 0.02 || freqSpan < 20) return null;
+        if (duration < 0.02 || (!region.fullBand && freqSpan < 20)) return null;
         return region;
     }
 
@@ -2487,6 +2584,9 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
         const initialValue = tpl?.name || ref?.label || '';
         const initialColor = (tpl?.name ? tpl.color : ref?.color) || _autoAssignColor(this._items);
         const refName = initialValue.trim().toLowerCase();
+        if (this.player?.getLabelPickerStyle?.() === 'quick' && this.overlay) {
+            return this._openQuickPicker(region, { existingLabels, initialTags: tplTags || null });
+        }
         return openLabelNameEditor({
             layer: this,
             player: this.player,
@@ -2512,6 +2612,108 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
                 }
             },
         });
+    }
+
+    /**
+     * Quick species pick beside the new box (Lite, mockup M1). Tab / "more…" opens the label editor
+     * with what was typed; Esc drops the box.
+     */
+    async _openQuickPicker(region: any, { existingLabels, initialTags }: { existingLabels: any[]; initialTags: Record<string, string> | null }) {
+        const state = this.player?._state;
+        const generation = state?.loadGeneration;
+        const { QuickLabelPicker } = await import('../ui/components/label-editor/QuickLabelPicker.ts');
+        if (state?.loadGeneration !== generation || !this.overlay) return null;
+        const width = parseFloat(this.overlay.style.width) || 1;
+        const height = parseFloat(this.overlay.style.height) || 1;
+        const g = this._toGeometry(this._normalize({ ...region, label: '' }), width, height);
+        const o = this.overlay.getBoundingClientRect();
+        const sx = o.width / width, sy = o.height / height;
+        const anchor = { left: o.left + g.left * sx, top: o.top + g.top * sy, right: o.left + (g.left + g.width) * sx, bottom: o.top + (g.top + g.height) * sy };
+        // The drawn box stays visible while picking (mockup M1)
+        const ghost = document.createElement('div');
+        ghost.className = 'quick-picker-ghost';
+        Object.assign(ghost.style, { left: `${g.left}px`, top: `${g.top}px`, width: `${g.width}px`, height: `${g.height}px` });
+        const dur = Math.max(0, region.end - region.start);
+        const tag = document.createElement('span');
+        tag.textContent = `new · ${dur.toFixed(1)} s · ${(region.freqMin / 1000).toFixed(1)}–${(region.freqMax / 1000).toFixed(1)} kHz`;
+        tag.className = 'qpg-tag';
+        ghost.append(tag);
+        for (const c of ['nw', 'ne', 'sw', 'se']) { const h = document.createElement('i'); h.className = c; ghost.append(h); }
+        this.overlay.append(ghost);
+        const presets = this.player?.getTagPresets?.() || [];
+        const soundTypes = presets.find((p: any) => p.key === 'soundType')?.options
+            || ['song', 'call', 'alarm call', 'flight call', 'begging call', 'drumming'];
+        const offerTemplate = typeof this.player?.setSpeciesBar === 'function';
+        const save = (name: string, color: string, scientificName: string, tags: Record<string, string>, keep: boolean) => {
+            if (state?.loadGeneration !== generation) return null;
+            region.label = name;
+            region.color = color || colorForName(name);
+            region.scientificName = String(scientificName || '').trim();
+            region.tags = tags;
+            const id = this.add(region) as unknown as string;
+            if (keep) this.player?.setSpeciesBar?.(region.label, { color: region.color, scientificName: region.scientificName, tags: { ...tags } });
+            return id;
+        };
+        /** Template tags plus the picked ones; a chosen sound type replaces an old `sound_type` key (Raven reads that first). */
+        const pickTags = (base: Record<string, string> | null | undefined, picked: Record<string, string> | undefined) => {
+            const t: Record<string, string> = { ...(base || {}), ...(picked || {}) };
+            if (t.soundType) delete t.sound_type;
+            return t;
+        };
+        // How often each name occurs here and its most frequent sound type (row hint "2× · song")
+        const counts = new Map<string, { n: number; sounds: Map<string, number> }>();
+        for (const l of this._items) {
+            const k = String(l.label || '').trim().toLowerCase();
+            if (!k) continue;
+            const c = counts.get(k) || { n: 0, sounds: new Map() };
+            c.n += 1;
+            const st = l.origin === 'xeno-canto' ? '' : l.tags?.soundType;   // that recording's metadata, not a habit here
+            if (st) c.sounds.set(st, (c.sounds.get(st) || 0) + 1);
+            counts.set(k, c);
+        }
+        const existing = existingLabels.map((e: any) => {
+            const c = counts.get(String(e.name).trim().toLowerCase());
+            const top = c ? [...c.sounds].sort((a, b) => b[1] - a[1])[0]?.[0] : '';
+            return { ...e, count: c?.n || 0, tags: { ...(e.tags || {}), ...(top ? { soundType: top } : {}) } };
+        });
+        const picker = new QuickLabelPicker({
+            anchor,
+            existing,
+            labelCount: this._items.length,
+            listName: this.player?.getSpeciesListName?.() || '',
+            search: (q, n) => this.player?.getLabelEditorSuggestions?.(q, n) || [],
+            soundTypes,
+            initialSoundType: initialTags?.soundType || '',
+            offerTemplate,
+            onPick: (p) => { ghost.remove(); save(p.name, p.color, p.scientificName, pickTags(initialTags, p.tags), p.keepAsTemplate); },
+            onCancel: () => ghost.remove(),
+            onMore: (query, sound, pick) => {
+                ghost.remove();
+                // Lite with the label window: keep the box with what was picked, then open M2 on it
+                if (pick && this.player?.onLabelOpen) {
+                    const id = save(pick.name, pick.color, pick.scientificName, pickTags(initialTags, pick.tags), false);
+                    if (id) this.player.onLabelOpen(id);
+                    return;
+                }
+                const tags = { ...(initialTags || {}) };
+                if (sound) tags.soundType = sound;
+                void openLabelNameEditor({
+                    layer: this,
+                    player: this.player,
+                    initialValue: query,
+                    initialColor: _autoAssignColor(this._items),
+                    initialTags: tags,
+                    initialScientificName: '',
+                    existingLabels,
+                    title: 'New Label',
+                    offerTemplate,
+                    onSubmit: ({ name, color, scientificName = '', tags: t = {}, changed = {}, keepAsTemplate = false }: any) =>
+                        save(name, changed.color ? color : colorForName(name), scientificName, t, keepAsTemplate),
+                });
+            },
+        });
+        picker.open();
+        return picker;
     }
 
     _startEditInteraction(labelId: any, mode: any, clientX: number, clientY: number, element: any) {
@@ -3374,6 +3576,7 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             readonly: label?.readonly === true,
             // A similar-call suggestion under review (similar-review.ts): highlighted
             ...((label?.similar ? label.similar.active === true : label?.reviewing === true) ? { reviewing: true } : {}),
+            ...(label?.review === 'rejected' || label?.review === 'unsure' ? { review: label.review } : {}),
             aiSuggested: label?.aiSuggested ?? null,
             recordingId: label?.recordingId ?? null,
             ...labelProps(label),   // channel, … (domain/labelFields.ts)

@@ -566,3 +566,49 @@ select::-ms-expand { display: none; }
 }
 .emap-grad { width: 160px; height: 8px; border-radius: 4px; margin-top: 4px; }
 .emap-grad-scale { display: flex; justify-content: space-between; width: 160px; opacity: 0.7; }
+
+// Similar: hits as spectrogram tiles, pick → present / absent / class / view (Annotate v2 mockup b2)
+.similar-panel {
+  .sim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; margin-top: 6px; }
+  .sim-tile {
+    position: relative; border-radius: 5px; overflow: hidden; border: 2px solid transparent; background: #000; cursor: pointer;
+    &.sel { border-color: var(--color-accent); }
+    &.sel::after {
+      content: "✓"; position: absolute; top: 4px; left: 4px; width: 16px; height: 16px; border-radius: 4px;
+      background: var(--color-accent); color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center;
+    }
+    &:hover .sim-tplay { opacity: 1; }
+  }
+  .sim-spec { display: block; width: 100%; height: 54px; image-rendering: auto;
+    &.is-missing { background: repeating-linear-gradient(45deg, #111 0 6px, #1a1a1a 6px 12px); }
+  }
+  .sim-tplay {
+    position: absolute; top: 50%; right: 4px; transform: translateY(-50%); opacity: 0; transition: opacity .12s;
+    width: 18px; height: 18px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .62); color: #fff; font-size: 10px; cursor: pointer;
+  }
+  .sim-plq { position: absolute; display: flex; gap: 3px; max-width: calc(100% - 8px); pointer-events: none;
+    &.tr { top: 4px; right: 4px; } &.bl { bottom: 4px; left: 4px; } &.br { bottom: 4px; right: 4px; }
+    > span { font-size: 9.5px; font-weight: 700; padding: 1px 4px; border-radius: 3px; background: rgba(0, 0, 0, .62); color: #fff;
+      font-family: var(--font-mono, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
+  .sim-tile.sel .sim-plq.tr { max-width: calc(100% - 30px); }
+  .sim-cls.pos { color: #4ade80; } .sim-cls.neg { color: #f87171; }
+  .sim-tile.own-present { border-bottom-color: #4ade80; }
+  .sim-tile.own-absent { border-bottom-color: #f87171; }
+  .sim-plq > span.sim-own { background: rgba(74, 222, 128, .85); color: #0b1a10;
+    &.absent { background: rgba(248, 113, 113, .85); color: #200; } }
+  .sim-actbar {
+    position: sticky; bottom: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px -8px -8px; padding: 6px 8px;
+    border-top: 1px solid var(--color-border); background: var(--color-bg-surface);
+  }
+  .sim-spacer { flex: 1; }
+  .sim-barmsg { flex-basis: 100%; margin: 0; font-size: 11px; color: var(--color-text-secondary); }
+  .sim-abtn {
+    height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 5px; cursor: pointer;
+    border: 1px solid var(--color-border); background: var(--color-bg-secondary); color: var(--color-text-primary);
+    font-size: 11.5px; font-weight: 600; white-space: nowrap;
+    &.ok { background: rgba(74, 222, 128, .15); border-color: rgba(74, 222, 128, .4); color: #4ade80; }
+    &.no { background: rgba(248, 113, 113, .12); border-color: rgba(248, 113, 113, .4); color: #f87171; }
+    &:disabled { opacity: .45; cursor: default; }
+  }
+}

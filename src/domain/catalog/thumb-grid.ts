@@ -84,3 +84,16 @@ export function clockDuration(s: number | null): string {
     const two = (x: number) => String(x).padStart(2, '0');
     return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
 }
+
+/** Calendar heatmap: label font size (px) and the strip for the date labels at the bottom. */
+export const HEAT_FONT = 10;
+const HEAT_BOTTOM = 14;
+
+/**
+ * Rows of the calendar heatmap in a canvas `height` px tall: 24 hour rows below a top margin
+ * that leaves room for the upper half of the "00" label (centred on the first row).
+ */
+export function heatGeometry(height: number): { top: number; rowH: number } {
+    const top = HEAT_FONT / 2 + 1;
+    return { top, rowH: Math.max(1, (height - HEAT_BOTTOM - top) / 24) };
+}

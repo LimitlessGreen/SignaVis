@@ -21,6 +21,7 @@ import { buildQualityLight } from '../components/quality-light.ts';
 import { appPrompt } from '../components/modal/dialogs.ts';
 import { ANNOTA_FIELDS, ANNOTA_FIELD_KEYS, PROP_FIELDS, formatAnnotaValue, toYN } from '../../domain/labelFields.ts';
 import { prefs } from '../../infrastructure/storage/prefs.ts';
+import { LabelFieldsForm, type FieldsFormOptions } from '../components/label-modal/label-fields-form.ts';
 
 // ── Field definitions ────────────────────────────────────────────────
 
@@ -78,6 +79,14 @@ const SET_SUMMARY_FIELDS = [
   { key: 'status',  label: 'Status' },
   { key: 'origin',  label: 'Origin' },
 ];
+
+/** Catalog fields of the open recording (subset of CatalogRow). */
+export interface CatalogFieldsRow { site: string | null; device: string | null; review?: 'open' | 'done' | null }
+
+/** Rows "Site / Recorder / Review" of the catalog block (review: null = new). */
+export function catalogFields(r: CatalogFieldsRow): [string, string][] {
+  return [['Site', r.site ?? ''], ['Recorder', r.device ?? ''], ['Review', r.review ?? 'new']];
+}
 
 export class PropertiesPanel {
     // TypeScript property declarations (migrated from JS)
@@ -162,6 +171,27 @@ export class PropertiesPanel {
     this._build();
   }
 
+  /**
+   * Lite (Annotate v2): show the label with the label window's field list (one component, no second editor).
+   * `fields` without `change` – changes go to `onChange`. Getters on `fields` stay live (tag presets, channels…).
+   */
+  useFieldsForm(fields: Omit<FieldsFormOptions, 'change'>) {
+    (this as any)._formOpts = fields;
+    (this as any)._form?.destroy();
+    const opts = Object.create(fields);
+    opts.snr = (l: any) => {
+      const e = this._snrCache.get(l.id) ?? (Number.isFinite(l.snr) ? { status: 'done', value: l.snr } : undefined);
+      return e ? this._formatSnr(e) : '';
+    };
+    opts.change = (u: Record<string, any>) => {
+      const l = this._pinnedLabel;
+      if (l && !l.readonly && !this._lockedIds.has(l.id)) this.onChange?.(l.id, u);
+    };
+    (this as any)._form = new LabelFieldsForm(opts);
+    this._renderSig = null;
+    this._renderLabel();
+  }
+
   /** Provide or update the species search factory after construction. */
   setSpeciesSearchFactory(fn: any) { this._speciesSearchFactory = fn || null; }
 
@@ -195,6 +225,20 @@ export class PropertiesPanel {
   setRecordingMeta(meta: any, audioInfo: any) {
     this._recordingMeta = meta || null;
     this._audioInfo = audioInfo || null;
+    this._renderRecording();
+  }
+
+  /**
+   * Lite: the open recording's catalog row (site, recorder, review state) – shown first in Recording.
+   * `editSites` opens "Sites & recorders" (Site ✎). null hides the rows (no catalog / not in the view).
+   */
+  setCatalogRow(row: CatalogFieldsRow | null, editSites?: () => void) {
+    (this as any)._editSites = editSites ?? null;
+    // The Site ✎ button is part of what is shown: its presence counts, the callback itself is read on click.
+    const key = row ? JSON.stringify([catalogFields(row), !!editSites]) : '';
+    if (key === (this as any)._catalogKey) return;   // called on every view change: keep the DOM (a click may be under way)
+    (this as any)._catalogKey = key;
+    (this as any)._catalogRow = row;
     this._renderRecording();
   }
 
@@ -271,6 +315,7 @@ export class PropertiesPanel {
       this._snrCache.set(id, { status });
     }
     // Fast path: update the cell directly without rebuilding the whole panel.
+    if (this.displayedLabel?.id === id && (this as any)._form) { this._renderLabel(); return; }
     if (this.displayedLabel?.id === id && this._snrDd) {
       this._snrDd.textContent = this._formatSnr(this._snrCache.get(id));
     }
@@ -290,6 +335,10 @@ export class PropertiesPanel {
     this._audioInfo = null;
     this._pinnedLabel = null;
     this._hoverLabel = null;
+    // The catalog row belongs to the recording too: not shown again with the next one's metadata.
+    (this as any)._catalogRow = null;
+    (this as any)._catalogKey = '';
+    (this as any)._editSites = null;
     this._renderRecording();
     this._renderLabel();
   }
@@ -377,6 +426,8 @@ export class PropertiesPanel {
       return;
     }
 
+    const cat = this._buildCatalogGrid();
+    if (cat) this._recBody.appendChild(cat);
     // Date, place, coordinates and device are in the context block above
     this._recBody.appendChild(this._buildReadonlyGrid(RECORDING_FIELDS, merged));
 
@@ -401,6 +452,40 @@ export class PropertiesPanel {
       box.appendChild(dl);
       this._recBody.appendChild(box);
     }
+  }
+
+  _buildCatalogGrid(): HTMLElement | null {
+    const row = (this as any)._catalogRow as CatalogFieldsRow | null;
+    if (!row) return null;
+    const dl = document.createElement('dl');
+    dl.className = 'props-grid props-catalog';
+    for (const [label, value] of catalogFields(row)) {
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      dd.classList.add('props-readonly');
+      if (label === 'Review') {
+        const st = document.createElement('span');
+        st.className = `vl-state vl-state--${value}`;
+        st.textContent = value;
+        dd.appendChild(st);
+      } else {
+        dd.textContent = value || '—';
+      }
+      const edit = (this as any)._editSites as (() => void) | null;
+      if (label === 'Site' && edit) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'props-site-edit';
+        b.textContent = '✎';
+        b.title = 'Sites & recorders…';
+        b.setAttribute('aria-label', 'Edit sites and recorders');
+        b.addEventListener('click', () => ((this as any)._editSites as (() => void) | null)?.());   // the current callback
+        dd.appendChild(b);
+      }
+      dl.append(dt, dd);
+    }
+    return dl;
   }
 
   _renderSet() {
@@ -476,6 +561,18 @@ export class PropertiesPanel {
     }
 
     this._snrDd = null;
+    const form = (this as any)._form as LabelFieldsForm | undefined;
+    if (form) {
+      form.render(editable ? lbl : { ...lbl, readonly: true });
+      this._lblBody.appendChild(form.el);
+      if (isLocked) {
+        const hint = document.createElement('div');
+        hint.className = 'props-locked-hint';
+        hint.textContent = '🔒 Label is locked — unlock the set to edit.';
+        this._lblBody.appendChild(hint);
+      }
+      return;
+    }
     this._lblBody.appendChild(this._buildLabelGrid(lbl, editable));
     if (isLocked && !isHover) {
       const hint = document.createElement('div');
@@ -493,6 +590,14 @@ export class PropertiesPanel {
    */
   _patchValues(lbl: any, editable: any) {
     const active = document.activeElement;
+    const form = (this as any)._form as LabelFieldsForm | undefined;
+    if (form) {
+      // keep the field being typed in; otherwise draw the values again
+      if (!(active && form.el.contains(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))) form.render(editable ? lbl : { ...lbl, readonly: true });
+      else form.track(lbl);
+      this._renderSet();
+      return;
+    }
 
     if (editable) {
       for (const f of LABEL_FIELDS) {

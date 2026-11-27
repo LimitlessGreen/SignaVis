@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Download AnuraPAM from Zenodo and convert it into models/anurapam/ (TF.js graph model + labels.json).
-# Not committed (git-ignored, 78 MB); Zenodo sends no CORS headers, so browsers cannot load it from there.
+# Download AnuraPAM from Zenodo and write its anuran classifier head into models/anurapam/
+# (model.json + head.bin, 4 MB, + labels.json). The app runs it on the embeddings of the
+# bundled BirdNET v2.4 model (models/birdnet-v2.4), which AnuraPAM is built on; the full
+# export contains that backbone twice. Zenodo sends no CORS headers, so browsers cannot load it from there.
 #
 # AnuraPAM: Elsner, Meerheim, Dziock (HTW Dresden), Ernst (Senckenberg),
 # https://doi.org/10.5281/zenodo.24119698 — a BirdNET-Analyzer custom classifier
@@ -8,8 +10,8 @@
 # Licenses: AnuraPAM release CC BY 4.0; the BirdNET v2.4 base model CC BY-NC-SA 4.0
 # (https://github.com/birdnet-team/BirdNET-Analyzer). See the README written below.
 #
-# Needs: curl, unzip, uv. Tested on Linux x86_64; on Linux ARM64 the TensorFlow
-# converter dependencies do not resolve. Usage: npm run models:anurapam
+# Needs: curl, unzip, uv, node. Tested on Linux x86_64; on Linux ARM64 the TensorFlow
+# dependencies may not resolve. Usage: npm run models:fetch -- anurapam
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/models/anurapam"
@@ -21,12 +23,13 @@ curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$work/raw.zip" "http
 unzip -q "$work/raw.zip" -d "$work"
 src="$work/AnuraPAM_Raw"
 stage="$work/anurapam"   # private per run; published only when complete
+mkdir -p "$stage"
 
-"${py[@]}" \
-  --with "tensorflowjs==4.22.0" --with "tensorflow==2.18.0" --with "tf-keras==2.18.0" \
-  --with "ydf==0.9.0" --with "protobuf==5.29.6" --with "setuptools<81" \
-  tensorflowjs_converter --input_format=tf_saved_model --output_format=tfjs_graph_model \
-  --signature_name=basic "$src/AnuraPAM_Raw" "$stage"
+# Head weights straight from the SavedModel (the TF.js converter is not needed and, depending on
+# the CPU, fails on fused ops TensorFlow introduces while optimizing the full graph).
+"${py[@]}" --with "tensorflow==2.18.0" --with "tf-keras==2.18.0" \
+  python -I "$root/scripts/anurapam_head.py" "$src/AnuraPAM_Raw" "$stage/head.bin"
+node "$root/scripts/anurapam-head.mjs" "$stage"
 
 # labels.json: same order as the model output; the taxonomy spells the hybrid without "kl."
 "${py[@]}" python -I - "$src/AnuraPAM_Raw_Labels.txt" "$stage/labels.json" <<'EOF'
@@ -45,7 +48,8 @@ cat > "$stage/README.md" <<'README'
   Bioacoustics, Cornell Lab of Ornithology / Chemnitz University of Technology,
   https://github.com/birdnet-team/BirdNET-Analyzer), whose models are licensed CC BY-NC-SA 4.0.
   The combined model therefore carries the BirdNET terms: non-commercial use, share alike.
-- Changes: converted to a TF.js graph model by scripts/fetch-anurapam.sh; labels.json writes
+- Changes: only the classifier head (two dense layers on the v2.4 embeddings) is kept, extracted by
+  scripts/anurapam_head.py; SignaVis runs it on models/birdnet-v2.4. labels.json writes
   "Pelophylax kl. esculentus" as "Pelophylax esculentus".
 - Outputs: 6,522 BirdNET v2.4 classes (unchanged) + 14 anurans, sigmoid scores for 3 s of 48 kHz audio.
 README

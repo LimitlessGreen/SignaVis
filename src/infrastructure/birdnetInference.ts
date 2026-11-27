@@ -14,6 +14,7 @@
  */
 
 import { vendorUrl } from './tauri/runtime.ts';
+import { patchWebglComplexCast } from './tfjsComplexCastFix.ts';
 const TFJS_CDN = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4';
 const TFJS_URL = vendorUrl('tfjs/tf.min.js', TFJS_CDN);
 const ORT_VERSION = '1.30.0';
@@ -36,6 +37,7 @@ export const BIRDNET_V24_MODEL_URL = 'https://limitlessgreen.github.io/SignaVis/
 // ---------------------------------------------------------------------------
 const TFJS_WORKER_SOURCE = `
 importScripts('${TFJS_URL}');
+var patchWebglComplexCast = ${patchWebglComplexCast.toString()};
 
 /* ── MelSpecLayerSimple — custom Keras layer expected by BirdNET v2.4 ── */
 class MelSpecLayerSimple extends tf.layers.Layer {
@@ -94,6 +96,73 @@ class MelSpecLayerSimple extends tf.layers.Layer {
 }
 tf.serialization.registerClass(MelSpecLayerSimple);
 
+/* ── Model loading ── */
+async function fetchJson(url) {
+  var r = await fetch(url);
+  if (!r.ok) throw new Error(url.split('/').pop() + ': HTTP ' + r.status);
+  return r.json();
+}
+
+async function fetchBuffer(url) {
+  var r = await fetch(url);
+  if (!r.ok) throw new Error(url.split('/').pop() + ': HTTP ' + r.status);
+  return r.arrayBuffer();
+}
+
+/** Layers or graph model from its model.json (fetched once); shards resolve against folder. */
+async function loadTfjsModel(manifest, folder) {
+  var handler = {
+    load: function () {
+      return tf.io.getModelArtifactsForJSON(manifest, async function (groups) {
+        var specs = [], paths = [];
+        groups.forEach(function (g) { specs.push.apply(specs, g.weights); paths.push.apply(paths, g.paths); });
+        var bufs = await Promise.all(paths.map(function (p) { return fetchBuffer(folder + p); }));
+        return [specs, bufs]; // TF.js 4 takes the shards as a list
+      });
+    },
+  };
+  return manifest.format === 'graph-model' ? tf.loadGraphModel(handler) : tf.loadLayersModel(handler);
+}
+
+/**
+ * Base layers model + dense head on its embeddings. predict() returns
+ * sigmoid(concat(base logits, head logits)) like the BirdNET-Analyzer "Raw" export,
+ * but runs the backbone once.
+ */
+async function loadHeadModel(manifest, folder, baseFolder) {
+  var baseModel = await loadTfjsModel(await fetchJson(baseFolder + 'model.json'), baseFolder);
+  var features = tf.model({
+    inputs: baseModel.inputs,
+    outputs: [baseModel.getLayer(manifest.embeddingLayer).output, baseModel.getLayer(manifest.baseLogitsLayer).output],
+  });
+  var data = new Float32Array(await fetchBuffer(folder + manifest.weightsFile));
+  var off = 0;
+  var layers = manifest.layers.map(function (l) {
+    var k = l.kernelShape[0] * l.kernelShape[1];
+    var layer = {
+      activation: l.activation,
+      kernel: tf.tensor2d(data.subarray(off, off + k), l.kernelShape),
+      bias: tf.tensor1d(data.subarray(off + k, off + k + l.units)),
+    };
+    off += k + l.units;
+    return layer;
+  });
+  if (off !== data.length) throw new Error(manifest.weightsFile + ': ' + data.length + ' values, expected ' + off);
+  return {
+    predict: function (x) {
+      return tf.tidy(function () {
+        var out = features.predict(x);
+        var h = out[0];
+        layers.forEach(function (l) {
+          h = tf.add(tf.matMul(h, l.kernel), l.bias);
+          if (l.activation === 'relu') h = tf.relu(h);
+        });
+        return tf.sigmoid(tf.concat([out[1], h], 1));
+      });
+    },
+  };
+}
+
 /* ── Worker message handler ── */
 let model     = null;
 let areaModel = null;
@@ -107,38 +176,24 @@ self.onmessage = async (e) => {
   if (type === 'load') {
     try {
       await tf.setBackend('webgl');
+      patchWebglComplexCast(tf);  // AnuraPAM: RFFT + Cast in the graph
       self.postMessage({ id: id, type: 'progress', message: 'Loading model\\u2026', percent: 10 });
 
       var base = e.data.modelUrl;
       if (!base.endsWith('/')) base += '/';
 
-      // Layers model (BirdNET v2.4) or graph model (e.g. AnuraPAM, a BirdNET-Analyzer
-      // custom classifier converted from its SavedModel). Both take 3 s of 48 kHz audio
-      // and return sigmoid scores, so prediction is the same.
-      // model.json is fetched once: it decides the loader and is handed to it, the
-      // weight shards are resolved against the model folder.
-      var manifest = await fetch(base + 'model.json').then(function (r) {
-        if (!r.ok) throw new Error('model.json: HTTP ' + r.status);
-        return r.json();
-      });
-      var handler = {
-        load: function () {
-          return tf.io.getModelArtifactsForJSON(manifest, async function (groups) {
-            var specs = [], paths = [];
-            groups.forEach(function (g) { specs.push.apply(specs, g.weights); paths.push.apply(paths, g.paths); });
-            var bufs = await Promise.all(paths.map(function (p) {
-              return fetch(base + p).then(function (r) {
-                if (!r.ok) throw new Error(p + ': HTTP ' + r.status);
-                return r.arrayBuffer();
-              });
-            }));
-            return [specs, bufs]; // TF.js 4 takes the shards as a list
-          });
-        },
-      };
-      model = manifest.format === 'graph-model'
-        ? await tf.loadGraphModel(handler)
-        : await tf.loadLayersModel(handler);
+      // Layers model (BirdNET v2.4), graph model (a BirdNET-Analyzer custom classifier
+      // converted from its SavedModel) or a classifier head on top of a layers model
+      // (format "signavis-head", e.g. AnuraPAM: scripts/anurapam-head.mjs). All take 3 s
+      // of 48 kHz audio and return sigmoid scores.
+      var manifest = await fetchJson(base + 'model.json');
+      var areaBase = base;
+      if (manifest.format === 'signavis-head') {
+        areaBase = new URL(manifest.base, base).href;
+        model = await loadHeadModel(manifest, base, areaBase);
+      } else {
+        model = await loadTfjsModel(manifest, base);
+      }
 
       self.postMessage({ id: id, type: 'progress', message: 'Warming up\\u2026', percent: 50 });
       model.predict(tf.zeros([1, ${TFJS_CHUNK_SAMPLES}])).dispose();
@@ -155,7 +210,7 @@ self.onmessage = async (e) => {
 
       self.postMessage({ id: id, type: 'progress', message: 'Loading area model\\u2026', percent: 92 });
       try {
-        areaModel = await tf.loadGraphModel(base + 'mdata/model.json');
+        areaModel = await tf.loadGraphModel(areaBase + 'mdata/model.json');
         self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: true, sampleRate: ${TFJS_SR}, format: 'tfjs' });
       } catch (_) {
         // Area model is optional — continue without it
@@ -204,7 +259,8 @@ self.onmessage = async (e) => {
       specList.push({
         scientific: labels[i].scientific,
         common:     labels[i].common,
-        geoscore:   geoscores ? geoscores[i] : null,
+        // a head model's extra classes (AnuraPAM frogs) are not in the area model
+        geoscore:   geoscores && i < geoscores.length ? geoscores[i] : null,
       });
     }
     self.postMessage({ id: id, type: 'species-list', species: specList });
@@ -226,7 +282,7 @@ self.onmessage = async (e) => {
             scientific: labels[i].scientific,
             common:     labels[i].common,
             confidence: probs[i],
-            geoscore:   geoscores ? geoscores[i] : 1,
+            geoscore:   geoscores && i < geoscores.length ? geoscores[i] : 1,
           });
         }
       }

@@ -121,3 +121,13 @@ test('applyPlayerRestore: a label really removed by undo is deleted', () => {
     const a = { id: 'a', setId: 'own', start: 0, end: 1 };
     assert.deepEqual(applyPlayerRestore([a], [a], [], 'own'), []);
 });
+
+test('an absent copy (rejected suggestion) keeps the detection visible and is not drawn itself', () => {
+    const det = { id: 'd1', setId: 'birdnet', origin: 'BirdNET', start: 0, end: 3 };
+    const [copy] = adoptLabels([det], 'own');
+    const absent = { ...copy, polarity: 'absent' };
+    const own = { id: 'm1', setId: 'own', start: 5, end: 6, polarity: 'absent' };   // drawn by hand: stays
+    const all = [det, absent, own];
+    assert.deepEqual([...adoptedSourceIds(all, 'own')], []);
+    assert.deepEqual(withoutAdopted(all, 'own').map((l) => l.id), ['d1', 'm1']);
+});
