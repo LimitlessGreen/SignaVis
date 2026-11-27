@@ -6185,6 +6185,7 @@ async function installReference() {
   };
   refPanel = new ReferencePanel({
     hasLocation: () => !!refCoords(),
+    duration: () => player.duration || 0,
     search: async (sci, f, sort, page) => {
       const names = xcSearchNames(taxonomy.data ? taxonomy.resolve(sci) : null, sci);
       const res = await searchXcRefs(names, f, refCoords(), fetchPage, page);
@@ -6210,6 +6211,30 @@ async function installReference() {
     patch: (t) => {
       const half = Math.min(6, (t.end - t.start) / 2);
       try { return player.computeSnapPatch?.((t.start + t.end) / 2, half) ?? null; } catch { return null; }
+    },
+    // "similar to clip": embed the first candidates with Perch (cached in the project), rank against the clip
+    rank: async (t, refs, progress, isCurrent) => {
+      const root = (projectKind === 'folder' && projectStore?.rootPath) || null;
+      const path = recordingManager.getActive()?.path;
+      if (!root || !path) throw new Error('Similarity needs a project folder with this recording in it.');
+      const { invoke } = await import('@tauri-apps/api/core');
+      const model = await invoke('embed_model_status');
+      if (!model?.present) throw new Error('Similarity needs the Perch model – download it in the Embeddings space first.');
+      const ids = refs.map((r) => String(r.id));
+      const cached = new Set(await invoke('xc_cached', { root, ids }));
+      let done = 0;
+      for (const id of ids) {
+        if (!isCurrent()) return new Map();
+        if (!cached.has(id)) {
+          try {
+            const audio = await xcPanel.fetchAudio(id);
+            await invoke('xc_embed', new Uint8Array(audio.buffer), { headers: { 'x-root': encodeURIComponent(root), 'x-id': id, 'x-ext': 'mp3' } });
+          } catch (err) { console.warn('[reference] XC', id, 'not embedded:', err); }
+        }
+        progress(++done, ids.length);
+      }
+      const hits = await invoke('xc_rank', { root, path, start: t.start, end: t.end, ids });
+      return new Map(hits.map((h) => [h.id, { score: h.score, start: h.start }]));
     },
     tile: async (t) => {
       const root = (projectKind === 'folder' && projectStore?.rootPath) || null;

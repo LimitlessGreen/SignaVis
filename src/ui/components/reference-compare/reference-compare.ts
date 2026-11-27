@@ -272,7 +272,9 @@ export class ReferenceCompare {
     private bestOffset() {
         const len = this.span();
         if (!this.xcPatch) return 0;
-        const { s, from } = this.clipSpan();
+        const { s, e, from } = this.clipSpan();
+        // ranked: centre the most similar 5-s window on the own clip
+        if (this.ref?.simStart != null) return this.clampOff(this.ref.simStart + 2.5 - ((s + e) / 2 - from), len);
         // put the loudest clip-long part where the own clip sits in its window
         const at = loudestWindow(this.xcPatch, Math.max(0.5, this.clipSpan().e - s));
         return this.clampOff(at - (s - from), len);
@@ -327,7 +329,7 @@ export class ReferenceCompare {
         link.href = '#';
         link.onclick = (e) => { e.preventDefault(); this.opts.openExternal(r); };
         this.xcHead.replaceChildren(el('b', '', `XC ${r.id}`),
-            el('span', 'rcmp-tag xc', [r.type, r.q && `Q ${r.q}`].filter(Boolean).join(' · ') || 'Xeno-canto'),
+            el('span', 'rcmp-tag xc', [r.sim != null && `similar ${r.sim.toFixed(2)}`, r.type, r.q && `Q ${r.q}`].filter(Boolean).join(' · ') || 'Xeno-canto'),
             el('span', '', [r.country, r.distKm != null ? `${r.distKm} km` : ''].filter(Boolean).join(' · ')),
             el('span', 'rcmp-muted', [r.recordist && `© ${r.recordist}`, r.licence].filter(Boolean).join(' · ')),
             link);

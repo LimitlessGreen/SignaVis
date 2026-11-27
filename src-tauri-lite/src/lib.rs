@@ -20,6 +20,7 @@ mod launch;
 mod menu;
 mod project_fs;
 mod updater;
+mod xc_rank;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -97,6 +98,9 @@ pub fn run() {
             embeddings::embed_start,
             embeddings::embed_cancel,
             embeddings::embed_similar,
+            xc_rank::xc_embed,
+            xc_rank::xc_rank,
+            xc_rank::xc_cached,
             embed_map::embed_map,
             embed_map::embed_clusters,
             embed_map::similar_tiles,

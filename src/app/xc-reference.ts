@@ -3,7 +3,7 @@
 // Pure parts: filters → XC API v3 query, a recording of the API → tile data (length, distance, month, licence),
 // sorting. The network call is injected, so the panel and the tests share the same logic.
 
-export type XcSort = 'quality' | 'distance' | 'length';
+export type XcSort = 'quality' | 'distance' | 'length' | 'similar';
 
 export interface XcFilters {
     /** XC sound type ('' = any), e.g. 'song', 'call', 'alarm call'. */
@@ -33,6 +33,18 @@ export interface XcRef {
     sono: string;
     lat: number | null;
     lon: number | null;
+    /** Similarity to the own clip (cosine of Perch embeddings), once ranked. */
+    sim?: number;
+    /** Start (s) of the most similar 5-s window. */
+    simStart?: number;
+}
+
+/** Ranked first by similarity (unranked keep their order after them). */
+export function bySimilarity(list: XcRef[]): XcRef[] {
+    return list.map((r, i) => ({ r, i })).sort((a, b) => {
+        const sa = a.r.sim ?? -Infinity, sb = b.r.sim ?? -Infinity;
+        return sb - sa || a.i - b.i;
+    }).map((x) => x.r);
 }
 
 export interface LatLon { lat: number; lon: number }
@@ -131,6 +143,8 @@ export function refineRefs(list: XcRef[], f: XcFilters, opts: { month?: number |
         quality: (a, b) => q(a) - q(b) || d(a) - d(b) || a.lenS - b.lenS,
         distance: (a, b) => d(a) - d(b) || q(a) - q(b),
         length: (a, b) => a.lenS - b.lenS || q(a) - q(b),
+        // ranked later (embeddings); until then quality order decides which get ranked first
+        similar: (a, b) => q(a) - q(b) || d(a) - d(b) || a.lenS - b.lenS,
     };
     return out.sort(by[opts.sort || 'quality']);
 }

@@ -587,7 +587,7 @@ pub async fn embed_map(app: tauri::AppHandle, root: String, force: Option<bool>)
 
 /// Projektpfad + relativer Dateipfad aus dem Karten-Cache; None, wenn der Pfad
 /// absolut ist oder den Projektordner verlassen wuerde.
-fn safe_join(root: &str, rel: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn safe_join(root: &str, rel: &str) -> Option<std::path::PathBuf> {
     use std::path::Component;
     let p = std::path::Path::new(rel);
     p.components().all(|c| matches!(c, Component::Normal(_))).then(|| std::path::Path::new(root).join(p))

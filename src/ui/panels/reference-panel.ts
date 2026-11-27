@@ -6,7 +6,7 @@
 // Footer: Compare, Add to project, xeno-canto.org, licence of the selected recording.
 // Searching, audio and adding come from outside (main.js); the filter logic lives in app/xc-reference.ts.
 
-import { DEFAULT_FILTERS, type XcFilters, type XcRef, type XcSort } from '../../app/xc-reference.ts';
+import { DEFAULT_FILTERS, bySimilarity, type XcFilters, type XcRef, type XcSort } from '../../app/xc-reference.ts';
 import type { SnapPatch } from '../../domain/snapToCall.ts';
 import { paintPatch } from './suggestions-panel.ts';
 import { prefs } from '../../infrastructure/storage/prefs.ts';
@@ -46,6 +46,11 @@ export interface ReferencePanelOptions {
     openExternal: (ref: XcRef) => void;
     /** Compare view (R2); without it the button is hidden. */
     compare?: (t: RefTarget, ref: XcRef, list: XcRef[]) => void;
+    /** Similarity of `refs` to the clip of `t` (Perch); `progress` while embedding; `isCurrent` false: stop early. */
+    rank?: (t: RefTarget, refs: XcRef[], progress: (done: number, total: number) => void, isCurrent: () => boolean)
+        => Promise<Map<string, { score: number; start: number }>>;
+    /** Length of the open recording (s); a clip is cut there. */
+    duration?: () => number;
     /** Recording location known (enables the distance chips). */
     hasLocation: () => boolean;
 }
@@ -92,6 +97,7 @@ export class ReferencePanel {
     private loading = false;
     private gen = 0;
     private clipRetries = 0;
+    private ranking = false;
 
     private head = el('div', 'ref-head');
     private clip = el('div', 'ref-clip');
@@ -120,10 +126,12 @@ export class ReferencePanel {
             if (t.sci !== this.target.sci) return;
         }
         const speciesChanged = t.sci !== this.target?.sci;
+        const clipChanged = t.start !== this.target?.start || t.end !== this.target?.end;
         this.target = t;
         this.renderHead();
         this.renderClip();
         if (speciesChanged) void this.load(1);
+        else if (clipChanged && this.sort === 'similar') { this.gen++; this.loading = false; void this.rank(); }
     }
 
     /** Panel became visible: search if the species was set while hidden. */
@@ -155,12 +163,50 @@ export class ReferencePanel {
             this.total = res.total; this.pages = res.pages; this.page = page;
             this.status = '';
             if (!this.selected && this.refs[0]) this.selected = this.refs[0].id;
+            if (this.sort === 'similar') void this.rank(gen);
         } catch (err) {
             if (gen !== this.gen) return;
             this.status = err instanceof Error ? err.message : String(err);
         } finally {
             if (gen === this.gen) { this.loading = false; this.render(); }
         }
+    }
+
+    /** How many of the list get embedded and ranked (the first ones in quality order). */
+    static readonly RANK_N = 24;
+
+    private async rank(gen = this.gen) {
+        const t = this.target;
+        if (!this.opts.rank || !t || t.start == null || t.end == null || !this.refs.length) {
+            if (this.sort === 'similar' && t && t.start == null) { this.status = 'Similarity needs a clip – pick a suggestion or label'; this.renderBar(); }
+            return;
+        }
+        const head = this.refs.slice(0, ReferencePanel.RANK_N);
+        const isCurrent = () => gen === this.gen && this.target === t && this.sort === 'similar';
+        this.status = `Ranking by similarity 0/${head.length}…`;
+        this.ranking = true;
+        this.renderBar();
+        try {
+            const hits = await this.opts.rank(t, head, (done, total) => {
+                if (!isCurrent()) return;
+                this.status = `Ranking by similarity ${done}/${total}…`;
+                this.renderBar();
+            }, isCurrent);
+            if (!isCurrent()) return;
+            for (const r of this.refs) {
+                const h = hits.get(r.id);
+                r.sim = h?.score; r.simStart = h?.start;
+            }
+            this.refs = bySimilarity(this.refs);
+            this.selected = this.refs[0]?.id ?? null;
+            this.status = '';
+        } catch (err) {
+            if (!isCurrent()) return;
+            this.status = err instanceof Error ? err.message : String(err);
+        } finally {
+            if (isCurrent()) this.ranking = false;
+        }
+        this.renderBar(); this.renderGrid();
     }
 
     private setFilter<K extends keyof XcFilters>(key: K, v: XcFilters[K]) {
@@ -238,7 +284,8 @@ export class ReferencePanel {
         const play = el('button', 'ref-btn small', '▶ Your clip');
         play.title = 'Play your clip in the editor';
         play.onclick = () => this.opts.playClip(t);
-        side.append(play, el('span', '', `${fmtT(t.start!)} · ${Math.round(t.end! - t.start!)} s`));
+        const end = Math.min(t.end!, this.opts.duration?.() || Infinity);
+        side.append(play, el('span', '', `${fmtT(t.start!)} · ${Math.max(0, end - t.start!).toFixed(1).replace(/\.0$/, '')} s`));
         if (t.source) side.append(el('span', 'ref-muted', t.source));
         this.clip.replaceChildren(c, side);
     }
@@ -247,9 +294,11 @@ export class ReferencePanel {
         const left = el('span', 'ref-count');
         if (this.status) left.textContent = this.status;
         else if (this.target) left.textContent = `${this.total} on Xeno-canto · ${this.refs.length} shown`;
-        left.classList.toggle('err', !!this.status && !this.loading);
+        left.classList.toggle('err', !!this.status && !this.loading && !this.ranking);
         const sel = el('select', 'ref-sort');
-        for (const [v, t] of [['quality', 'Sort: quality'], ['distance', 'Sort: distance'], ['length', 'Sort: length']] as const) {
+        const sorts = [['quality', 'Sort: quality'], ['distance', 'Sort: distance'], ['length', 'Sort: length'],
+            ...(this.opts.rank ? [['similar', 'Sort: similar to clip']] : [])] as [XcSort, string][];
+        for (const [v, t] of sorts) {
             const o = el('option', '', t); o.value = v; o.selected = this.sort === v; sel.append(o);
         }
         sel.onchange = () => { this.sort = sel.value as XcSort; prefs.set(SORT_KEY, this.sort); void this.load(1); };
@@ -277,6 +326,7 @@ export class ReferencePanel {
         if (r.sono) { const i = el('img'); i.src = r.sono; i.alt = ''; i.loading = 'lazy'; i.referrerPolicy = 'no-referrer'; img.append(i); }
         if (r.type) img.append(el('span', 'ref-type', r.type));
         if (r.q) img.append(el('span', `ref-q q-${r.q.toLowerCase()}`, r.q));
+        if (r.sim != null) img.append(el('span', 'ref-sim', r.sim.toFixed(2)));
         if (r.id === this.playing) img.append(el('span', 'ref-playing', '■'));
         const meta = el('div', 'ref-meta');
         meta.append(el('b', '', `XC ${r.id}`), el('span', '', r.lenS ? fmtLen(r.lenS) : ''),

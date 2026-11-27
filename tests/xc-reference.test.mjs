@@ -65,3 +65,9 @@ test('search tries the next name when the first finds nothing', async () => {
     assert.equal(res.name, 'Aegolius funereus magnus');
     assert.deepEqual(res.refs.map((x) => x.id), ['5']);
 });
+
+test('similarity order: ranked first, the rest keep their order', async () => {
+    const { bySimilarity } = await import('../src/app/xc-reference.ts');
+    const list = [{ id: 'a' }, { id: 'b', sim: 0.4 }, { id: 'c' }, { id: 'd', sim: 0.9 }];
+    assert.deepEqual(bySimilarity(list).map((x) => x.id), ['d', 'b', 'a', 'c']);
+});

@@ -197,7 +197,7 @@ fn vectors_path(root: &str) -> PathBuf {
     store_dir(root).join("vectors.f16")
 }
 
-fn to_f16_bytes(v: &[f32]) -> Vec<u8> {
+pub(crate) fn to_f16_bytes(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|x| f16::from_f32(*x).to_le_bytes()).collect()
 }
 
@@ -235,7 +235,7 @@ fn compact(root: &str, idx: &mut Index) -> Result<(), String> {
 
 // ── Modell ────────────────────────────────────────────────────────────
 
-fn model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     if let Some(p) = std::env::var_os(MODEL_ENV).filter(|v| !v.is_empty()) {
         return Ok(p.into());
     }
@@ -307,7 +307,7 @@ pub async fn embed_model_download(app: tauri::AppHandle) -> Result<ModelStatus, 
 }
 
 /// CUDA (nur mit Feature `cuda`) bzw. DirectML (Windows) versuchen, sonst CPU.
-fn open_embedder(model: &Path) -> Result<(aw_embed::Embedder, &'static str), String> {
+pub(crate) fn open_embedder(model: &Path) -> Result<(aw_embed::Embedder, &'static str), String> {
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
     #[cfg(feature = "cuda")]
     match aw_embed::Embedder::new(model, threads, "cuda") {
@@ -640,7 +640,7 @@ fn run_job(
 
 // ── Suche ─────────────────────────────────────────────────────────────
 
-fn normalize(v: &mut [f32]) {
+pub(crate) fn normalize(v: &mut [f32]) {
     let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     if n > 0.0 {
         v.iter_mut().for_each(|x| *x /= n);

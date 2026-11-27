@@ -335,7 +335,9 @@ body.lite-editor-chrome .main-area { container-type: inline-size; }
   .ref-type, .ref-q, .ref-playing { position: absolute; font: 700 9.5px var(--font-mono, monospace); padding: 0 4px; border-radius: 3px; }
   .ref-type { top: 3px; left: 3px; background: rgba(0,0,0,.65); color: #e0e0e0; font-family: inherit; }
   .ref-q { top: 3px; right: 3px; background: #4ade80; color: #111; &.q-b { background: #a3e635; } &.q-c { background: #facc15; } &.q-d, &.q-e { background: #f97316; } }
-  .ref-playing { bottom: 3px; left: 3px; background: #38bdf8; color: #04111b; } }
+  .ref-playing { bottom: 3px; left: 3px; background: #38bdf8; color: #04111b; }
+  .ref-sim { position: absolute; bottom: 3px; right: 3px; font: 700 9.5px var(--font-mono, monospace); padding: 0 4px; border-radius: 3px;
+    background: rgba(56,189,248,.9); color: #04111b; } }
 .ref-meta { background: var(--color-bg-surface, #15152a); padding: 3px 6px; display: grid; grid-template-columns: 1fr auto; gap: 0 6px; font-size: 10.5px;
   b { font-family: var(--font-mono, monospace); font-size: 10.5px; } span { color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } }
 .ref-more { grid-column: 1 / -1; }
