@@ -77,10 +77,11 @@ $lm-mono: var(--font-mono, ui-monospace, monospace);
 }
 
 /* body */
-.lm-body { display: grid; grid-template-columns: minmax(0, 1fr) 430px; min-height: 0; }
+.lm-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 430px); min-height: 0; }
 .lm-media { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--color-border); }
 .lm-tb {
   display: flex;
+  flex-wrap: wrap;   // narrow windows: the controls wrap instead of running under the Fields column
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
@@ -281,6 +282,16 @@ $lm-mono: var(--font-mono, ui-monospace, monospace);
   input { width: 100%; border: none !important; background: transparent !important; box-shadow: none !important; padding: 0 !important; outline: none; color: inherit; font-size: 12px; }
 }
 .lf-sw { width: 10px; height: 10px; flex: none; border-radius: 3px; }
+.lf-segmore { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lf-more {
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
 .lf-seg {
   display: inline-flex;
   overflow: hidden;

@@ -114,10 +114,14 @@ export class LabelModal {
     /** The selected labels in film-strip order. */
     private get selected() { return this.h.labels().filter((l) => this.sel.has(l.id)); }
 
-    private editAll(e: MultiEdit) {
-        for (const l of this.selected) if (!l.readonly) this.h.change(l.id, updatesFor(l, e));
+    /** Returns whether a label was written (an all read-only selection changes nothing). */
+    private editAll(e: MultiEdit): boolean {
+        let n = 0;
+        for (const l of this.selected) if (!l.readonly) { this.h.change(l.id, updatesFor(l, e)); n++; }
+        if (!n) return false;
         if (this.visit) this.visit.changed = true;
         this.refresh();
+        return true;
     }
 
     /** Change the selection (leaving one label or one selection ends its undo step). */

@@ -32,7 +32,8 @@ export function updatesFor(l: any, e: MultiEdit): Record<string, any> {
 }
 
 export interface MultiFormOptions {
-    edit: (e: MultiEdit) => void;
+    /** Apply to the selected labels; false: nothing was written (all read-only). */
+    edit: (e: MultiEdit) => boolean | void;
     speciesSearch?: FieldsFormOptions['speciesSearch'];
     tagPresets: TagPreset[];
     /** "2 from BirdNET, 1 drawn" */
@@ -64,11 +65,24 @@ export class MultiFieldsForm {
         if (!labels.length) return;
         this.el.append(this.sLabel(), this.sTags(), this.sAnnota(), this.folded('Box', 'not for several labels'),
             this.folded('Source', this.o.sourceSummary(labels)));
+        if (labels.every((l) => l.readonly)) {
+            this.el.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('button, input, select, textarea')
+                .forEach((x) => { x.disabled = true; });
+        }
     }
 
     private go(e: MultiEdit) {
+        // Marked as changed only when the host wrote it (read-only labels are skipped).
+        if (this.o.edit(e) === false) return;
         this.changed.add('set' in e ? Object.keys(e.set)[0] : `tag:${e.tag}`);
-        this.o.edit(e);
+    }
+
+    /** "more…" picker with the preset values not shown as buttons. */
+    private more(rest: string[], pick: (v: string) => void) {
+        const sel = el('select', 'lf-more');
+        sel.append(new Option('more…', ''), ...rest.map((v) => new Option(v, v)));
+        sel.onchange = () => { const v = sel.value; sel.value = ''; if (v) pick(v); };
+        return sel;
     }
 
     private sec(title: string) {
@@ -163,13 +177,18 @@ export class MultiFieldsForm {
                     c.onclick = () => set(all ? '' : v);
                     chips.append(c);
                 }
+                const rest = p.options.filter((v) => !vals.includes(v));
+                if (rest.length) chips.append(this.more(rest, set));
                 chips.append(this.mark('tag:soundType'));
                 s.append(this.row(nice(p), chips));
             } else {
                 const opts = p.options.slice(0, 3).map((v) => ({ value: v, text: v }));
                 for (const [v] of counts) if (v && !opts.some((o) => o.value === v)) opts.push({ value: v, text: v });
                 opts.push({ value: '', text: '–' });
-                s.append(this.row(nice(p), this.seg(`tag:${p.key}`, opts, counts, set)));
+                const seg = this.seg(`tag:${p.key}`, opts, counts, set);
+                const rest = p.options.filter((v) => !opts.some((o) => o.value === v));
+                if (rest.length) { const w = el('span', 'lf-segmore'); w.append(seg, this.more(rest, set)); s.append(this.row(nice(p), w)); }
+                else s.append(this.row(nice(p), seg));
             }
         }
         // own tags: "quality: A 1 of 3"; a click sets it on all, × removes it from all
