@@ -16,6 +16,8 @@ export interface RangeMapOptions {
   /** Grid of the second pass (default ~10 px per cell, 4,500 cells) and whether play uses it too (fast backend). */
   fine?: { cellPx: number; max: number };
   playFine?: boolean;
+  /** Where the grid is computed, shown in the footer (e.g. "WebGPU"). */
+  backend?: string;
   /** Scores below are not coloured (area filter threshold). */
   minScore?: number;
   /** Score grid for the given week. */
@@ -49,7 +51,7 @@ export async function openRangeMap(opts: RangeMapOptions): Promise<void> {
         <span class="geo-range-legend" title="Geomodel score (prior, not an observation); blank below the area filter threshold"><span>${opts.minScore ?? 0.01}</span><span class="geo-range-ramp"></span><span>1</span></span>
         <span class="geo-range-status" aria-live="polite"></span>
       </div>
-      <div class="geo-map-attribution-hint">Geomodel prediction, not observations · © OpenStreetMap contributors</div>
+      <div class="geo-map-attribution-hint">Geomodel prediction, not observations${opts.backend ? ` · computed on ${esc(opts.backend)}` : ''} · © OpenStreetMap contributors</div>
     </div>`;
   document.body.appendChild(backdrop);
   backdrop.querySelector('.geo-range-src')!.appendChild(createGeoSourceInfo(opts.modelName));

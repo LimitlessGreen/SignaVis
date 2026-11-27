@@ -903,6 +903,7 @@ async function openSpeciesRangeMap(sci, week = null) {
   const gpu = ep === 'webgpu' || ep.startsWith('native');
   await openRangeMap({
     ...(gpu ? { fine: { cellPx: 5, max: 30000 }, playFine: true } : {}),
+    backend: ep === 'webgpu' ? 'WebGPU' : ep === 'wasm' ? 'CPU (WASM)' : ep.startsWith('native-') ? `CPU/GPU native (${ep.slice(7)})` : 'CPU (BirdNET worker)',
     scientific: sci, title,
     place: bp.getCoords?.() || null,
     week: week ?? geoWeek(bp.getRecordingDate?.()),
