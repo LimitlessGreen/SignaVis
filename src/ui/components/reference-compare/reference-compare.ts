@@ -46,13 +46,22 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') 
     return e;
 };
 
-/** Draw frames [f0, f1) of a dB patch into `canvas` (canvas pixel size = CSS size), 60 dB below the patch maximum. */
-export function paintPatchRange(canvas: HTMLCanvasElement, p: SnapPatch, f0: number, f1: number, maxHz = MAX_HZ) {
+/** Loudest value of a dB patch. */
+export function patchMax(p: SnapPatch): number {
+    let hi = -Infinity;
+    for (let i = 0; i < p.values.length; i++) if (p.values[i] > hi) hi = p.values[i];
+    return hi;
+}
+
+/**
+ * Draw frames [f0, f1) of a dB patch into `canvas` (canvas pixel size = CSS size), 60 dB below `top`
+ * (default: the patch's own maximum; the comparison passes one value for both rows).
+ */
+export function paintPatchRange(canvas: HTMLCanvasElement, p: SnapPatch, f0: number, f1: number, maxHz = MAX_HZ, dbTop?: number) {
     const w = canvas.width, h = canvas.height, ctx = canvas.getContext('2d');
     if (!ctx || !p.frames || !p.bins || w < 2 || h < 2) return;
     const top = Math.max(1, Math.min(p.bins, Math.ceil((maxHz - p.f0) / p.df)));
-    let hi = -Infinity;
-    for (let i = 0; i < p.values.length; i++) if (p.values[i] > hi) hi = p.values[i];
+    const hi = dbTop ?? patchMax(p);
     const lo = hi - 60;
     const img = ctx.createImageData(w, h);
     for (let x = 0; x < w; x++) {
@@ -157,6 +166,7 @@ export class ReferenceCompare {
     }
 
     close() {
+        this.searchGen++;
         this.stop();
         cancelAnimationFrame(this.raf);
         window.removeEventListener('keydown', this.onKeyBound, true);
@@ -259,6 +269,7 @@ export class ReferenceCompare {
             if (this.ref !== ref) return;
             this.xcBuf = buf; this.xcPatch = p;
             this.xcOff = this.bestOffset();
+            this.drawOwn();   // the common dB scale may have changed
             this.status.textContent = '';
         } catch (err) {
             if (this.ref !== ref) return;
@@ -294,6 +305,12 @@ export class ReferenceCompare {
 
     private drawAll() { this.drawOwn(); this.drawXc(); }
 
+    /** One dB scale for both rows ("same dB range"): the louder of the two patches sets the top. */
+    private dbTop(): number | undefined {
+        const tops = [this.ownPatch, this.xcPatch].filter((p): p is SnapPatch => !!p && !(p instanceof ImageData)).map(patchMax);
+        return tops.length ? Math.max(...tops) : undefined;
+    }
+
     private drawOwn() {
         const c = this.ownCanvas;
         this.fit(c);
@@ -304,7 +321,7 @@ export class ReferenceCompare {
         else if (p instanceof ImageData) {
             createImageBitmap(p).then((bm) => ctx?.drawImage(bm, 0, 0, c.width, c.height)).catch(() => {});
         } else {
-            paintPatchRange(c, p, (from - p.t0) / p.dt, (to - p.t0) / p.dt);
+            paintPatchRange(c, p, (from - p.t0) / p.dt, (to - p.t0) / p.dt, MAX_HZ, this.dbTop());
         }
         const len = to - from;
         this.ownSeg.style.left = `${((s - from) / len) * 100}%`;
@@ -321,7 +338,7 @@ export class ReferenceCompare {
         this.fit(c);
         const p = this.xcPatch, len = this.span();
         if (!p) c.getContext('2d')?.clearRect(0, 0, c.width, c.height);
-        else paintPatchRange(c, p, (this.xcOff - p.t0) / p.dt, (this.xcOff + len - p.t0) / p.dt);
+        else paintPatchRange(c, p, (this.xcOff - p.t0) / p.dt, (this.xcOff + len - p.t0) / p.dt, MAX_HZ, this.dbTop());
         this.axis(this.xcAxis, this.xcOff, this.xcOff + len);
         const r = this.ref;
         if (!r) { this.xcHead.replaceChildren(); return; }
@@ -383,17 +400,28 @@ export class ReferenceCompare {
         this.othersEl.replaceChildren(...chips);
     }
 
+    /** Each search; retargeting and closing advance it too, so only the latest search may apply. */
+    private searchGen = 0;
+
     private async loadSpecies(sp: CompareSpecies | null) {
+        const gen = ++this.searchGen;
         this.species = sp;
         this.renderOthers();
         this.status.textContent = 'Searching Xeno-canto…';
         try {
             const refs = await this.opts.search(sp?.sci ?? this.target.sci);
-            if (this.species !== sp) return;
+            if (gen !== this.searchGen) return;
             this.refs = refs;
             this.status.textContent = refs.length ? '' : 'Nothing found with these filters';
-            if (refs[0]) void this.pick(refs[0]); else this.renderList();
+            if (refs[0]) void this.pick(refs[0]);
+            else {
+                // nothing for this species: the previous reference (audio, Add) must not stay usable
+                this.stop();
+                this.ref = null; this.xcBuf = null; this.xcPatch = null;
+                this.renderList(); this.renderFoot(); this.drawXc();
+            }
         } catch (err) {
+            if (gen !== this.searchGen) return;
             this.status.textContent = err instanceof Error ? err.message : String(err);
         }
     }
@@ -540,7 +568,9 @@ export class ReferenceCompare {
             if (n && n !== this.ref) void this.pick(n);
         });
         if (k === 'ArrowLeft' || k === 'ArrowRight') return run(() => this.stepTarget(k === 'ArrowRight' ? 1 : -1));
-        if (k === 'Tab') return run(() => this.setActive(this.active === 'own' ? 'xc' : 'own'));
+        // Tab moves the focus (Add, Cross-check, decisions); S switches the active row.
+        if (k === 's' || k === 'S') return run(() => this.setActive(this.active === 'own' ? 'xc' : 'own'));
+        if (k === 'Tab') { e.stopImmediatePropagation(); return; }
         // everything else stays inside the window
         e.stopImmediatePropagation();
     }
