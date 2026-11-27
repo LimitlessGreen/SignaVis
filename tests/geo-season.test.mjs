@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { geoWeek, summarizeSeason, presentText, seasonChartSvg, weekLabel } from '../src/ui/components/geo-season.ts';
+import { geoWeek, summarizeSeason, presentText, seasonChartSvg, weekLabel, unusualHintText, GEOMODEL_SOURCE } from '../src/ui/components/geo-season.ts';
 
 test('geoWeek: four weeks per month, days 22–31 are week 4', () => {
   assert.equal(geoWeek(new Date(2026, 0, 1)), 1);
@@ -44,4 +44,20 @@ test('chart: marker only with week, 12 month labels', () => {
   assert.match(a, /geo-season-threshold/);
   assert.equal((a.match(/geo-season-month/g) || []).length, 12);
   assert.doesNotMatch(seasonChartSvg(summer), /geo-season-now/);
+});
+
+
+
+test('unusual hint names score, week, threshold and that it is a prior', () => {
+  const t = unusualHintText(0.004, 0.03, 2);
+  assert.match(t, /0\.00/);
+  assert.match(t, /mid Jan/);
+  assert.match(t, /0\.03/);
+  assert.match(t, /not an observation/);
+});
+
+test('geomodel source: docs URL, license and caveats from the project page', () => {
+  assert.equal(GEOMODEL_SOURCE.url, 'https://birdnet-team.github.io/geomodel/');
+  assert.match(GEOMODEL_SOURCE.license, /Apache-2\.0/);
+  assert.ok(GEOMODEL_SOURCE.caveats.some((c) => /not a species distribution model/.test(c)));
 });

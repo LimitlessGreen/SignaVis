@@ -33,6 +33,10 @@ export class AnalysisBackendProxy implements AnalysisBackend {
         return this.#current.hasAreaModel;
     }
 
+    get geoModelName(): string | null {
+        return (this.#current as any).geoModelName ?? null;
+    }
+
     setBackend(nextBackend: AnalysisBackend): void {
         const previous = this.#current;
         this.#current = nextBackend;

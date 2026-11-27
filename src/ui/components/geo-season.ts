@@ -100,3 +100,60 @@ export function seasonChartSvg(scores: ArrayLike<number>, opts: { week?: number 
   parts.push('</svg>');
   return parts.join('');
 }
+
+/** Tooltip of the ⚠ marker for a species whose geomodel score in the recording week is below the threshold. */
+export function unusualHintText(score: number, threshold: number, week: number): string {
+  return `Unusual here at this time: geomodel score ${score.toFixed(2)} in ${weekLabel(week)} is below the area filter threshold ${threshold}. A prior, not an observation – check the recording.`;
+}
+
+/** Source and caveats of the geomodel (https://birdnet-team.github.io/geomodel/), shown behind an ⓘ. */
+export const GEOMODEL_SOURCE = {
+  name: 'BirdNET Geomodel',
+  url: 'https://birdnet-team.github.io/geomodel/',
+  license: 'Apache-2.0 (model), BirdNET-Team',
+  caveats: [
+    'Coarse prior to suppress unlikely species, not a species distribution model.',
+    'Not for scientific range analyses or conservation planning.',
+    'Predictions, not observations: false positives and negatives are possible.',
+    'An expert species list for your area beats this prior.',
+  ],
+};
+
+/** Small ⓘ button that toggles a popover with model, source and caveats. */
+export function createGeoSourceInfo(modelName?: string | null): HTMLElement {
+  const wrap = document.createElement('span');
+  wrap.className = 'geo-src';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'geo-src-btn';
+  btn.textContent = 'ⓘ';
+  btn.title = 'Source and limits of the geomodel';
+  btn.setAttribute('aria-label', btn.title);
+  const pop = document.createElement('div');
+  pop.className = 'geo-src-pop';
+  pop.hidden = true;
+  const model = modelName ? ` · ${modelName}` : '';
+  pop.innerHTML = `<b>${GEOMODEL_SOURCE.name}</b>${model ? `<span class="geo-src-model">${model.replace(/[<>&]/g, '')}</span>` : ''}`
+    + `<ul>${GEOMODEL_SOURCE.caveats.map((c) => `<li>${c}</li>`).join('')}</ul>`
+    + `<div class="geo-src-foot">${GEOMODEL_SOURCE.license} · <a href="${GEOMODEL_SOURCE.url}" target="_blank" rel="noopener">docs</a></div>`;
+  btn.setAttribute('aria-expanded', 'false');
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    pop.hidden = !pop.hidden;
+    btn.setAttribute('aria-expanded', String(!pop.hidden));
+    if (!pop.hidden) {
+      const close = (ev: Event) => {
+        if (ev instanceof KeyboardEvent && ev.key !== 'Escape') return;
+        if (ev.type === 'pointerdown' && wrap.contains(ev.target as Node)) return;
+        pop.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+        document.removeEventListener('pointerdown', close, true);
+        document.removeEventListener('keydown', close, true);
+      };
+      document.addEventListener('pointerdown', close, true);
+      document.addEventListener('keydown', close, true);
+    }
+  });
+  wrap.append(btn, pop);
+  return wrap;
+}

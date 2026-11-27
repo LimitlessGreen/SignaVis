@@ -19,12 +19,12 @@ import { MobileApp } from '../../ui/mobile/mobile-app.ts';
 import { t as mt } from '../../ui/mobile/i18n.ts';
 import { populateLanguageSelect, createSuggestionProvider, createSpeciesSearchWidget, normalizeSearch, altNameMatch } from '../../ui/components/taxonomy-ui/taxonomy-ui.ts';
 import { matchTier, MATCH, LOCAL_THRESHOLD } from '../../ui/components/taxonomy-ui/species-ranking.ts';
-import { createSpeciesGeoCache } from '../../ui/components/taxonomy-ui/species-geo-cache.ts';
+import { createSpeciesGeoCache, geoContextKey } from '../../ui/components/taxonomy-ui/species-geo-cache.ts';
 import { LabelList } from '../../ui/panels/label-list.ts';
 import { LabelGrid } from '../../ui/panels/label-grid.ts';
 import { buildLabelExport } from '../../infrastructure/export/labelTableFormats.ts';
 import { BirdNETPanel } from '../../ui/panels/birdnet-panel.ts';
-import { geoWeek } from '../../ui/components/geo-season.ts';
+import { geoWeek, unusualHintText } from '../../ui/components/geo-season.ts';
 import { BirdBoxPanel, BIRDBOX_ORIGIN } from '../../ui/panels/birdbox-panel.ts';
 import { initModeTiles } from '../../ui/panels/mode-tiles.ts';
 import { initModelPicker } from '../../ui/panels/model-picker.ts';
@@ -913,7 +913,7 @@ const propsPanel = new PropertiesPanel({
             .catch((err) => { seasonProfiles.delete(k); throw err; }));
         }
         const scores = await seasonProfiles.get(k);
-        return scores ? { scores, week, threshold } : null;
+        return scores ? { scores, week, threshold, modelName: birdnet.geoModelName } : null;
       },
     };
   },
@@ -2694,7 +2694,35 @@ function selectLabel(labelId, opts = {}) {
 }
 
 // ── Label list ────────────────────────────────────────────────────
+/**
+ * ⚠ tooltip for species unusual at the recording place in the recording week (geomodel score
+ * below the area filter threshold). Only with a recording date and a loaded area model; uses
+ * the scores of the species search cache (filled in the background, never loads BirdNET).
+ */
+function unusualHint(sci) {
+  let bp = null;
+  try { bp = birdnetPanel; } catch { return null; }
+  const date = bp.getRecordingDate?.();
+  const week = geoWeek(date);
+  const c = bp.getCoords?.();
+  if (!week || !c || !birdnet.loaded || !birdnet.hasAreaModel) return null;
+  let cache = null;
+  try { cache = speciesGeo; } catch { return null; } // not created yet during start-up
+  if (cache.key !== geoContextKey({ lat: c.lat, lon: c.lon, date })) {
+    // Scores of another place/date (or none yet): fetch after this render, re-render on arrival.
+    if (!unusualHint.queued) {
+      unusualHint.queued = true;
+      queueMicrotask(() => { unusualHint.queued = false; refreshSpeciesGeoScores(); });
+    }
+    return null;
+  }
+  const score = speciesGeoScore(sci);
+  if (score == null) return null;
+  const threshold = bp.getGeoThreshold();
+  return score < threshold ? unusualHintText(score, threshold, week) : null;
+}
 const labelList = new LabelList({
+  unusualHint,
   container: document.getElementById('labelList'),
   emptyEl:   document.getElementById('labelsEmpty'),
   badgeEl:   document.getElementById('labelListCount'),
@@ -3058,6 +3086,7 @@ function labelTableRowMenu(ids, lbl) {
 const labelTableHost = player.enableLabelTable?.();
 const labelTable = labelTableHost ? new LabelGrid({
   host: labelTableHost,
+  unusualHint,
   tools: player.getLabelTableTools?.(),
   resolveName,
   tagStore,
@@ -3241,7 +3270,7 @@ const birdnetPanel = new BirdNETPanel({
   },
 });
 // Season block in Properties follows the threshold slider and a model loaded elsewhere.
-document.getElementById('birdnetGeoThreshold')?.addEventListener('change', () => propsPanel.refreshSeason());
+document.getElementById('birdnetGeoThreshold')?.addEventListener('change', () => { propsPanel.refreshSeason(); labelList.render(_shownLabels()); });
 initModelPicker({
   seg: document.getElementById('birdnetModelSeg'),
   select: document.getElementById('birdnetModelPreset'),
@@ -3806,7 +3835,7 @@ const speciesGeo = createSpeciesGeoCache({
     const all = await birdnet.getAllSpecies();
     return new Map(all.filter((sp) => sp.geoscore != null).map((sp) => [sp.scientific, sp.geoscore]));
   },
-  onUpdate: () => speciesSearchWidgets.forEach((w) => w.refresh?.()),
+  onUpdate: () => { speciesSearchWidgets.forEach((w) => w.refresh?.()); labelList.render(_shownLabels()); },
   onError: (err) => console.warn('[species search] geo ranking unavailable:', err?.message || err),
 });
 const speciesGeoScore = (sci) => speciesGeo.score(sci);

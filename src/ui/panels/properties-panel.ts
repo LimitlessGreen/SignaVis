@@ -13,7 +13,7 @@
  * Inspired by the property editors in GIS software and modern IDEs.
  */
 
-import { summarizeSeason, seasonChartSvg, presentText, weekLabel } from '../components/geo-season.ts';
+import { summarizeSeason, seasonChartSvg, presentText, weekLabel, createGeoSourceInfo } from '../components/geo-season.ts';
 import { TAG_PRESETS } from './label-table.ts';
 import { createEditableSelect } from '../components/editable-select/editable-select.ts';
 import { openMapModal, GEO_ICONS } from '../components/geo-map-modal/geo-map-modal.ts';
@@ -119,7 +119,7 @@ export class PropertiesPanel {
    * @param {object} [opts]
    * @param {(setId: string) => object|null} [opts.getSetInfo]
    * @param {((anchor: HTMLElement, cb: function) => {el:HTMLElement,input:HTMLInputElement,destroy:function})|null} [opts.speciesSearchFactory]
-   * @param {(scientific: string) => {key: string, load: (allowModelLoad: boolean) => Promise<{scores:number[], week:number|null, threshold:number}|{needsModel:true}|null>}|null} [opts.getSeason]
+   * @param {(scientific: string) => {key: string, load: (allowModelLoad: boolean) => Promise<{scores:number[], week:number|null, threshold:number, modelName?:string|null}|{needsModel:true}|null>}|null} [opts.getSeason]
    *   Year profile of a species at the recording place (geomodel); null when there is no place or area model.
    */
   constructor(opts: any = {}) {
@@ -584,9 +584,10 @@ export class PropertiesPanel {
       el.classList.toggle('props-season--unusual', s.unusual);
       const now = s.current == null ? ''
         : `<span class="props-season-now">${s.unusual ? '⚠ Unusual here at this time' : 'Expected here at this time'} · ${weekLabel(s.week!)}: ${s.current.toFixed(2)}</span>`;
-      el.innerHTML = `<div class="props-season-head"><span>Season here</span><span class="props-season-range">${presentText(s.presentRanges)}</span></div>`
+      el.innerHTML = `<div class="props-season-head"><span class="props-season-title">Season here</span><span class="props-season-range">${presentText(s.presentRanges)}</span></div>`
         + seasonChartSvg(res.scores, { week: res.week, threshold: res.threshold })
         + now;
+      el.querySelector('.props-season-title')!.appendChild(createGeoSourceInfo(res.modelName));
       el.title = `Geomodel score per week at the recording place (peak ${s.peak.toFixed(2)}, ${weekLabel(s.peakWeek)}). Dashed line: area filter threshold ${res.threshold}.`;
     }).catch(() => {
       if (this._seasonKey === key) { el.hidden = true; el.innerHTML = ''; }

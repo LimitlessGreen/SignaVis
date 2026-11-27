@@ -23,6 +23,10 @@ export class LocalAnalysisBackend implements AnalysisBackend {
         return this.#birdnet.hasAreaModel;
     }
 
+    get geoModelName(): string | null {
+        return (this.#birdnet as any).geoModelName ?? null;
+    }
+
     load(options: AnalysisLoadOptions): Promise<AnalysisLoadResult> {
         return this.#birdnet.load(options);
     }

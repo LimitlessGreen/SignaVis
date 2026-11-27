@@ -216,7 +216,7 @@ self.onmessage = async (e) => {
       self.postMessage({ id: id, type: 'progress', message: 'Loading area model\\u2026', percent: 92 });
       try {
         areaModel = await tf.loadGraphModel(areaBase + 'mdata/model.json');
-        self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: true, sampleRate: ${TFJS_SR}, format: 'tfjs' });
+        self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: true, geoModelName: 'BirdNET V2.4 meta model', sampleRate: ${TFJS_SR}, format: 'tfjs' });
       } catch (_) {
         // Area model is optional — continue without it
         self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: false, sampleRate: ${TFJS_SR}, format: 'tfjs' });
@@ -406,6 +406,7 @@ self.onmessage = async (e) => {
         } catch (_) { geo = null; }
       }
       self.postMessage({ id: id, type: 'loaded', labelCount: labels.length, hasAreaModel: !!geo,
+        geoModelName: geo ? String(cfg.geoModel.modelFile).replace(/^.*\\//, '').replace(/\\.onnx$/, '') : null,
         sampleRate: am.audio.sampleRate, format: 'onnx' });
     } catch (err) {
       self.postMessage({ id: id, type: 'error', message: String(err && err.message || err) });
@@ -556,6 +557,7 @@ export class BirdNETInference {
   #nextId = 0;
   #loaded = false;
   #hasAreaModel = false;
+  #geoModelName: string | null = null;
   #sampleRate = TFJS_SR;
   #format: 'onnx' | 'tfjs' | null = null;
   #onLoadProgress: ((...args: any[]) => void) | null = null;
@@ -565,6 +567,8 @@ export class BirdNETInference {
 
   /** Whether the area (geo) model was found and loaded alongside the main model. */
   get hasAreaModel() { return this.#hasAreaModel; }
+  /** Name of the loaded area model (file name without extension), null without one. */
+  get geoModelName() { return this.#geoModelName; }
 
   /** Format of the loaded model: 'onnx' (BirdNET+ V3.0) or 'tfjs' (BirdNET v2.4). */
   get format() { return this.#format; }
@@ -617,6 +621,7 @@ export class BirdNETInference {
     this.#sampleRate = result.sampleRate || TFJS_SR;
     this.#format = result.format || 'tfjs';
     this.#hasAreaModel = result.hasAreaModel === true;
+    this.#geoModelName = result.geoModelName || null;
     return { labelCount: result.labelCount, hasAreaModel: this.#hasAreaModel };
   }
 

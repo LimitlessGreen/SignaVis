@@ -51,6 +51,8 @@ export interface AnalysisBackend {
     readonly mode: AnalysisBackendMode;
     readonly loaded: boolean;
     readonly hasAreaModel: boolean;
+    /** Name of the area model, for the source note (optional). */
+    readonly geoModelName?: string | null;
     load(options: AnalysisLoadOptions): Promise<AnalysisLoadResult>;
     setLocation(latitude: number, longitude: number, options?: AnalysisSetLocationOptions): Promise<AnalysisSetLocationResult>;
     getAllSpecies(): Promise<AnalysisSpeciesItem[]>;

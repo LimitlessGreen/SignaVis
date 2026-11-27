@@ -162,6 +162,7 @@ export class LabelList {
     _hiddenSetIds: any;
     _hiddenSpeciesKeys: any;
     _resolveName: any;
+    _unusualHint: ((sci: string) => string | null) | null;
     _taxonomy: any;
     _tagStore: any;
     _lockedIds: any;
@@ -182,6 +183,7 @@ export class LabelList {
    * @param {HTMLElement}  opts.emptyEl
    * @param {HTMLElement}  [opts.badgeEl]
    * @param {(lbl: any) => {display: string, scientific: string}} opts.resolveName
+   * @param {(scientific: string) => string|null} [opts.unusualHint] tooltip when unusual here now (geomodel)
    * @param {() => void}   opts.onSync
    * @param {(lbl: any) => void}  [opts.onSeek]
    * @param {(id: string) => void} [opts.onEdit]
@@ -208,6 +210,7 @@ export class LabelList {
     this._emptyEl = opts.emptyEl;
     this._badgeEl = opts.badgeEl || null;
     this._resolveName = opts.resolveName;
+    this._unusualHint = opts.unusualHint || null;
     /** Common names in all languages for a scientific name (optional). */
     this._altNames = opts.altNames || null;
     this._taxonomy = opts.taxonomy || null;
@@ -762,6 +765,12 @@ export class LabelList {
     const nameEl = el('span', 'lt-name', display);
     names.appendChild(nameEl);
     if (scientific && scientific !== display) names.appendChild(el('span', 'lt-sci', scientific));
+    const hint = scientific ? this._unusualHint?.(scientific) : null;
+    if (hint) {
+      const w = el('span', 'geo-unusual', '⚠');
+      w.title = hint;
+      nameEl.prepend(w);
+    }
     row.appendChild(names);
 
     const acts = el('span', 'lt-hover-acts');
