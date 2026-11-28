@@ -3117,10 +3117,12 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             ctx.fillText(opts.readout, 6, H - 10);
         }
         if (opts.fine ?? this._fineActive) {
-            const rgb = (typeof document !== 'undefined' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent-rgb').trim()) || '56, 189, 248';
-            ctx.fillStyle = `rgba(${rgb}, 0.9)`;
+            // Opaque accent with the theme's on-accent text: readable over any spectrogram (light: white on #0284c7)
+            const css = typeof document !== 'undefined' ? getComputedStyle(document.documentElement) : null;
+            const rgb = css?.getPropertyValue('--color-accent-rgb').trim() || '56, 189, 248';
+            ctx.fillStyle = `rgb(${rgb})`;
             ctx.fillRect(W - 42, 4, 38, 18);
-            ctx.fillStyle = '#0f172a';
+            ctx.fillStyle = css?.getPropertyValue('--color-on-accent').trim() || '#0f172a';
             ctx.fillText('FINE', W - 37, 13);
         }
     }

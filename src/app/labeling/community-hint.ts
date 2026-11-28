@@ -84,7 +84,9 @@ export function initCommunityHint(opts: CommunityHintOptions = {}): void {
       card.classList.remove('is-open');
       setTimeout(() => card.remove(), 250);
     };
-    card.querySelector('.community-hint__join')?.addEventListener('click', close);
+    const join = card.querySelector('.community-hint__join');
+    join?.addEventListener('click', close);
+    join?.addEventListener('auxclick', (e) => { if ((e as MouseEvent).button === 1) close(); });   // middle click opens a tab
     card.querySelector('.community-hint__close')?.addEventListener('click', close);
     doc.body.appendChild(card);
     requestAnimationFrame(() => card.classList.add('is-open'));

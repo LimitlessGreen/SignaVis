@@ -147,7 +147,7 @@ function injectCss() {
 .rc-btn:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent); }
 .rc-btn:disabled { opacity: 0.4; cursor: default; }
 .rc-btn.rc-primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
-.rc-btn.rc-primary:hover:not(:disabled) { color: #fff; filter: brightness(1.1); }
+.rc-btn.rc-primary:hover:not(:disabled) { color: var(--color-on-accent); filter: brightness(1.1); }
 .rc-btn kbd { font: 10px ui-monospace, monospace; opacity: 0.7; margin-left: 4px; }
 .rc-list {
   width: 380px; flex-shrink: 0; border-left: 1px solid var(--color-border);
