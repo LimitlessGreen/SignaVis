@@ -110,7 +110,9 @@ async function decodeArrayBuffer(arrayBuffer: ArrayBuffer): Promise<AudioBuffer>
   const Ctor: any = (window as any).AudioContext || (window as any).webkitAudioContext;
   if (!Ctor) throw new Error('AudioContext is not supported by this browser.');
   const nativeSr = parseNativeSampleRate(arrayBuffer);
-  const ctx = new Ctor(nativeSr > 0 ? { sampleRate: nativeSr } : undefined);
+  // AudioContext only accepts 3 kHz–768 kHz; a misparsed header must not abort the load.
+  const srOk = nativeSr >= 3000 && nativeSr <= 768000;
+  const ctx = new Ctor(srOk ? { sampleRate: nativeSr } : undefined);
   try {
     // Long recordings exceed what one decodeAudioData call can allocate: WAV is read directly,
     // MP3 and FLAC are decoded block by block, all to mono.

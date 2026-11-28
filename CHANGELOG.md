@@ -13,6 +13,13 @@ All notable changes to this project will be documented in this file.
   menu, the About dialog, the website and the README. The labeling app shows
   a one-time hint from the second start on; closing it hides it for good.
 
+### Fixed
+- **WAV files with a `bext`/`JUNK`/`LIST` chunk before `fmt `** (common on
+  field recorders, e.g. Xeno-canto XC1197283) failed to load with
+  "The hardware sample rate provided … is outside the range". The sample
+  rate is now read from the `fmt ` chunk, and an implausible value falls
+  back to the default AudioContext rate instead of aborting the load.
+
 ## [1.4.3] - 2026-11-24
 
 ### Fixed
