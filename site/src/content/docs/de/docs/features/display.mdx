@@ -1,0 +1,37 @@
+---
+title: Spektrogramm-Darstellung
+description: "Spektrogramm-Einstellungen in SignaVis: Voreinstellungen, Zeit-Frequenz-Auflösung, Verstärkung, Farbskalen, Rauschunterdrückung sowie im Expertenmodus Frequenzskala, Fensterfunktion, Überlappung, Reassignment und PCEN."
+sidebar: { order: 4 }
+---
+<img class="shot" src="/SignaVis/media/features/display.webp" alt="Derselbe Baumpieper-Abschnitt mit Fensterlängen 256, 1024 und 4096 und drei Farbskalen, neben den Display-Einstellungen" />
+
+**Display** in der rechten Seitenleiste öffnen.
+
+| Einstellung | Wirkung |
+|---|---|
+| Preset | Gespeicherte Kombination aller Einstellungen. Eigene Presets lassen sich speichern, als Standard festlegen sowie als JSON exportieren und importieren. |
+| Time ↔ Frequency | Fensterlänge von 256 bis 4096 Samples: kurze Fenster lösen schnelle Elemente zeitlich auf, lange Fenster trennen nahe Frequenzen. |
+| Gain | **Auto**: perzentilbasierter Kontrast je Datei. **Fixed**: gespeicherte Unter- und Obergrenze. |
+| Max Freq | Obere Frequenz: **Auto** (aus dem Inhalt), **Nyquist** oder fest. |
+| Color | B/W, W/B, SpectroFlare, Ember, Fire, Inferno, Viridis, Magma, Plasma, Jet |
+| Noise Reduction | Medianbasierte Subtraktion des spektralen Grundrauschens |
+
+## Expertenmodus
+
+**Expert mode** zeigt alle DSP-Parameter:
+
+| Einstellung | Optionen |
+|---|---|
+| Frequency | Mel, Linear, Log frequency |
+| Colour Scale | dB², dB, Linear |
+| Window | 256 – 8192 Samples |
+| Window Fn | Hann, Hamming, Blackman, Blackman-Harris, Kaiser (β = 6), Flat Top |
+| Overlap, Oversampling | Überlappung bis 93,75 %, Oversampling bis 8× |
+| Reassigned | Zeit-Frequenz-Reassignment schärft spektrale Spitzen |
+| PCEN | Per-Channel Energy Normalization |
+| Adaptive Contrast | CLAHE (kontrastbegrenzte adaptive Histogrammangleichung) für lokale Details |
+| Overlay | Spectral Centroid, Cepstral Pitch (F0), Spectral Ridges: spektraler Schwerpunkt, Grundfrequenz aus dem Cepstrum, spektrale Grate |
+
+:::note
+Bei ausgeschaltetem Expertenmodus erscheint ein Hinweis, wenn verborgene Experteneinstellungen vom aktiven Preset abweichen; **Reset** setzt sie auf das Preset zurück.
+:::
