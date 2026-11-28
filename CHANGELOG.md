@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **New brand mark**: app icons, favicons, the topbar logo and the About
+  dialog use the new SignaVis mark; the website derives its Material 3
+  colours from the brand palette. Optional amber accent theme
+  (Display → Accent colour, dark mode).
+- **Community on Telegram** (<https://t.me/SignaVis>): linked from the help
+  menu, the About dialog, the website and the README. The labeling app shows
+  a one-time hint from the second start on; closing it hides it for good.
+
 ## [1.4.3] - 2026-11-24
 
 ### Fixed

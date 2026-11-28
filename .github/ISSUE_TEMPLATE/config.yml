@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions & community (Telegram)
+    url: https://t.me/SignaVis
+    about: Ask questions, share ideas and recordings, and see what others do with SignaVis.
+  - name: Documentation
+    url: https://limitlessgreen.github.io/SignaVis/docs/
+    about: Guides, features and keyboard shortcuts.

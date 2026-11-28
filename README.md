@@ -25,6 +25,7 @@
         <a href="https://pypi.org/project/signavis/"><img src="https://img.shields.io/pypi/v/signavis.svg" alt="PyPI"/></a>
         <a href="https://github.com/LimitlessGreen/SignaVis/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg" alt="License"/></a>
         <a href="https://zenodo.org/badge/latestdoi/1161163939"><img src="https://zenodo.org/badge/1161163939.svg" alt="DOI"/></a>
+        <a href="https://t.me/SignaVis"><img src="https://img.shields.io/badge/community-Telegram-26A5E4?logo=telegram&logoColor=white" alt="Telegram community"/></a>
       </p>
     </td>
   </tr>
@@ -43,6 +44,7 @@ DAW-like audio player (waveform + spectrogram + transport controls) as a standal
 - [Demos](#demos)
 - [Python wrapper](#python-wrapper)
 - [Development](#development)
+- [Community](#community)
 - [Contributing](#contributing)
 - [Citation](#citation)
 - [License](#license)
@@ -145,6 +147,13 @@ npm run build        # library + types into dist/ and types/
 ```
 
 See [DEVELOPER.md](DEVELOPER.md) for the full setup, git hooks, release and desktop (Tauri) build instructions.
+
+## Community
+
+Questions, ideas, recordings to share or just want to see what others do with SignaVis?
+Join the community on Telegram: **[t.me/SignaVis](https://t.me/SignaVis)**.
+Bugs and feature requests are best filed as [GitHub issues](https://github.com/LimitlessGreen/SignaVis/issues)
+so they can be tracked.
 
 ## Contributing
 

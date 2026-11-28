@@ -3,6 +3,9 @@
 Thanks for your interest in contributing! Issues and pull requests are welcome on
 [GitHub](https://github.com/LimitlessGreen/SignaVis).
 
+For questions, ideas or a quick chat before starting on something bigger, join the
+community on Telegram: [t.me/SignaVis](https://t.me/SignaVis).
+
 ## Getting started
 
 See [DEVELOPER.md](DEVELOPER.md) for the full local setup (install, git hooks, versioning,
