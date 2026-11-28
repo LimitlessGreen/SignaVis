@@ -51,10 +51,10 @@ const docHref = (p: string) => (p ? `${home}${p}` : docs);
 
   <section class="section" id="features">
     <header class="section-head"><h2>{t.featuresTitle}</h2></header>
-    {t.features.map(([video, kicker, title, text, href], i) => (
+    {t.features.map(([image, kicker, title, text, href, alt], i) => (
       <article class:list={['feature', { flip: i % 2 === 1 }]}>
         <div class="feature-media">
-          <video src={`${base}/media/${video}`} autoplay muted loop playsinline controls preload="auto"></video>
+          <img src={`${base}/media/features/${image}`} alt={alt} width="1600" height="900" loading="lazy" decoding="async" />
         </div>
         <div class="feature-text">
           <span class="kicker">{kicker}</span>

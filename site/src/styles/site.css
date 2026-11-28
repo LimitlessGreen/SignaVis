@@ -121,7 +121,7 @@ p { margin: 0; }
   border-radius: 28px; overflow: hidden; background: var(--md-surface-container);
   padding: .5rem;
 }
-.feature-media video { border-radius: 22px; width: 100%; }
+.feature-media img { border-radius: 22px; width: 100%; height: auto; display: block; }
 .feature-text { display: grid; gap: .75rem; justify-items: start; }
 .feature-text h3 { font-size: clamp(1.5rem, 4vw, 2rem); font-weight: 700; }
 .feature-text p { color: var(--md-on-surface-variant); font-size: 1.08rem; }
