@@ -1,7 +1,7 @@
 // "?" help popover in the top bar: grouped actions with icons, a search that
 // also finds keyboard shortcuts from the help panel, arrow-key navigation and
 // a global "?" key that opens the shortcut overview.
-import { CircleHelp, Keyboard, Lightbulb, PlayCircle, RotateCcw, Info, Shield, Heart, Search, Bug } from 'lucide-static';
+import { CircleHelp, Keyboard, Lightbulb, PlayCircle, RotateCcw, Info, Shield, Heart, Search, Bug, MessagesSquare } from 'lucide-static';
 
 export interface HelpItem {
   group: string;
@@ -41,7 +41,7 @@ export function readShortcuts(root: ParentNode | null): Shortcut[] {
   return out;
 }
 
-export const HELP_ICONS = { CircleHelp, Keyboard, Lightbulb, PlayCircle, RotateCcw, Info, Shield, Heart, Bug };
+export const HELP_ICONS = { CircleHelp, Keyboard, Lightbulb, PlayCircle, RotateCcw, Info, Shield, Heart, Bug, MessagesSquare };
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 

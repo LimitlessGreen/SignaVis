@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SignaVis Desktop</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/src/styles/tokens.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -54,7 +55,7 @@
       line-height: 1;
     }
     .tb-btn:hover { background: var(--color-accent-faint); border-color: var(--color-accent); }
-    .tb-btn--primary { background: var(--color-accent); color: #000; border-color: var(--color-accent); }
+    .tb-btn--primary { background: var(--color-accent); color: var(--color-on-accent); border-color: var(--color-accent); }
     .tb-btn--primary:hover { background: var(--color-accent-hover); }
     .tb-btn--danger { border-color: var(--color-danger); color: var(--color-danger); }
     .tb-btn--danger:hover { background: var(--color-danger-soft); }
@@ -391,6 +392,7 @@
   <header class="topbar">
     <!-- Left: brand + dataset context -->
     <div class="topbar-left">
+      <img class="brand-mark" src="./favicon.svg" alt="" width="18" height="18" />
       <span class="brand-title">SignaVis</span>
       <div class="topbar-dataset-pill" id="topbarDatasetPill" style="display:none">
         <span class="topbar-dataset-pill__icon">🎙</span>

@@ -22,7 +22,7 @@
 .btn:hover         { background: var(--color-accent-faint); border-color: var(--color-accent); }
 .btn:disabled      { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
-.btn--primary      { background: var(--color-accent); border-color: var(--color-accent); color: #000; font-weight: 600; }
+.btn--primary      { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); font-weight: 600; }
 .btn--primary:hover{ background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
 
 .btn--secondary    { background: var(--color-bg-secondary); }
@@ -62,11 +62,11 @@
 .toolbar-btn:hover    { background: rgba(255,255,255,0.06); border-color: var(--color-accent); }
 .toolbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.toolbar-btn.toggle-btn.active { background: var(--color-accent); color: #fff; border-color: transparent; }
+.toolbar-btn.toggle-btn.active { background: var(--color-accent); color: var(--color-on-accent); border-color: transparent; }
 .toolbar-btn.flex-shrink-0     { flex-shrink: 0; }
 
 .aw-btn--primary,
-.toolbar-btn.file-btn      { background: var(--color-accent); color: #fff; border-color: transparent; font-weight: 600; }
+.toolbar-btn.file-btn      { background: var(--color-accent); color: var(--color-on-accent); border-color: transparent; font-weight: 600; }
 .aw-btn--primary:hover,
 .toolbar-btn.file-btn:hover{ background: var(--color-accent-hover); }
 

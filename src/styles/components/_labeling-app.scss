@@ -40,6 +40,17 @@ html, body {
   font-weight: 700; letter-spacing: 0.03em;
   white-space: nowrap;
 }
+.brand-mark {
+  display: block; flex: none;
+  width: 18px; height: 18px;
+}
+.about-brand {
+  display: flex; align-items: center; gap: 12px;
+  padding: 4px 0 8px;
+}
+.about-brand__mark { display: block; width: 48px; height: 48px; flex: none; }
+.about-brand__mark svg { display: block; width: 100%; height: 100%; }
+.about-brand__name { font-size: 20px; font-weight: 700; letter-spacing: 0.01em; color: var(--color-text-primary); }
 .brand-title {
   text-decoration: none;
   font-weight: 700;
@@ -257,7 +268,7 @@ html, body {
     &__view--thanks .sponsor-card__title { color: #a86a00; }
   }
   .brand-title {
-    background: linear-gradient(90deg, #0369a1 0%, #0369a1 35%, #c8860a 50%, #0369a1 65%, #0369a1 100%);
+    background: linear-gradient(90deg, var(--color-accent) 0%, var(--color-accent) 35%, #c8860a 50%, var(--color-accent) 65%, var(--color-accent) 100%);
     background-size: 250% 100%;
     -webkit-background-clip: text;
     background-clip: text;
@@ -579,7 +590,7 @@ html[data-theme="light"] { @include sponsor-light; }
 .recording-explorer-row.active {
   color: var(--color-text-primary);
   font-weight: 600;
-  background: rgba(56, 189, 248, 0.10);
+  background: rgba(var(--color-accent-rgb),  0.10);
   box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
@@ -1283,4 +1294,54 @@ body.aw-overlays-peek .label-discard-btn { opacity: 0 !important; pointer-events
   margin-top: 6px;
   border-top: 1px solid var(--color-border);
   summary { padding: 4px 0; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--color-text-secondary); }
+}
+
+/* ── Community hint (src/app/labeling/community-hint.ts) ───────── */
+/* non-modal, bottom-left, shown once; never covers the transport bar's right-hand controls */
+.community-hint {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 10px 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-surface-raised, var(--color-bg-surface));
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  box-shadow: 0 12px 32px var(--shadow-strong);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.3, 0.7, 0.2, 1);
+  &.is-open { opacity: 1; transform: none; }
+
+  &__icon { display: inline-flex; color: var(--color-accent); svg { width: 22px; height: 22px; } }
+  &__body {
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
+    span { color: var(--color-text-secondary); }
+  }
+  &__join {
+    flex: none;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-decoration: none;
+    color: var(--color-on-accent);
+    background: var(--color-accent);
+    &:hover { background: var(--color-accent-hover, var(--color-accent)); }
+  }
+  &__close {
+    flex: none;
+    display: inline-flex; padding: 4px;
+    border: 0; border-radius: 6px; background: none; cursor: pointer;
+    color: var(--color-text-secondary);
+    svg { width: 16px; height: 16px; }
+    &:hover { color: var(--color-text-primary); background: var(--color-accent-faint); }
+  }
+  @media (prefers-reduced-motion: reduce) { transition: none; }
 }

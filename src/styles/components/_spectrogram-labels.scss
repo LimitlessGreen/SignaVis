@@ -201,7 +201,7 @@
     @include label-action-btn;
     &:hover { background: rgba(30, 41, 59, 0.95); border-color: rgba(255, 255, 255, 0.35); }
 }
-.label-edit-btn:hover, .label-refcalls-btn:hover { color: #bae6fd; border-color: rgba(56, 189, 248, 0.8); }
+.label-edit-btn:hover, .label-refcalls-btn:hover { color: var(--color-accent-hover); border-color: rgba(var(--color-accent-rgb),  0.8); }
 .label-delete-btn:hover, .label-discard-btn:hover { color: #fca5a5; border-color: rgba(239, 68, 68, 0.85); }
 .label-accept-btn:hover { color: #bbf7d0; border-color: rgba(34, 197, 94, 0.85); }
 .label-actions--suggestion { flex-direction: column-reverse; }
@@ -278,7 +278,7 @@
 
 /* New label being drawn: like editing, tag "+ New" */
 .spectrogram-label-draft {
-    --label-c: var(--color-accent, #38bdf8);
+    --label-c: var(--color-accent);
     position: absolute;
     box-sizing: border-box;
     border: var(--label-frame-strong) solid var(--label-c);
@@ -372,7 +372,7 @@
 
 /* ── Snap to call preview: viewfinder box + chip ── */
 .snap-box {
-    --snap: var(--color-accent, #38bdf8);
+    --snap: var(--color-accent);
     --label-c: var(--snap);
     position: absolute;
     z-index: 30;
@@ -472,8 +472,8 @@
     margin: -7px 0 0 -7px;
     pointer-events: none;
     background:
-        linear-gradient(#38bdf8, #38bdf8) center / 1px 100% no-repeat,
-        linear-gradient(#38bdf8, #38bdf8) center / 100% 1px no-repeat;
+        linear-gradient(var(--color-accent), var(--color-accent)) center / 1px 100% no-repeat,
+        linear-gradient(var(--color-accent), var(--color-accent)) center / 100% 1px no-repeat;
     filter: drop-shadow(0 0 1px #000);
 }
 

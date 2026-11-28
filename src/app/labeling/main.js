@@ -95,7 +95,7 @@ import {
 import { loadRecent, saveRecent, addRecent, recentMenuItems } from '../../app/recent-items.ts';
 import { RenderScheduler } from './render-scheduler.ts';
 import { LabelStore } from './label-store.ts';
-import { installThemeToggle } from './features/theme.ts';
+import { installThemeToggle, installAccent, createAccentSection } from './features/theme.ts';
 import { createRavenExport } from './features/raven-export.ts';
 import { installAnnotaImport } from './features/annota-import.ts';
 import { installFileDrop } from './features/file-drop.ts';
@@ -103,6 +103,7 @@ import { installMicRecording } from './features/mic-recording.ts';
 import { createXcUpload } from './features/xc-upload.ts';
 import { dedupeLabels } from './dedupe-labels.ts';
 import { initSponsorCard } from './sponsor-card.ts';
+import { initCommunityHint, COMMUNITY_URL } from './community-hint.ts';
 import { initHelpMenu, HELP_ICONS } from './help-menu.ts';
 import { formatMinSec } from '../../shared/utils.ts';
 import { prefs, prefsStorage } from '../../infrastructure/storage/prefs.ts';
@@ -692,11 +693,19 @@ initHelpMenu({
     { group: 'Learn', icon: HELP_ICONS.PlayCircle, label: 'Load demo recording', hint: 'Try SignaVis on a sample', keywords: 'example sample try', action: () => loadDemoRecording() },
     { group: 'Learn', icon: HELP_ICONS.RotateCcw, label: 'Run setup again', hint: 'Language, region and model', keywords: 'onboarding wizard start', action: () => runOnboarding() },
     { group: 'SignaVis', icon: HELP_ICONS.Info, label: 'About SignaVis', keywords: 'version license credits', action: () => openInfoDialog(aboutPanelEl, 'About') },
+    { group: 'SignaVis', icon: HELP_ICONS.MessagesSquare, label: 'Community on Telegram', hint: 'Questions, ideas, recordings', keywords: 'chat forum telegram discuss help support', action: () => window.open(COMMUNITY_URL, '_blank', 'noopener') },
     { group: 'SignaVis', icon: HELP_ICONS.Bug, label: 'Report a problem', hint: 'Opens GitHub issues', keywords: 'bug issue feedback idea', action: () => window.open(ISSUES_URL, '_blank', 'noopener') },
     { group: 'SignaVis', icon: HELP_ICONS.Shield, label: 'Privacy policy', keywords: 'gdpr data datenschutz', action: () => openInfoDialog(privacyPanelEl, 'Privacy policy') },
     { group: 'SignaVis', icon: HELP_ICONS.Heart, label: 'Sponsor SignaVis', keywords: 'donate support', action: () => { sponsorCard?.startSponsor(); window.open(SPONSOR_URL, '_blank', 'noopener'); } },
   ],
 });
+
+// Telegram community: one non-modal hint from the second start on (help menu + About keep the link).
+// Started here, not after project loading, so a slow restore does not hold it back; the veto is read
+// lazily and waits while the phone viewer or the onboarding is up (or not yet initialised).
+try {
+  initCommunityHint({ suppress: () => { try { return mobileApp.isActive || _onboardingOpen; } catch { return true; } } });
+} catch { /* ignore */ }
 
 // About panel simplified to a GitHub link (no extra runtime handlers)
 
@@ -789,8 +798,10 @@ keyScope('app').addEventListener('keydown', (e) => {
 });
 
 // ── Right sidebar ─────────────────────────────────────────────────
+installAccent(); // early, so the first paint already has the chosen accent
 const specPanel = new SpectrogramSettingsPanel(player);
 specPanel.relocate();
+specPanel.el.appendChild(createAccentSection());
 
 // Add "Clear spectrogram cache" button at the bottom of the spectrogram settings panel
 (() => {

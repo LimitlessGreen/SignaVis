@@ -104,8 +104,8 @@
   font-size: 11px; font-variant-numeric: tabular-nums;
   cursor: pointer;
   &:hover, &.highlighted { background: var(--color-accent-faint); }
-  &.selected { background: rgba(56, 189, 248, 0.15); box-shadow: inset 2px 0 0 var(--color-accent); }
-  &.multi-selected { background: rgba(56, 189, 248, 0.22); box-shadow: inset 2px 0 0 var(--color-accent); }
+  &.selected { background: rgba(var(--color-accent-rgb),  0.15); box-shadow: inset 2px 0 0 var(--color-accent); }
+  &.multi-selected { background: rgba(var(--color-accent-rgb),  0.22); box-shadow: inset 2px 0 0 var(--color-accent); }
   &.dragging { opacity: 0.35; }
   &:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; }
 }

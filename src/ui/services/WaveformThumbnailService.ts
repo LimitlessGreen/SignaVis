@@ -32,7 +32,9 @@ function getAudioContext(): AudioContext {
  * Bei Fehler oder laufendem Load: undefined (Aufrufer zeigt Placeholder).
  */
 export async function getWaveformThumbnail(filepath: string): Promise<string | undefined> {
-    if (cache.has(filepath)) return cache.get(filepath)!;
+    // The PNG carries the accent colour: key by it so a theme/accent switch renders afresh.
+    const key = `${accentRgb()}|${filepath}`;
+    if (cache.has(key)) return cache.get(key)!;
 
     // Build URL for Tauri asset protocol.
     // In Tauri context: convertFileSrc(filepath)
@@ -53,7 +55,7 @@ export async function getWaveformThumbnail(filepath: string): Promise<string | u
         const ctx = getAudioContext();
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
         const dataUrl = renderPeaks(audioBuffer);
-        storeCache(filepath, dataUrl);
+        storeCache(key, dataUrl);
         return dataUrl;
     } catch {
         return undefined;
@@ -92,10 +94,11 @@ function renderPeaks(audioBuffer: AudioBuffer): string {
     const midY = THUMB_H / 2;
 
     // Gradient: bright centre fades to dim at the edges
+    const rgb = accentRgb();
     const grad = ctx.createLinearGradient(0, 0, 0, THUMB_H);
-    grad.addColorStop(0,   'rgba(56,189,248,0.35)');
-    grad.addColorStop(0.5, 'rgba(56,189,248,0.90)');
-    grad.addColorStop(1,   'rgba(56,189,248,0.35)');
+    grad.addColorStop(0,   `rgba(${rgb},0.35)`);
+    grad.addColorStop(0.5, `rgba(${rgb},0.90)`);
+    grad.addColorStop(1,   `rgba(${rgb},0.35)`);
     ctx.fillStyle = grad;
 
     for (let i = 0; i < normalized.length; i++) {
@@ -105,10 +108,15 @@ function renderPeaks(audioBuffer: AudioBuffer): string {
     }
 
     // Subtle centre baseline
-    ctx.fillStyle = 'rgba(56,189,248,0.20)';
+    ctx.fillStyle = `rgba(${rgb},0.20)`;
     ctx.fillRect(0, midY - 1, THUMB_W, 1);
 
     return canvas.toDataURL('image/png');
+}
+
+function accentRgb(): string {
+    return (typeof document !== 'undefined'
+        && getComputedStyle(document.documentElement).getPropertyValue('--color-accent-rgb').trim()) || '56, 189, 248';
 }
 
 function storeCache(key: string, value: string): void {
