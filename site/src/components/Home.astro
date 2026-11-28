@@ -15,6 +15,7 @@ const docHref = (p: string) => (p ? `${home}${p}` : docs);
 <Site lang={lang}>
   <section class="hero">
     <div class="hero-text">
+      <a class="hero-chip" href="https://t.me/SignaVis"><span class="hero-chip-tag">{t.heroChipTag}</span> <Icon name="messages-square" size={16} /> {t.heroChip} <Icon name="arrow-right" size={16} /></a>
       <h1>{t.heroAccentFirst
         ? <><span class="accent">{t.heroA}</span> {t.heroB}</>
         : <>{t.heroA} <span class="accent">{t.heroB}</span></>}</h1>
@@ -81,6 +82,7 @@ const docHref = (p: string) => (p ? `${home}${p}` : docs);
     <div class="get-grid">
       <a class="get-card" href={app}><Icon name="globe" size={28} /><h3>{t.getBrowser[0]}</h3><p>{t.getBrowser[1]}</p></a>
       <a class="get-card" href={`${home}/download/`}><Icon name="download" size={28} /><h3>{t.getLite[0]}</h3><p>{t.getLite[1]}</p></a>
+      <a class="get-card" href="https://t.me/SignaVis"><Icon name="messages-square" size={28} /><h3>{t.getCommunity[0]}</h3><p>{t.getCommunity[1]}</p></a>
       <a class="get-card" href="https://github.com/sponsors/LimitlessGreen"><Icon name="heart" size={28} /><h3>{t.getSponsor[0]}</h3><p>{t.getSponsor[1]}</p></a>
     </div>
   </section>

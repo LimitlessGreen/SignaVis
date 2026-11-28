@@ -51,7 +51,10 @@ export default defineConfig({
         { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
         { tag: 'script', content: analyticsScript },
       ],
-      social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/LimitlessGreen/SignaVis' }],
+      social: [
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/LimitlessGreen/SignaVis' },
+        { icon: 'telegram', label: 'Telegram community', href: 'https://t.me/SignaVis' },
+      ],
       customCss: ['@fontsource-variable/inter', './src/styles/m3-tokens.css', './src/styles/starlight-m3.css'],
       sidebar: [
         { label: 'Start', translations: { de: 'Start' }, items: [{ label: 'Overview', translations: { de: 'Übersicht' }, link: '/docs/' }, { label: 'Getting started', translations: { de: 'Erste Schritte' }, link: '/docs/getting-started/' }, { label: 'The interface', translations: { de: 'Die Oberfläche' }, link: '/docs/interface/' }] },

@@ -36,6 +36,8 @@ export const ui = {
     desktopAlt: 'SignaVis on a computer: spectrogram of a Tree Pipit song',
     getBrowser: ['Web app', 'No installation required.'],
     getLite: ['SignaVis Lite', 'Desktop app for Windows, macOS and Linux. Works offline.'],
+    getCommunity: ['Community', 'Questions, ideas and recordings on Telegram.'],
+    heroChipTag: 'New', heroChip: 'Community on Telegram',
     getSponsor: ['Support', 'Sponsorship keeps SignaVis free and open.'],
     dl: {
       metaTitle: 'Download SignaVis Lite – desktop app for Windows, macOS and Linux',
@@ -57,7 +59,7 @@ export const ui = {
       web: ['Web app', 'Runs in the browser, no installation required.'],
       python: ['Python package', 'For Jupyter, Streamlit and Gradio: <code>pip install signavis</code>'],
     },
-    footerTag: 'Open-source software for bioacoustics.', footerSample: 'Sample recording', footerSupport: 'Support', footerCite: 'Cite', footerPrivacy: 'Privacy',
+    footerTag: 'Open-source software for bioacoustics.', footerSample: 'Sample recording', footerSupport: 'Support', footerCommunity: 'Community', footerCite: 'Cite', footerPrivacy: 'Privacy',
   },
   de: {
     metaTitle: 'SignaVis – Kostenloser Spektrogramm-Viewer für Vogelstimmen',
@@ -88,6 +90,8 @@ export const ui = {
     desktopAlt: 'SignaVis am Computer: Spektrogramm eines Baumpieper-Gesangs',
     getBrowser: ['Web-App', 'Keine Installation erforderlich.'],
     getLite: ['SignaVis Lite', 'Desktop-App für Windows, macOS und Linux. Offline nutzbar.'],
+    getCommunity: ['Community', 'Fragen, Ideen und Aufnahmen auf Telegram.'],
+    heroChipTag: 'Neu', heroChip: 'Community auf Telegram',
     getSponsor: ['Unterstützen', 'Sponsoring hält SignaVis frei und offen.'],
     dl: {
       metaTitle: 'SignaVis Lite herunterladen – Desktop-App für Windows, macOS und Linux',
@@ -109,6 +113,6 @@ export const ui = {
       web: ['Web-App', 'Läuft im Browser, keine Installation erforderlich.'],
       python: ['Python-Paket', 'Für Jupyter, Streamlit und Gradio: <code>pip install signavis</code>'],
     },
-    footerTag: 'Open-Source-Software für Bioakustik.', footerSample: 'Beispielaufnahme', footerSupport: 'Unterstützen', footerCite: 'Zitieren', footerPrivacy: 'Datenschutz',
+    footerTag: 'Open-Source-Software für Bioakustik.', footerSample: 'Beispielaufnahme', footerSupport: 'Unterstützen', footerCommunity: 'Community', footerCite: 'Zitieren', footerPrivacy: 'Datenschutz',
   },
 } as const;
