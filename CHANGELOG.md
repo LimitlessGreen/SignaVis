@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-11-28
+
 ### Added
 - **New brand mark**: app icons, favicons, the topbar logo and the About
   dialog use the new SignaVis mark; the website derives its Material 3
