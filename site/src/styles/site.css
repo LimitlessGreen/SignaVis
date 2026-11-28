@@ -78,6 +78,7 @@ p { margin: 0; }
 .trust { list-style: none; padding: 0; margin: 1.5rem 0 0; display: grid; gap: .5rem; color: var(--md-on-surface-variant); font-size: .95rem; }
 .trust li { display: flex; align-items: center; gap: .5rem; }
 .trust .icon { color: var(--md-primary); }
+.trust a.powered { color: var(--md-primary); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 
 .hero-visual { position: relative; padding-bottom: 12%; }
 .hero-chip { display: inline-flex; align-items: center; gap: .45rem; padding: .3rem .8rem .3rem .3rem; border-radius: 999px; font-size: .9rem; font-weight: 500; color: var(--md-on-surface); background: var(--md-surface-container-low); border: 1px solid var(--md-outline-variant); transition: background .2s; }
@@ -121,7 +122,7 @@ p { margin: 0; }
   border-radius: 28px; overflow: hidden; background: var(--md-surface-container);
   padding: .5rem;
 }
-.feature-media video { border-radius: 22px; width: 100%; }
+.feature-media img { border-radius: 22px; width: 100%; height: auto; display: block; }
 .feature-text { display: grid; gap: .75rem; justify-items: start; }
 .feature-text h3 { font-size: clamp(1.5rem, 4vw, 2rem); font-weight: 700; }
 .feature-text p { color: var(--md-on-surface-variant); font-size: 1.08rem; }

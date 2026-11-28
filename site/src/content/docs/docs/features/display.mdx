@@ -1,0 +1,37 @@
+---
+title: Spectrogram display
+description: "Spectrogram settings in SignaVis: presets, time–frequency resolution, gain, colour maps, noise reduction, and in expert mode frequency scale, window function, overlap, reassignment and PCEN."
+sidebar: { order: 4 }
+---
+<img class="shot" src="/SignaVis/media/features/display.webp" alt="The same Tree Pipit passage with window lengths 256, 1024 and 4096 and three colour maps, next to the Display settings" />
+
+Open **Display** in the right sidebar.
+
+| Setting | Effect |
+|---|---|
+| Preset | Stored combination of the spectrogram settings (window, scales, colour, gain, frequency range, noise reduction, PCEN …); overlays are not part of a preset. Own presets can be saved, set as default, and exported or imported as JSON. |
+| Time ↔ Frequency | Window length from 256 to 4096 samples: short windows resolve fast elements in time, long windows separate close frequencies. |
+| Gain | **Auto**: percentile-based contrast per file. **Fixed**: stored floor and ceiling. |
+| Max Freq | Upper frequency: **Auto** (from the content), **Nyquist** or fixed. |
+| Color | B/W, W/B, SpectroFlare, Ember, Fire, Inferno, Viridis, Magma, Plasma, Jet |
+| Noise Reduction | Median-based subtraction of the spectral noise floor |
+
+## Expert mode
+
+**Expert mode** shows all DSP parameters:
+
+| Setting | Options |
+|---|---|
+| Frequency | Mel, Linear, Log frequency |
+| Colour Scale | dB², dB, Linear |
+| Window | 256 – 8192 samples |
+| Window Fn | Hann, Hamming, Blackman, Blackman-Harris, Kaiser (β = 6), Flat Top |
+| Overlap, Oversampling | Overlap up to 93.75 %, oversampling up to 8× |
+| Reassigned | Time–frequency reassignment sharpens spectral peaks |
+| PCEN | Per-channel energy normalisation |
+| Adaptive Contrast | CLAHE (contrast-limited adaptive histogram equalisation) for local detail |
+| Overlay | Spectral Centroid, Cepstral Pitch (F0), Spectral Ridges |
+
+:::note
+With expert mode off, a hint shows when hidden expert settings differ from the active preset; **Reset** returns them to the preset.
+:::

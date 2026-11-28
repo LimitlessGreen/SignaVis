@@ -28,11 +28,11 @@ const docHref = (p: string) => (p ? `${home}${p}` : docs);
       <ul class="trust">
         <li><Icon name="shield-check" size={18} /> {t.trustLocal}</li>
         <li><Icon name="code" size={18} /> {t.trustOss}</li>
+        <li><Icon name="bird" size={18} /> <span>{t.poweredBy} <a class="powered" href="https://birdnet.cornell.edu/" title={t.birdnetTitle} rel="noopener">BirdNET</a></span></li>
       </ul>
     </div>
     <div class="hero-visual">
-      <img class="shot-desktop" src={`${base}/media/app-desktop.png`} alt={t.desktopAlt} width="1440" height="860" />
-      <img class="shot-phone" src={`${base}/media/app-mobile.png`} alt={t.mobileAlt} width="412" height="839" />
+      <img class="shot-desktop" src={`${base}/media/hero.webp`} alt={t.desktopAlt} width="2880" height="1720" />
     </div>
   </section>
 
@@ -51,10 +51,10 @@ const docHref = (p: string) => (p ? `${home}${p}` : docs);
 
   <section class="section" id="features">
     <header class="section-head"><h2>{t.featuresTitle}</h2></header>
-    {t.features.map(([video, kicker, title, text, href], i) => (
+    {t.features.map(([image, kicker, title, text, href, alt], i) => (
       <article class:list={['feature', { flip: i % 2 === 1 }]}>
         <div class="feature-media">
-          <video src={`${base}/media/${video}`} autoplay muted loop playsinline controls preload="auto"></video>
+          <img src={`${base}/media/features/${image}`} alt={alt} width="1600" height="900" loading="lazy" decoding="async" />
         </div>
         <div class="feature-text">
           <span class="kicker">{kicker}</span>
