@@ -13,11 +13,18 @@ selection corners: a signal that a person selects and confirms.
 
 ## Colours
 
-| Name | Hex |
-|---|---|
-| Night blue (ground) | `#102A35` |
-| Call amber (contour, accent) | `#F2B544` |
-| Paper (selection corners) | `#F3F5F2` |
+The mark shows the roles: the night-blue ground and selection corners are the
+interface, the amber contour is the signal.
+
+| Role | Hex | Use |
+|---|---|---|
+| Operating colour (blue) | `#38BDF8` dark theme, `#0284C7` light theme | buttons, selection, waveform, links (`--color-accent`) |
+| Signal colour (call amber) | `#F2B544` | the contour in the mark; optional accent theme in the app (dark theme only, amber turns brown on white) |
+| Night blue | `#102A35` | ground of the mark, tint of the website neutrals |
+| Paper | `#F3F5F2` | selection corners in the mark |
+
+The website derives its Material 3 colours from these (`site/scripts/m3-tokens.mjs`):
+primary blue, secondary and neutrals night blue, tertiary amber.
 
 ## Regenerating icons
 
