@@ -59,7 +59,7 @@
 
 .input[type="number"] { -moz-appearance: textfield; }
 .input[type="range"] { appearance: none; height: 6px; background: var(--color-border); border-radius: 6px; }
-.input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 6px rgba(57,181,255,0.15); }
+.input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 6px rgba(var(--color-accent-rgb), 0.15); }
 
 .form-help { font-size: 11px; color: var(--color-text-secondary); }
 
@@ -77,7 +77,7 @@
   width: 36px; height: 20px; border-radius: 12px; background: var(--input-bg); position: relative; cursor: pointer;
 }
 .toggle .thumb { position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transform: translateX(0); transition: transform 0.12s; }
-.toggle.on { background: linear-gradient(90deg, rgba(57,181,255,0.18), rgba(57,181,255,0.28)); }
+.toggle.on { background: linear-gradient(90deg, rgba(var(--color-accent-rgb), 0.18), rgba(var(--color-accent-rgb), 0.28)); }
 .toggle.on .thumb { transform: translateX(16px); background: var(--color-accent); }
 
 /* Small utilities for props tag row & xc inputs */
@@ -85,7 +85,7 @@
 .input-compact { padding: 4px 6px; height: 28px; border-radius: 4px; }
 
 /* Accessibility: focus-visible ring */
-.input:focus-visible, .select-compact:focus-visible { box-shadow: 0 0 0 3px rgba(57,181,255,0.06); }
+.input:focus-visible, .select-compact:focus-visible { box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.06); }
 
 /* Properties panel specific helpers (compat layer for existing markup) */
 .properties-panel { padding: 0; }
@@ -109,8 +109,8 @@
 /* Highlight animation — triggered when navigating from label list */
 @keyframes props-section-highlight {
   0%   { box-shadow: none; background: transparent; }
-  15%  { box-shadow: 0 0 0 2px var(--color-accent); background: rgba(57, 181, 255, 0.08); }
-  60%  { box-shadow: 0 0 0 2px var(--color-accent); background: rgba(57, 181, 255, 0.08); }
+  15%  { box-shadow: 0 0 0 2px var(--color-accent); background: rgba(var(--color-accent-rgb),  0.08); }
+  60%  { box-shadow: 0 0 0 2px var(--color-accent); background: rgba(var(--color-accent-rgb),  0.08); }
   100% { box-shadow: none; background: transparent; }
 }
 .props-section--highlight {
@@ -119,7 +119,7 @@
 }
 
 /* Annotation set section — subtle tint to distinguish from recording/label sections */
-.props-section--set .props-section-title { color: rgba(56, 189, 248, 0.65); }
+.props-section--set .props-section-title { color: rgba(var(--color-accent-rgb),  0.65); }
 .props-set-edit-link {
   margin-top: 4px;
   padding: 0;
@@ -130,7 +130,7 @@
   cursor: pointer;
   &:hover { text-decoration: underline; }
 }
-.props-section--set .props-section-body { background: rgba(56, 189, 248, 0.03); }
+.props-section--set .props-section-body { background: rgba(var(--color-accent-rgb),  0.03); }
 .props-readonly { opacity: 0.65; }
 .props-editable { }
 

@@ -3117,7 +3117,8 @@ export class SpectrogramLabelLayer extends AnnotationLayerBase {
             ctx.fillText(opts.readout, 6, H - 10);
         }
         if (opts.fine ?? this._fineActive) {
-            ctx.fillStyle = 'rgba(56, 189, 248, 0.9)';
+            const rgb = (typeof document !== 'undefined' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent-rgb').trim()) || '56, 189, 248';
+            ctx.fillStyle = `rgba(${rgb}, 0.9)`;
             ctx.fillRect(W - 42, 4, 38, 18);
             ctx.fillStyle = '#0f172a';
             ctx.fillText('FINE', W - 37, 13);

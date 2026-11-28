@@ -36,7 +36,7 @@
   .us-play {
     flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%;
     border: 1px solid var(--color-accent); background: none; color: var(--color-accent); cursor: pointer; font-size: 11px;
-    &:hover { background: var(--color-accent); color: #fff; }
+    &:hover { background: var(--color-accent); color: var(--color-on-accent); }
   }
 
   .us-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
@@ -45,5 +45,5 @@
   .us-actions { margin-left: auto; display: flex; gap: 6px; }
   .us-later, .us-apply { padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
   .us-later { border: 1px solid var(--color-border); background: none; color: var(--color-text); }
-  .us-apply { border: 1px solid var(--color-accent); background: var(--color-accent); color: #fff; }
+  .us-apply { border: 1px solid var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); }
 }

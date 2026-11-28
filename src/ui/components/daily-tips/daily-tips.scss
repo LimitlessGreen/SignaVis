@@ -18,8 +18,8 @@
 .daily-tip-actions-right { margin-left: auto; display: flex; gap: 8px; }
 .daily-tip-prev { border: 1px solid var(--color-border); background: transparent; color: var(--color-text-primary); padding: 6px 10px; border-radius: 6px; cursor: pointer; }
 .daily-tip-prev:hover { background: rgba(255,255,255,0.03); }
-.daily-tip-next { border: 1px solid rgba(57,181,255,0.6); background: rgba(57,181,255,0.12); color: #7dd3fc; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
-.daily-tip-next:hover { background: rgba(57,181,255,0.18); }
+.daily-tip-next { border: 1px solid rgba(var(--color-accent-rgb), 0.6); background: rgba(var(--color-accent-rgb), 0.12); color: var(--color-accent); padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.daily-tip-next:hover { background: rgba(var(--color-accent-rgb), 0.18); }
 .daily-tip-close { border: 1px solid var(--color-border); background: transparent; color: var(--color-text-primary); padding: 6px 10px; border-radius: 6px; cursor: pointer; width: auto; height: auto; }
 .daily-tip-disable-label { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-secondary); cursor: pointer; font-size: 13px; }
 .daily-tip-disable-checkbox { width: 16px; height: 16px; accent-color: var(--color-accent); }

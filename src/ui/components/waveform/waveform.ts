@@ -25,10 +25,10 @@ function installThemeObserver(canvas: any, redrawFn: () => void) {
     canvas.dataset.awThemeObserverInstalled = '1';
     const mo = new MutationObserver((mutations) => {
         for (const m of mutations) {
-            if (m.attributeName === 'data-theme') { redrawFn(); break; }
+            if (m.attributeName === 'data-theme' || m.attributeName === 'data-accent') { redrawFn(); break; }
         }
     });
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-accent'] });
     try {
         const mm = (window as any).matchMedia?.('(prefers-color-scheme: light)') as MediaQueryList | undefined | null;
         if (mm?.addEventListener) mm.addEventListener('change', () => redrawFn());

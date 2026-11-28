@@ -142,7 +142,7 @@
 }
 
 .daw-shell.transport-overlay .transport-btn.play-btn:hover:not(:disabled) {
-    background: rgba(2, 132, 199, 0.9);
+    background: rgba(var(--color-accent-rgb),  0.9);
 }
 
 .daw-shell.transport-overlay .transport-btn.play-btn.playing {

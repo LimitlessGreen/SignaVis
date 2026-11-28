@@ -28,3 +28,15 @@ html[data-theme="dark"] { @include dark-tokens; }
 @media (prefers-color-scheme: dark) { html:not([data-theme="light"]) { @include dark-tokens; } }
 html[data-theme="light"] { @include light-tokens; }
 @media (prefers-color-scheme: light) { html:not([data-theme="dark"]) { @include light-tokens; } }
+
+// Amber accent: optional theme (html[data-accent="amber"]), dark theme only;
+// amber turns brown on white, so the light theme keeps the blue operating colour.
+@mixin amber-accent-dark {
+  --color-accent:         #f2b544;
+  --color-accent-hover:   #f7c766;
+  --color-accent-rgb:     242, 181, 68;
+  --color-accent-faint:   rgba(242, 181, 68, 0.08);
+  --color-on-accent:      #2a1d00;
+}
+html[data-accent="amber"][data-theme="dark"] { @include amber-accent-dark; }
+@media (prefers-color-scheme: dark) { html[data-accent="amber"]:not([data-theme="light"]) { @include amber-accent-dark; } }

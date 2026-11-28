@@ -95,7 +95,7 @@ import {
 import { loadRecent, saveRecent, addRecent, recentMenuItems } from '../../app/recent-items.ts';
 import { RenderScheduler } from './render-scheduler.ts';
 import { LabelStore } from './label-store.ts';
-import { installThemeToggle } from './features/theme.ts';
+import { installThemeToggle, installAccent, createAccentSection } from './features/theme.ts';
 import { createRavenExport } from './features/raven-export.ts';
 import { installAnnotaImport } from './features/annota-import.ts';
 import { installFileDrop } from './features/file-drop.ts';
@@ -789,8 +789,10 @@ keyScope('app').addEventListener('keydown', (e) => {
 });
 
 // ── Right sidebar ─────────────────────────────────────────────────
+installAccent(); // early, so the first paint already has the chosen accent
 const specPanel = new SpectrogramSettingsPanel(player);
 specPanel.relocate();
+specPanel.el.appendChild(createAccentSection());
 
 // Add "Clear spectrogram cache" button at the bottom of the spectrogram settings panel
 (() => {

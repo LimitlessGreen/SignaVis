@@ -37,7 +37,7 @@
 }
 .jsoneditor .jsoneditor-icon { color: var(--color-text-secondary); }
 
-.jsoneditor .jsoneditor-selected { background: rgba(56,189,248,0.12); }
+.jsoneditor .jsoneditor-selected { background: rgba(var(--color-accent-rgb), 0.12); }
 .jsoneditor .jsoneditor-selected .jsoneditor-property { color: var(--color-accent); }
 
 .jsoneditor .jsoneditor-menu { border-bottom: 1px solid var(--color-border); padding: 6px; }

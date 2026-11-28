@@ -15,9 +15,9 @@ const compile = (f) => sass.compile(path.join(ROOT, f), {
     silenceDeprecations: ['import', 'global-builtin', 'color-functions'],
 }).css;
 
-// Allowed outside .daw-shell: theme variables on <html> (and rules scoped under
+// Allowed outside .daw-shell: theme and accent variables on <html> (and rules scoped under
 // them), the player's own data-aw hooks, and [hidden] { display: none }.
-const ALLOW = [/^html(\[data-theme=\w+\]|:not\(\[data-theme=\w+\]\))/, /^\[data-aw=/, /^\[hidden\]$/];
+const ALLOW = [/^html(\[data-(theme|accent)=\w+\]|:not\(\[data-theme=\w+\]\))/, /^\[data-aw=/, /^\[hidden\]$/];
 
 for (const entry of ['src/styles/player.scss', 'src/styles/label-table.scss']) {
     test(`${path.basename(entry)} uses partials of main.scss in the same order`, () => {

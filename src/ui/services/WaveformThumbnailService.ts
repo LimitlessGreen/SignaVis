@@ -92,10 +92,12 @@ function renderPeaks(audioBuffer: AudioBuffer): string {
     const midY = THUMB_H / 2;
 
     // Gradient: bright centre fades to dim at the edges
+    const rgb = (typeof document !== 'undefined'
+        && getComputedStyle(document.documentElement).getPropertyValue('--color-accent-rgb').trim()) || '56, 189, 248';
     const grad = ctx.createLinearGradient(0, 0, 0, THUMB_H);
-    grad.addColorStop(0,   'rgba(56,189,248,0.35)');
-    grad.addColorStop(0.5, 'rgba(56,189,248,0.90)');
-    grad.addColorStop(1,   'rgba(56,189,248,0.35)');
+    grad.addColorStop(0,   `rgba(${rgb},0.35)`);
+    grad.addColorStop(0.5, `rgba(${rgb},0.90)`);
+    grad.addColorStop(1,   `rgba(${rgb},0.35)`);
     ctx.fillStyle = grad;
 
     for (let i = 0; i < normalized.length; i++) {
@@ -105,7 +107,7 @@ function renderPeaks(audioBuffer: AudioBuffer): string {
     }
 
     // Subtle centre baseline
-    ctx.fillStyle = 'rgba(56,189,248,0.20)';
+    ctx.fillStyle = `rgba(${rgb},0.20)`;
     ctx.fillRect(0, midY - 1, THUMB_W, 1);
 
     return canvas.toDataURL('image/png');

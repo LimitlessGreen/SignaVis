@@ -30,18 +30,18 @@
   border-radius: 0;
   transition: color 0.15s, background 0.15s;
 }
-.activity-btn:hover { color: var(--color-text-primary); background: rgba(57, 181, 255, 0.08); }
-.activity-btn.active { color: var(--color-accent); background: rgba(57, 181, 255, 0.12); box-shadow: inset 2px 0 0 var(--color-accent); }
+.activity-btn:hover { color: var(--color-text-primary); background: rgba(var(--color-accent-rgb),  0.08); }
+.activity-btn.active { color: var(--color-accent); background: rgba(var(--color-accent-rgb),  0.12); box-shadow: inset 2px 0 0 var(--color-accent); }
 .activity-btn-icon svg { width: 18px; height: 18px; display: block; pointer-events: none; stroke-width: 1.5; }
 .activity-btn-label { font-size: 9px; font-weight: 600; letter-spacing: 0.04em; line-height: 1; white-space: nowrap; pointer-events: none; user-select: none; }
-.activity-badge { position: absolute; top: 2px; right: 2px; min-width: 13px; height: 13px; border-radius: 7px; background: var(--color-accent); color: #000; font-size: 8px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 2px; line-height: 1; }
+.activity-badge { position: absolute; top: 2px; right: 2px; min-width: 13px; height: 13px; border-radius: 7px; background: var(--color-accent); color: var(--color-on-accent); font-size: 8px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 2px; line-height: 1; }
 
 /* Flash animation — draws attention to a tab without switching */
 @keyframes activity-btn-flash {
   0%   { box-shadow: none; background: transparent; }
-  20%  { box-shadow: inset 2px 0 0 var(--color-accent), 0 0 10px rgba(57,181,255,0.5); background: rgba(57,181,255,0.2); }
+  20%  { box-shadow: inset 2px 0 0 var(--color-accent), 0 0 10px rgba(var(--color-accent-rgb), 0.5); background: rgba(var(--color-accent-rgb), 0.2); }
   50%  { box-shadow: none; background: transparent; }
-  70%  { box-shadow: inset 2px 0 0 var(--color-accent), 0 0 10px rgba(57,181,255,0.5); background: rgba(57,181,255,0.2); }
+  70%  { box-shadow: inset 2px 0 0 var(--color-accent), 0 0 10px rgba(var(--color-accent-rgb), 0.5); background: rgba(var(--color-accent-rgb), 0.2); }
   100% { box-shadow: none; background: transparent; }
 }
 .activity-btn--flash {

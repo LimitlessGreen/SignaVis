@@ -268,7 +268,7 @@ html, body {
     &__view--thanks .sponsor-card__title { color: #a86a00; }
   }
   .brand-title {
-    background: linear-gradient(90deg, #0369a1 0%, #0369a1 35%, #c8860a 50%, #0369a1 65%, #0369a1 100%);
+    background: linear-gradient(90deg, var(--color-accent) 0%, var(--color-accent) 35%, #c8860a 50%, var(--color-accent) 65%, var(--color-accent) 100%);
     background-size: 250% 100%;
     -webkit-background-clip: text;
     background-clip: text;
@@ -590,7 +590,7 @@ html[data-theme="light"] { @include sponsor-light; }
 .recording-explorer-row.active {
   color: var(--color-text-primary);
   font-weight: 600;
-  background: rgba(56, 189, 248, 0.10);
+  background: rgba(var(--color-accent-rgb),  0.10);
   box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
