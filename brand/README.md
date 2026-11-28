@@ -10,6 +10,7 @@ selection corners: a signal that a person selects and confirms.
 | `signavis-mark-fg.svg`, `signavis-mark-bg.svg` | Android adaptive icon foreground / background |
 | `signavis-mark-mono.svg` | Single colour (Android themed icon, print, stamps) |
 | `icon-manifest.json` | Input for `tauri icon` |
+| `png/` | PNG exports of all variants (`<name>-<size>.png`, transparent where the SVG is) for docs, slides and social media |
 
 ## Colours
 
@@ -33,5 +34,5 @@ node scripts/brand-icons.mjs
 ```
 
 Writes `src-tauri/icons/`, `src-tauri-lite/icons/` (desktop, MSIX, Android, iOS),
-`demo/favicon.svg` and `site/public/favicon.svg`. Sizes up to 44 px and the 16/24/32 px
+`demo/favicon.svg`, `site/public/favicon.svg` and the PNG exports in `brand/png/`. Sizes up to 44 px and the 16/24/32 px
 entries of `icon.ico` come from the small mark. Needs ImageMagick (`convert`) for the `.ico`.
