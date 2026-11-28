@@ -9,7 +9,6 @@ selection corners: a signal that a person selects and confirms.
 | `signavis-mark-small.svg` | Simplified mark with thicker strokes for 16–44 px (favicons, taskbar, small tiles) |
 | `signavis-mark-fg.svg`, `signavis-mark-bg.svg` | Android adaptive icon foreground / background |
 | `signavis-mark-mono.svg` | Single colour (Android themed icon, print, stamps) |
-| `icon-manifest.json` | Input for `tauri icon` |
 | `png/` | PNG exports of all variants (`<name>-<size>.png`, transparent where the SVG is) for docs, slides and social media |
 
 ## Colours
@@ -27,12 +26,10 @@ interface, the amber contour is the signal.
 The website derives its Material 3 colours from these (`site/scripts/m3-tokens.mjs`):
 primary blue, secondary and neutrals night blue, tertiary amber.
 
-## Regenerating icons
+## Exports
 
-```sh
-node scripts/brand-icons.mjs
-```
-
-Writes `src-tauri/icons/`, `src-tauri-lite/icons/` (desktop, MSIX, Android, iOS),
-`demo/favicon.svg`, `site/public/favicon.svg` and the PNG exports in `brand/png/`. Sizes up to 44 px and the 16/24/32 px
-entries of `icon.ico` come from the small mark. Needs ImageMagick (`convert`) for the `.ico`.
+The app icons in `src-tauri/icons/` and `src-tauri-lite/icons/`, the favicons
+(`demo/favicon.svg`, `site/public/favicon.svg`) and `png/` are finished exports of these
+SVGs. Sizes up to 44 px and the 16/24/32 px entries of `icon.ico` come from the small mark.
+The design files and the icon generator are kept outside this repository; please do not
+edit the exports by hand.
