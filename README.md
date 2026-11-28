@@ -1,4 +1,8 @@
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/LimitlessGreen/SignaVis/main/brand/signavis-mark.svg" alt="SignaVis logo" width="96" />
+</p>
+
 # SignaVis
 
 <p align="center">

@@ -2,6 +2,8 @@
  * About panel creator for the Labeling App
  * Returns an unattached DOM element which can be registered with the Sidebar.
  */
+import markSvg from '../../../brand/signavis-mark.svg?raw';
+
 export function createAboutPanel() {
   const el = document.createElement('div');
   el.id = 'panelAbout';
@@ -16,6 +18,10 @@ export function createAboutPanel() {
       </a>
     </div>
     <div class="help-content">
+      <div class="about-brand">
+        <span class="about-brand__mark" aria-hidden="true">${markSvg}</span>
+        <span class="about-brand__name">SignaVis</span>
+      </div>
       <div class="help-section">
         <h3>About</h3>
         <p>Repository: <a href="https://github.com/LimitlessGreen/SignaVis" target="_blank" rel="noopener noreferrer">github.com/LimitlessGreen/SignaVis</a></p>

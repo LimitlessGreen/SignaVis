@@ -12,3 +12,9 @@ declare module '*?url' {
     const url: string;
     export default url;
 }
+
+/** Vite raw text imports (inline SVG markup, e.g. the brand mark). */
+declare module '*?raw' {
+    const text: string;
+    export default text;
+}
