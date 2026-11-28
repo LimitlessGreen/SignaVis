@@ -138,9 +138,17 @@ export function parseNativeSampleRate(buf: ArrayBuffer): number {
     if (buf.byteLength < 10) return 0;
     const view = new DataView(buf);
 
-    // WAV: "RIFF" … "WAVE", sample rate at byte 24 (LE uint32)
+    // WAV: "RIFF" … "WAVE"; walk the chunks to "fmt " (bext/JUNK/LIST may come first),
+    // sample rate is the LE uint32 at fmt offset 4.
     if (buf.byteLength >= 28 && view.getUint32(0) === 0x52494646 && view.getUint32(8) === 0x57415645) {
-        return view.getUint32(24, true);
+        let off = 12;
+        while (off + 8 <= buf.byteLength) {
+            const id = view.getUint32(off);
+            const size = view.getUint32(off + 4, true);
+            if (id === 0x666D7420) return off + 16 <= buf.byteLength ? view.getUint32(off + 12, true) : 0;
+            off += 8 + size + (size & 1);
+        }
+        return 0;
     }
     // FLAC: "fLaC", STREAMINFO sample rate = 20 bits at byte 18
     if (buf.byteLength >= 21 && view.getUint32(0) === 0x664C6143) {
