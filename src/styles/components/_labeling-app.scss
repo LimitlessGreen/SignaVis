@@ -1295,3 +1295,53 @@ body.aw-overlays-peek .label-discard-btn { opacity: 0 !important; pointer-events
   border-top: 1px solid var(--color-border);
   summary { padding: 4px 0; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--color-text-secondary); }
 }
+
+/* ── Community hint (src/app/labeling/community-hint.ts) ───────── */
+/* non-modal, bottom-left, shown once; never covers the transport bar's right-hand controls */
+.community-hint {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 10px 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-surface-raised, var(--color-bg-surface));
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  box-shadow: 0 12px 32px var(--shadow-strong);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.3, 0.7, 0.2, 1);
+  &.is-open { opacity: 1; transform: none; }
+
+  &__icon { display: inline-flex; color: var(--color-accent); svg { width: 22px; height: 22px; } }
+  &__body {
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
+    span { color: var(--color-text-secondary); }
+  }
+  &__join {
+    flex: none;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-decoration: none;
+    color: var(--color-on-accent);
+    background: var(--color-accent);
+    &:hover { background: var(--color-accent-hover, var(--color-accent)); }
+  }
+  &__close {
+    flex: none;
+    display: inline-flex; padding: 4px;
+    border: 0; border-radius: 6px; background: none; cursor: pointer;
+    color: var(--color-text-secondary);
+    svg { width: 16px; height: 16px; }
+    &:hover { color: var(--color-text-primary); background: var(--color-accent-faint); }
+  }
+  @media (prefers-reduced-motion: reduce) { transition: none; }
+}
